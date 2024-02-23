@@ -24,11 +24,11 @@ import bittensor as bt
 from neurons.validator import Neuron as Validator
 from neurons.miner import Neuron as Miner
 
-from template.protocol import Dummy
-from template.validator.forward import forward
-from template.utils.uids import get_random_uids
-from template.validator.reward import get_rewards
-from template.base.validator import BaseValidatorNeuron
+from omega.protocol import Dummy
+from omega.validator.forward import forward
+from omega.utils.uids import get_random_uids
+from omega.validator.reward import get_rewards
+from omega.base.validator import BaseValidatorNeuron
 
 
 class TemplateValidatorNeuronTestCase(unittest.TestCase):
