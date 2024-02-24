@@ -31,7 +31,7 @@ class VideoMetadata(BaseModel):
     - views: the number of views the video has received
     - likes: the number of likes the video has received
     """
-    id: str
+    video_id: str
     description: str
     views: int
     start_time: int

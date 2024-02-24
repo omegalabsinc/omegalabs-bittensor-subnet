@@ -25,7 +25,7 @@ import omega
 
 # import base miner class which takes care of most of the boilerplate
 from omega.base.miner import BaseMinerNeuron
-from neurons import miner_utils
+from omega import miner_utils
 
 
 class Miner(BaseMinerNeuron):

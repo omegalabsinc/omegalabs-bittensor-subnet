@@ -7,31 +7,48 @@ from pytube import Search, YouTube
 from omega.protocol import VideoMetadata
 
 
-def download_video(yt: YouTube, tempfile: BinaryIO) -> bool:
+def download_video_from_id(video_id: str, get_best_quality: bool = False) -> Optional[BinaryIO]:
+    """
+    Download a video from YouTube by its ID.
+
+    Args:
+        video_id (str): The ID of the video to download.
+
+    Returns:
+        Optional[BytesIO]: A BytesIO object containing the video data if the download was
+        successful, otherwise None.
+    """
+    return download_video(YouTube.from_id(video_id, get_best_quality))
+
+
+def download_video(yt: YouTube, get_best_quality: bool = False) -> Optional[BinaryIO]:
     """
     Download a video from YouTube to a given file object.
 
-    Args:
-        yt (YouTube): The YouTube object representing the video to download.
-        tempfile (BinaryIO): The file object to write the video to.
-
-    Returns:
-        bool: True if the video was successfully downloaded, False otherwise.
+    get_best_quality is set to False by default, but can be set to True if you want to download
+    the highest resolution video instead.
     """
     try:
         # Select the highest resolution available that is AVC codec (MPEG-4)
-        streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution').desc()
+        streams = yt.streams.filter(progressive=True, file_extension='mp4').order_by('resolution')
+        if get_best_quality:
+            streams = streams.desc()
+        else:
+            streams = streams.asc()
         avc_streams = [stream for stream in streams if stream.video_codec.startswith("avc")]
         video = avc_streams[0]
 
         # Download the video
-        video.download(output_path=os.path.dirname(tempfile.name), filename=os.path.basename(tempfile.name))
-
-        return True
+        temp_fileobj = tempfile.NamedTemporaryFile()
+        video.download(
+            output_path=os.path.dirname(temp_fileobj.name),
+            filename=os.path.basename(temp_fileobj.name)
+        )
+        return temp_fileobj
     
     except Exception as e:
         print(f"Error downloading video: {e}")
-        return False
+        return None
 
 
 def get_description(video_path: str, yt: YouTube) -> str:
@@ -77,17 +94,19 @@ def search_videos(query: str, num_videos: int) -> List[VideoMetadata]:
     s = Search(query)
     while len(video_metas) < num_videos:
         for result in s.results[:(num_videos - len(video_metas))]:
-            with tempfile.NamedTemporaryFile() as temp_fileobj:
-                is_downloaded = download_video(result)
-                if is_downloaded:
-                    start, end = get_relevant_timestamps(temp_fileobj.name)
-                    description = get_description(result, temp_fileobj.name)
+            download_path = download_video(result)
+            if download_path:
+                try:
+                    start, end = get_relevant_timestamps(download_path)
+                    description = get_description(result, download_path)
                     video_metas.append(VideoMetadata(
-                        id=result.id,
+                        video_id=result.id,
                         description=description,
                         views=result.views,
                         start_time=start,
                         end_time=end,
                     ))
+                finally:
+                    download_path.close()
         s.get_next_results()
     return video_metas
