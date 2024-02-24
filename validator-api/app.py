@@ -68,7 +68,7 @@ def main():
                 detail="Validator permit required",
             )
 
-        return await score_and_upload_videos(videos, imagebind, uid)
+        return await score_and_upload_videos(videos, imagebind)
 
     @app.get("/")
     def healthcheck():
