@@ -49,8 +49,22 @@ class Videos(bt.Synapse):
     """
 
     query: str
-    num_videos: int = 32
-    video_metadata: typing.List[VideoMetadata]
+    num_videos: int
+    video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
 
-    def deserialize(self) -> int:
+    def deserialize(self) -> typing.List[VideoMetadata]:
+        assert self.video_metadata is not None
         return self.video_metadata
+
+    def extract_response_json(self, input_synapse: "Videos") -> str:
+        """
+        Dumps the Videos object to a JSON string, but makes sure to use input properties from
+        the input_synapse, while taking the non-null output property video_metadata from the
+        response (self).
+        """
+        assert self.video_metadata is not None
+        return Videos(
+            query=input_synapse.query,
+            num_videos=input_synapse.num_videos,
+            video_metadata=self.video_metadata,
+        ).model_dump_json(include=["query", "num_videos", "video_metadata"])
