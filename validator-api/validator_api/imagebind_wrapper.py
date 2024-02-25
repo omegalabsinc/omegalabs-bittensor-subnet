@@ -13,6 +13,9 @@ from omega.protocol import VideoMetadata
 
 
 class Embeddings(BaseModel):
+    class Config:
+        arbitrary_types_allowed = True
+    
     video: torch.Tensor
     audio: torch.Tensor
     description: torch.Tensor
@@ -25,7 +28,7 @@ def copy_audio(video_path: str) -> BinaryIO:
     
     # Extract the audio from the video
     audio_clip = video_clip.audio
-    audio_clip.write_audiofile(temp_audiofile, codec='aac')
+    audio_clip.write_audiofile(temp_audiofile.name, codec='aac')
     
     # Close the clips to release resources
     audio_clip.close()
@@ -43,10 +46,12 @@ class ImageBind:
 
     @torch.no_grad()
     def embed(self, videos: List[VideoMetadata], video_files: List[BinaryIO]) -> Embeddings:
-        audio_files = [copy_audio(video_file) for video_file in video_files]
+        audio_files = [copy_audio(video_file.name) for video_file in video_files]
+        audio_filepaths = [audio_file.name for audio_file in audio_files]
+        video_filepaths = [video_file.name for video_file in video_files]
         try:
-            video_data = data.load_and_transform_video_data(video_files, self.device)
-            audio_data = data.load_and_transform_audio_data(audio_files, self.device)
+            video_data = data.load_and_transform_video_data(video_filepaths, self.device)
+            audio_data = data.load_and_transform_audio_data(audio_filepaths, self.device)
             inputs = {
                 ModalityType.TEXT: data.load_and_transform_text([video.description for video in videos], self.device),
                 ModalityType.VISION: video_data,
@@ -73,5 +78,5 @@ if __name__ == "__main__":
     video_id = "dQw4w9WgXcQ"
     video_metadata = download_video_from_id(video_id)
     model = ImageBind()
-    emb = model(video_metadata)
+    emb = model.embed(video_metadata)
     print(emb)

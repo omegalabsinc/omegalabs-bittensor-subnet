@@ -23,7 +23,7 @@ def compute_description_relevance_score(embeddings: Embeddings) -> float:
 
 
 def compute_query_relevance_score(embeddings: Embeddings, query: str, imagebind: ImageBind) -> float:
-    query_emb = imagebind.embed_text(query)
+    query_emb = imagebind.embed_text([query])
     return F.cosine_similarity(embeddings.video, query_emb).sum().item()
 
 
@@ -82,17 +82,17 @@ def upload_to_hf(embeddings: Embeddings, metadata: List[VideoMetadata], batch_id
         zip(video_ids, metadata, embeddings.video, embeddings.audio, embeddings.description)
     ]
     with BytesIO() as f:
-        dataset = Dataset.from_dict(data).to_parquet(f)
-        f.seek(0)
+        dataset = Dataset.from_list(data)
+        num_bytes = dataset.to_parquet(f)
         HF_API.upload_file(
-            dataset,
+            path_or_fileobj=f,
             path_in_repo=get_data_path(batch_id),
             repo_id=config.HF_REPO,
             repo_type=config.REPO_TYPE,
         )
 
 
-def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
+async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     """
     1. Scores the videos
     2. Uploads video metadata to huggingface
@@ -106,7 +106,7 @@ def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     video_files = [file for file in video_files if file is not None]
     try:
         embeddings = imagebind.embed(metadata, video_files)
-        video_ids = upload_to_pinecone(embeddings, videos, batch_id)
+        video_ids = upload_to_pinecone(embeddings, metadata, batch_id)
         description_relevance_score = compute_description_relevance_score(embeddings)
         query_relevance_score = compute_query_relevance_score(embeddings, videos.query, imagebind)
         novelty_score = compute_novelty_score(embeddings)

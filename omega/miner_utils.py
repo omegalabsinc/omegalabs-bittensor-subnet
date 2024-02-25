@@ -18,7 +18,7 @@ def download_video_from_id(video_id: str, get_best_quality: bool = False) -> Opt
         Optional[BytesIO]: A BytesIO object containing the video data if the download was
         successful, otherwise None.
     """
-    return download_video(YouTube.from_id(video_id, get_best_quality))
+    return download_video(YouTube.from_id(video_id), get_best_quality)
 
 
 def download_video(yt: YouTube, get_best_quality: bool = False) -> Optional[BinaryIO]:
@@ -51,7 +51,7 @@ def download_video(yt: YouTube, get_best_quality: bool = False) -> Optional[Bina
         return None
 
 
-def get_description(video_path: str, yt: YouTube) -> str:
+def get_description(yt: YouTube, video_path: str) -> str:
     """
     Get / generate the description of a video from the YouTube API.
     
@@ -66,7 +66,7 @@ def get_description(video_path: str, yt: YouTube) -> str:
     return description
 
 
-def get_relevant_timestamps(query: str, video_path: str, yt: YouTube) -> Tuple[int, int]:
+def get_relevant_timestamps(query: str, yt: YouTube, video_path: str) -> Tuple[int, int]:
     """
     Get the optimal start and end timestamps (in seconds) of a video for ensuring relevance
     to the query.
@@ -97,10 +97,10 @@ def search_videos(query: str, num_videos: int) -> List[VideoMetadata]:
             download_path = download_video(result)
             if download_path:
                 try:
-                    start, end = get_relevant_timestamps(download_path)
+                    start, end = get_relevant_timestamps(query, result, download_path)
                     description = get_description(result, download_path)
                     video_metas.append(VideoMetadata(
-                        video_id=result.id,
+                        video_id=result.video_id,
                         description=description,
                         views=result.views,
                         start_time=start,

@@ -160,3 +160,5 @@ cython_debug/
 #.idea/
 
 testing/
+cache/
+validator-api/.checkpoints/

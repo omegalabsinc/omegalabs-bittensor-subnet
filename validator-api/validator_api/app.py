@@ -6,9 +6,8 @@ from typing import Annotated
 import bittensor
 import uvicorn
 
-from fastapi import FastAPI, Form, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
-from pydantic import Json
 from starlette import status
 from substrateinterface import Keypair
 
@@ -57,7 +56,7 @@ def main():
 
     @app.post("/api/validate")
     async def validate(
-        videos: Annotated[Json[Videos], Form(media_type="application/json")],
+        videos: Videos,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> float:
         uid = metagraph.hotkeys.index(hotkey)
