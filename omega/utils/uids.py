@@ -55,9 +55,13 @@ def get_random_uids(
     # Check if candidate_uids contain enough for querying, if not grab all avaliable uids
     available_uids = candidate_uids
     if len(candidate_uids) < k:
+        new_avail_uids = [uid for uid in avail_uids if uid not in candidate_uids]
         available_uids += random.sample(
-            [uid for uid in avail_uids if uid not in candidate_uids],
-            k - len(candidate_uids),
+            new_avail_uids,
+            min(len(new_avail_uids), k - len(candidate_uids)),
         )
-    uids = torch.tensor(random.sample(available_uids, k)).to(self.device)
+    uids = torch.tensor(random.sample(
+        available_uids,
+        min(k, len(available_uids))
+    )).to(self.device)
     return uids

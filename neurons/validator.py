@@ -17,7 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-from aiohttp import ClientSession
+from aiohttp import ClientSession, BasicAuth
 import asyncio
 import time
 from typing import List
@@ -50,9 +50,10 @@ class Validator(BaseValidatorNeuron):
         self.load_state()
 
         api_root = "https://validate.api.omega.ai" if self.config.subtensor.network == "finney" else "https://dev-validate.api.omega.ai"
-        self.topics_endpoint = f"{api_root}/topic"
-        self.validation_endpoint = f"{api_root}/validation"
+        self.topics_endpoint = f"{api_root}/api/topic"
+        self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 32
+        self.client_timeout_seconds = 60  # one minute
 
     async def forward(self):
         """
@@ -74,6 +75,10 @@ class Validator(BaseValidatorNeuron):
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
 
+        if len(miner_uids) == 0:
+            bt.logging.info("No miners available")
+            return
+
         async with ClientSession() as session:
             async with session.get(self.topics_endpoint) as response:
                 response.raise_for_status()
@@ -85,18 +90,34 @@ class Validator(BaseValidatorNeuron):
             # Send the query to selected miner axons in the network.
             axons=[self.metagraph.axons[uid] for uid in miner_uids],
             synapse=input_synapse,
-            deserialize=True,
+            deserialize=False,
+            timeout=self.client_timeout_seconds,
         )
+
+        axons = [self.metagraph.axons[uid] for uid in miner_uids]
+        working_miner_uids = []
+        finished_responses = []
+
+        for response in responses:
+            if not response.video_metadata or not response.axon or not response.axon.hotkey:
+                continue
+
+            uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
+            working_miner_uids.append(uid)
+            finished_responses.append(response)
+
+        if len(working_miner_uids) == 0:
+            return
 
         # Log the results for monitoring purposes.
         bt.logging.info(f"Received responses: {responses}")
 
         # Adjust the scores based on responses from miners.
-        rewards = await self.get_rewards(input_synapse=input_synapse, responses=responses).to(self.device)
+        rewards = (await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)).to(self.device)
 
         bt.logging.info(f"Scored responses: {rewards}")
         # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
-        self.update_scores(rewards, miner_uids)
+        self.update_scores(rewards, working_miner_uids)
 
     async def reward(self, input_synapse: Videos, response: Videos) -> float:
         """
@@ -106,9 +127,16 @@ class Validator(BaseValidatorNeuron):
         Returns:
         - float: The reward value for the miner.
         """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
         async with ClientSession() as session:
-            body = response.extract_response_json(input_synapse)
-            async with session.post(self.validation_endpoint, json=body) as response:
+            print(response.to_serializable_dict(input_synapse))
+            async with session.post(
+                self.validation_endpoint,
+                auth=BasicAuth(hotkey, signature),
+                json=response.to_serializable_dict(input_synapse),
+            ) as response:
                 response.raise_for_status()
                 score = await response.json()
         return score

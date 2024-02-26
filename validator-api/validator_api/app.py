@@ -1,7 +1,8 @@
 import asyncio
 import os
 from datetime import datetime
-from typing import Annotated
+from typing import Annotated, List
+import random
 
 import bittensor
 import uvicorn
@@ -14,6 +15,7 @@ from substrateinterface import Keypair
 from omega.protocol import Videos
 from validator_api.score import score_and_upload_videos
 from validator_api.imagebind_wrapper import ImageBind
+from validator_api.config import TOPICS_LIST
 
 
 NETWORK = os.environ["NETWORK"]
@@ -68,6 +70,14 @@ def main():
             )
 
         return await score_and_upload_videos(videos, imagebind)
+
+    @app.get("/api/topic")
+    async def get_topic() -> str:
+        return random.choice(TOPICS_LIST)
+    
+    @app.get("/api/topics")
+    async def get_topics() -> List[str]:
+        return TOPICS_LIST
 
     @app.get("/")
     def healthcheck():

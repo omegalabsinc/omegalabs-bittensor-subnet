@@ -19,6 +19,7 @@
 import typing
 import bittensor as bt
 from pydantic import BaseModel
+import json
 
 
 class VideoMetadata(BaseModel):
@@ -56,15 +57,15 @@ class Videos(bt.Synapse):
         assert self.video_metadata is not None
         return self.video_metadata
 
-    def extract_response_json(self, input_synapse: "Videos") -> str:
+    def to_serializable_dict(self, input_synapse: "Videos") -> dict:
         """
-        Dumps the Videos object to a JSON string, but makes sure to use input properties from
+        Dumps the Videos object to a serializable dict, but makes sure to use input properties from
         the input_synapse, while taking the non-null output property video_metadata from the
         response (self).
         """
-        assert self.video_metadata is not None
-        return Videos(
+        json_str = Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
             video_metadata=self.video_metadata,
-        ).model_dump_json(include=["query", "num_videos", "video_metadata"])
+        ).json(include={"query", "num_videos", "video_metadata"})
+        return json.loads(json_str)
