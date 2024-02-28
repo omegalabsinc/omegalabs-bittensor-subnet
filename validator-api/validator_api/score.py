@@ -173,6 +173,9 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
     score = (description_relevance_score + query_relevance_score + novelty_score) / 3 / videos.num_videos
 
     # Upload to Hugging Face
-    upload_to_hf(embeddings, metadata, batch_id, video_ids)
+    try:
+        upload_to_hf(embeddings, metadata, batch_id, video_ids)
+    except Exception as e:
+        print(f"Error uploading to Hugging Face: {e}")
     
     return score

@@ -64,5 +64,5 @@ class ImageBind:
     @torch.no_grad()
     def embed_text(self, texts: List[str]) -> torch.Tensor:
         return self.imagebind({
-            ModalityType.TEXT: data.load_and_transform_text(texts, self.device),
+            ModalityType.TEXT: load_and_transform_text(texts, self.device),
         })[ModalityType.TEXT]

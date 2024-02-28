@@ -19,7 +19,7 @@ def clip_video(video_path: str, start: int, end: int) -> Optional[BinaryIO]:
         .input(video_path, ss=seconds_to_str(start), to=seconds_to_str(end))
         .output(temp_fileobj.name, c="copy")  # copy flag prevents decoding and re-encoding
         .overwrite_output()
-        .run()
+        .run(quiet=True)
     )
     return temp_fileobj
 
@@ -53,6 +53,6 @@ def copy_audio(video_path: str) -> BinaryIO:
         .input(video_path)
         .output(temp_audiofile.name, vn=None, acodec='copy')
         .overwrite_output()
-        .run()
+        .run(quiet=True)
     )
     return temp_audiofile
