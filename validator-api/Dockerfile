@@ -17,7 +17,7 @@ RUN rm /usr/bin/python3 && \
     ln -s /usr/bin/python3.10 /usr/bin/python
 
 # Install python requirements
-COPY validator-api/requirements.txt requirements.txt
+COPY gpu_requirements.txt requirements.txt
 RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel
 # install imagebind first so that pytorch 1.13 (requested by imagebind) gets overwritten by pytorch2 in requirements.txt
 RUN python -m pip install --ignore-installed --no-cache-dir git+https://github.com/facebookresearch/ImageBind.git@c6a47d6dc2b53eced51d398c181d57049ca59286

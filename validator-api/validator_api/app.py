@@ -13,8 +13,8 @@ from starlette import status
 from substrateinterface import Keypair
 
 from omega.protocol import Videos
+from omega.imagebind_wrapper import ImageBind
 from validator_api.score import score_and_upload_videos
-from validator_api.imagebind_wrapper import ImageBind
 from validator_api.config import TOPICS_LIST
 
 
@@ -64,10 +64,13 @@ def main():
         uid = metagraph.hotkeys.index(hotkey)
 
         if not metagraph.validator_permit[uid]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator permit required",
-            )
+            print("not validator", metagraph.validator_permit, uid)
+            # raise HTTPException(
+            #     status_code=status.HTTP_403_FORBIDDEN,
+            #     detail="Validator permit required",
+            # )
+        else:
+            print("successfully validator", metagraph.validator_permit, uid)
 
         return await score_and_upload_videos(videos, imagebind)
 

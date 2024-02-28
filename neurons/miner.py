@@ -23,9 +23,9 @@ import bittensor as bt
 # Bittensor Miner Template:
 import omega
 
-# import base miner class which takes care of most of the boilerplate
 from omega.base.miner import BaseMinerNeuron
-from omega import miner_utils
+from omega.imagebind_wrapper import ImageBind
+from omega.miner_utils import search_and_embed_videos
 
 
 class Miner(BaseMinerNeuron):
@@ -39,11 +39,14 @@ class Miner(BaseMinerNeuron):
 
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
+        self.imagebind = ImageBind()
 
     async def forward(
         self, synapse: omega.protocol.Videos
     ) -> omega.protocol.Videos:
-        synapse.video_metadata = miner_utils.search_videos(synapse.query, synapse.num_videos)
+        synapse.video_metadata = search_and_embed_videos(
+            synapse.query, synapse.num_videos, self.imagebind
+        )
         return synapse
 
     async def blacklist(

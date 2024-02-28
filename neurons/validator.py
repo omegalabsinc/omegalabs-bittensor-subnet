@@ -50,10 +50,11 @@ class Validator(BaseValidatorNeuron):
         self.load_state()
 
         api_root = "https://validate.api.omega.ai" if self.config.subtensor.network == "finney" else "https://dev-validate.api.omega.ai"
+        api_root = "http://localhost:8001"
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
-        self.num_videos = 32
-        self.client_timeout_seconds = 60  # one minute
+        self.num_videos = 8
+        self.client_timeout_seconds = 300  # five minutes
 
     async def forward(self):
         """
@@ -113,7 +114,11 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info(f"Received responses: {responses}")
 
         # Adjust the scores based on responses from miners.
-        rewards = (await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)).to(self.device)
+        try:
+            rewards = (await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)).to(self.device)
+        except Exception as e:
+            bt.logging.error(f"Error in get_rewards: {e}")
+            return
 
         bt.logging.info(f"Scored responses: {rewards}")
         # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.

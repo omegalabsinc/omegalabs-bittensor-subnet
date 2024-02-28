@@ -17,9 +17,10 @@
 # DEALINGS IN THE SOFTWARE.
 
 import typing
+import json
+
 import bittensor as bt
 from pydantic import BaseModel
-import json
 
 
 class VideoMetadata(BaseModel):
@@ -37,6 +38,9 @@ class VideoMetadata(BaseModel):
     views: int
     start_time: int
     end_time: int
+    video_emb: typing.List[float]
+    audio_emb: typing.List[float]
+    description_emb: typing.List[float]
 
 
 class Videos(bt.Synapse):
