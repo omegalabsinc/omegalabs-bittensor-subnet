@@ -1,28 +1,18 @@
-docker build -f validator-api/Dockerfile -t validator-api:latest .
+#!/bin/bash
+
+docker build -f Dockerfile -t omega-bittensor:latest .
 
 docker run --rm \
     --network="host" \
     --gpus all \
     --detach \
-    -v $(pwd)/validator-api:/validator-api \
+    -v $(pwd):/app \
     -v $(pwd)/cache:/root/.cache \
-    -v $(pwd)/validator-api/.checkpoints:/validator-api/.checkpoints \
     --env-file validator-api/.env \
     -it \
+    --entrypoint bash \
     --name validator-api \
-    validator-api:latest
-docker attach validator-api
+    omega-bittensor:latest \
+    -c 'python validator-api/app.py'
 
-# docker run --rm \
-#     --network="host" \
-#     --gpus all \
-#     --detach \
-#     -v $(pwd)/validator-api:/validator-api \
-#     -v $(pwd)/cache:/root/.cache \
-#     -v $(pwd)/validator-api/.checkpoints:/validator-api/.checkpoints \
-#     --env-file validator-api/.env \
-#     --entrypoint bash \
-#     -it \
-#     --name validator-api-sh \
-#     validator-api:latest
-# docker attach validator-api-sh
+docker attach validator-api

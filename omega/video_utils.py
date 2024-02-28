@@ -12,11 +12,11 @@ def seconds_to_str(seconds):
     return f"{hours:02}:{minutes:02}:{seconds:02}"
 
 
-def clip_video(video_path: str, start_time: int, end_time: int) -> Optional[BinaryIO]:
+def clip_video(video_path: str, start: int, end: int) -> Optional[BinaryIO]:
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
     (
         ffmpeg
-        .input(video_path, ss=seconds_to_str(start_time), to=seconds_to_str(end_time))
+        .input(video_path, ss=seconds_to_str(start), to=seconds_to_str(end))
         .output(temp_fileobj.name, c="copy")  # copy flag prevents decoding and re-encoding
         .overwrite_output()
         .run()
@@ -34,7 +34,7 @@ def download_video(
         "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
         "overwrites": True,
     }
-    if start and end:
+    if start is not None and end is not None:
         ydl_opts["download_ranges"] = lambda _, __: [{"start_time": start, "end_time": end}]
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
@@ -51,7 +51,7 @@ def copy_audio(video_path: str) -> BinaryIO:
     (
         ffmpeg
         .input(video_path)
-        .output(temp_audiofile.name, vn=True, acodec='copy')
+        .output(temp_audiofile.name, vn=None, acodec='copy')
         .overwrite_output()
         .run()
     )

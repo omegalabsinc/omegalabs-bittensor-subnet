@@ -57,7 +57,7 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
             for result in s.results:
                 if result.length > THIRTY_MINUTES:
                     continue
-                download_path = video_utils.download_video(result)
+                download_path = video_utils.download_video(result.video_id)
                 if download_path:
                     clip_path = None
                     try:

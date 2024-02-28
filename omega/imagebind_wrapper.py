@@ -10,7 +10,7 @@ import torch
 from omega import video_utils
 
 
-BPE_PATH = "/omega/bpe"
+BPE_PATH = "./omega/bpe/bpe_simple_vocab_16e6.txt.gz"
 
 
 class Embeddings(BaseModel):

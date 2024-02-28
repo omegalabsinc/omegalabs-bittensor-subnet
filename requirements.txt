@@ -8,4 +8,5 @@ pinecone-client==3.1.0
 huggingface-hub==0.20.3
 ulid-py==1.1.0
 yt-dlp==2023.12.30
-git+https://github.com/omegalabsinc/ImageBind.git@373ed788550998dbb6f5d7100da1b212ac58bf6b
+ffmpeg-python==0.2.0
+imagebind @ git+https://github.com/omegalabsinc/ImageBind.git@373ed788550998dbb6f5d7100da1b212ac58bf6b#egg=imagebind
