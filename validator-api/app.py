@@ -64,13 +64,10 @@ def main():
         uid = metagraph.hotkeys.index(hotkey)
 
         if not metagraph.validator_permit[uid]:
-            print("not validator", metagraph.validator_permit, uid)
-            # raise HTTPException(
-            #     status_code=status.HTTP_403_FORBIDDEN,
-            #     detail="Validator permit required",
-            # )
-        else:
-            print("successfully validator", metagraph.validator_permit, uid)
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
 
         return await score_and_upload_videos(videos, imagebind)
 

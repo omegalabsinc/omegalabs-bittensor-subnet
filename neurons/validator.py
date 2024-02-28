@@ -136,7 +136,6 @@ class Validator(BaseValidatorNeuron):
         hotkey = keypair.ss58_address
         signature = f"0x{keypair.sign(hotkey).hex()}"
         async with ClientSession() as session:
-            print(response.to_serializable_dict(input_synapse))
             async with session.post(
                 self.validation_endpoint,
                 auth=BasicAuth(hotkey, signature),
