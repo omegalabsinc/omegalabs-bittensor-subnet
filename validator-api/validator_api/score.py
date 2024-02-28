@@ -1,11 +1,7 @@
 import random
 import uuid
-import ulid
-from io import BytesIO
 from typing import List, Tuple
 
-from datasets import Dataset
-from huggingface_hub import HfApi
 from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
@@ -14,11 +10,12 @@ from omega.protocol import Videos, VideoMetadata
 from omega import video_utils
 from omega.constants import MAX_VIDEO_LENGTH
 from omega.imagebind_wrapper import ImageBind, Embeddings
+
 from validator_api import config
+from validator_api.dataset_upload import dataset_uploader
 
 
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
-HF_API = HfApi()
 DIFFERENCE_THRESHOLD = 0.05
 SIMILARITY_THRESHOLD = 1 - DIFFERENCE_THRESHOLD
 
@@ -52,7 +49,7 @@ def compute_novelty_score(embeddings: Embeddings) -> Tuple[float, List[bool]]:
     return novelty_score, is_too_similar
 
 
-def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata], batch_id: str) -> None:
+def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) -> None:
     video_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
     PINECONE_INDEX.upsert(
         vectors=[
@@ -60,7 +57,6 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata], ba
                 "id": video_uuid,
                 "values": embedding.tolist(),
                 "metadata": {
-                    "batch_id": batch_id,
                     "youtube_id": video.video_id,
                 }
             }
@@ -68,38 +64,6 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata], ba
         ],
     )
     return video_ids
-
-
-def get_data_path(batch_id: str) -> str:
-    return f"partitions/{batch_id}.parquet"
-
-
-def upload_to_hf(embeddings: Embeddings, metadata: List[VideoMetadata], batch_id: str, video_ids: List[str]) -> None:
-    data = [
-        {
-            "batch_id": batch_id,
-            "video_id": vid_uuid,
-            "youtube_id": video.video_id,
-            "description": video.description,
-            "views": video.views,
-            "start_time": video.start_time,
-            "end_time": video.end_time,
-            "video_embed": vid_emb.tolist(),
-            "audio_embed": audio_emb.tolist(),
-            "description_embed": text_emb.tolist(),
-        }
-        for vid_uuid, video, vid_emb, audio_emb, text_emb in
-        zip(video_ids, metadata, embeddings.video, embeddings.audio, embeddings.description)
-    ]
-    with BytesIO() as f:
-        dataset = Dataset.from_list(data)
-        num_bytes = dataset.to_parquet(f)
-        HF_API.upload_file(
-            path_or_fileobj=f,
-            path_in_repo=get_data_path(batch_id),
-            repo_id=config.HF_REPO,
-            repo_type=config.REPO_TYPE,
-        )
 
 
 def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
@@ -141,8 +105,6 @@ def random_check(videos: Videos, imagebind: ImageBind) -> bool:
 
 
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
-    batch_id = str(ulid.new())
-
     # Randomly check 1 video embedding
     passed_check = random_check(videos, imagebind)
     if not passed_check:
@@ -155,7 +117,7 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
     )
-    video_ids = upload_to_pinecone(embeddings, metadata, batch_id)
+    video_ids = upload_to_pinecone(embeddings, metadata)
     novelty_score, is_too_similar = compute_novelty_score(embeddings)
     embeddings = filter_embeddings(embeddings, is_too_similar)
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
@@ -172,10 +134,7 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
     # Aggregate scores
     score = (description_relevance_score + query_relevance_score + novelty_score) / 3 / videos.num_videos
 
-    # Upload to Hugging Face
-    try:
-        upload_to_hf(embeddings, metadata, batch_id, video_ids)
-    except Exception as e:
-        print(f"Error uploading to Hugging Face: {e}")
+    # Schedule upload to HuggingFace
+    dataset_uploader.add_videos(metadata, video_ids)
     
     return score

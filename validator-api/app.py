@@ -6,7 +6,6 @@ import random
 
 import bittensor
 import uvicorn
-
 from fastapi import FastAPI, HTTPException, Depends
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from starlette import status
@@ -14,8 +13,10 @@ from substrateinterface import Keypair
 
 from omega.protocol import Videos
 from omega.imagebind_wrapper import ImageBind
+
 from validator_api.score import score_and_upload_videos
 from validator_api.config import TOPICS_LIST
+from validator_api.dataset_upload import dataset_uploader
 
 
 NETWORK = os.environ["NETWORK"]
@@ -55,6 +56,10 @@ def main():
             await asyncio.sleep(90)
 
     asyncio.get_event_loop().create_task(resync_metagraph())
+
+    @app.on_event("shutdown")
+    async def shutdown_event():
+        dataset_uploader.submit()
 
     @app.post("/api/validate")
     async def validate(
