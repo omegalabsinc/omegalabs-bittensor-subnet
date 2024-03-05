@@ -49,12 +49,11 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info("load_state()")
         self.load_state()
 
-        api_root = "https://validate.api.omega.ai" if self.config.subtensor.network == "finney" else "https://dev-validate.api.omega.ai"
-        api_root = "http://localhost:8001"
+        api_root = "https://validate.api.omega.ai"
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 8
-        self.client_timeout_seconds = 300  # five minutes
+        self.client_timeout_seconds = 60  # one minute
 
     async def forward(self):
         """

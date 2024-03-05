@@ -26,12 +26,6 @@ from pydantic import BaseModel
 class VideoMetadata(BaseModel):
     """
     A model class representing YouTube video metadata.
-
-    Attributes:
-    - id: the YouTube video ID
-    - description: a detailed description of the video
-    - views: the number of views the video has received
-    - likes: the number of likes the video has received
     """
     video_id: str
     description: str

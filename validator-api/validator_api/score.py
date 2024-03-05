@@ -112,6 +112,7 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
 
     # Upload the videos to Pinecone and deduplicate
     metadata = videos.video_metadata
+    print(f"Received {len(metadata)} videos")
     embeddings = Embeddings(
         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
@@ -122,6 +123,7 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
     embeddings = filter_embeddings(embeddings, is_too_similar)
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
     video_ids = [video_id for video_id, too_similar in zip(video_ids, is_too_similar) if not too_similar]
+    print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
     # Compute relevance scores
     description_relevance_score = F.cosine_similarity(
@@ -132,6 +134,7 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
     ).sum().item()
     
     # Aggregate scores
+    print(f"Description relevance score={description_relevance_score}, Query relevance score={query_relevance_score}, Novelty score={novelty_score}")
     score = (description_relevance_score + query_relevance_score + novelty_score) / 3 / videos.num_videos
 
     # Schedule upload to HuggingFace

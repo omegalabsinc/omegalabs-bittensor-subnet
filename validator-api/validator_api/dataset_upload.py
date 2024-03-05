@@ -21,6 +21,7 @@ class DatasetUploader:
     def __init__(self):
         self.current_batch = []
         self.desired_batch_size = 1024
+        self.min_batch_size = 32
 
     def add_videos(self, metadata: List[VideoMetadata], video_ids: List[str]) -> None:
         self.current_batch.extend([
@@ -38,11 +39,16 @@ class DatasetUploader:
             for vid_uuid, video in
             zip(video_ids, metadata)
         ])
+        print(f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}")
         if len(self.current_batch) >= self.desired_batch_size:
             self.submit()
 
     def submit(self) -> None:
+        if len(self.current_batch) < self.min_batch_size:
+            print(f"Need at least {self.min_batch_size} videos to submit, but have {len(self.current_batch)}")
+            return
         data = self.current_batch[:self.desired_batch_size]
+        print(f"Uploading batch of {len(self.current_batch)} videos")
         with BytesIO() as f:
             dataset = Dataset.from_list(data)
             num_bytes = dataset.to_parquet(f)

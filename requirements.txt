@@ -9,4 +9,4 @@ huggingface-hub==0.20.3
 ulid-py==1.1.0
 yt-dlp==2023.12.30
 ffmpeg-python==0.2.0
-imagebind @ git+https://github.com/omegalabsinc/ImageBind.git@373ed788550998dbb6f5d7100da1b212ac58bf6b#egg=imagebind
+imagebind @ git+https://github.com/omegalabsinc/ImageBind.git@e2bfdec716b1c1d511d6bea806227b2b3dfcadee#egg=imagebind

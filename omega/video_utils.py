@@ -33,6 +33,8 @@ def download_video(
         "format": "worst",  # Download the worst quality
         "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
         "overwrites": True,
+        "quiet": True,
+        "noprogress": True,
     }
     if start is not None and end is not None:
         ydl_opts["download_ranges"] = lambda _, __: [{"start_time": start, "end_time": end}]

@@ -44,9 +44,11 @@ class Miner(BaseMinerNeuron):
     async def forward(
         self, synapse: omega.protocol.Videos
     ) -> omega.protocol.Videos:
+        start = time.time()
         synapse.video_metadata = search_and_embed_videos(
             synapse.query, synapse.num_videos, self.imagebind
         )
+        bt.logging.info(f"Time taken to process request: {time.time() - start} seconds")
         return synapse
 
     async def blacklist(

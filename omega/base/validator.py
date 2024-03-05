@@ -21,6 +21,7 @@ import copy
 import torch
 import asyncio
 import argparse
+import os
 import threading
 import bittensor as bt
 
@@ -62,9 +63,6 @@ class BaseValidatorNeuron(BaseNeuron):
         self.scores = torch.zeros(
             self.metagraph.n, dtype=torch.float32, device=self.device
         )
-
-        # Init sync with the network. Updates the metagraph.
-        self.sync()
 
         # Serve axon to enable external connections.
         if not self.config.neuron.axon_off:
@@ -258,7 +256,7 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug("uint_uids", uint_uids)
 
         # Set the weights on chain via our subtensor connection.
-        result = self.subtensor.set_weights(
+        result, result_msg = self.subtensor.set_weights(
             wallet=self.wallet,
             netuid=self.config.netuid,
             uids=uint_uids,
@@ -270,7 +268,7 @@ class BaseValidatorNeuron(BaseNeuron):
         if result is True:
             bt.logging.info("set_weights on chain successfully!")
         else:
-            bt.logging.error("set_weights failed")
+            bt.logging.error(f"set_weights failed with message: {result_msg}")
 
     def resync_metagraph(self):
         """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
@@ -355,6 +353,10 @@ class BaseValidatorNeuron(BaseNeuron):
     def load_state(self):
         """Loads the state of the validator from a file."""
         bt.logging.info("Loading validator state.")
+
+        if not os.path.exists(self.config.neuron.full_path + "/state.pt"):
+            bt.logging.warning("No saved state found")
+            return
 
         # Load the state of the validator from file.
         state = torch.load(self.config.neuron.full_path + "/state.pt")
