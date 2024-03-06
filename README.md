@@ -22,9 +22,8 @@ Here's the updated README file with the requested changes and additions:
   - [Miner](#miner)
   - [Validator](#validator)
 - [Roadmap](#roadmap)
-- [Installation](#installation)
-  - [Before you proceed](#before-you-proceed)
-  - [Install](#install)
+- [Running a Miner](#miner)
+- [Running a Validator](#validator)
 - [Writing your own incentive mechanism](#writing-your-own-incentive-mechanism)
 - [Writing your own subnet API](#writing-your-own-subnet-api)
 - [Contributing](#contributing)
@@ -117,57 +116,57 @@ The Bittensor Subnet 1 for Text Prompting is built using this template. See [Bit
 
 ## Installation
 
-### Before you proceed
-Before you proceed with the installation of the subnet, note the following: 
+## Running a Miner
+### Requirements
+- Python 3.8+
+- Pip
+- GPU with at least 12 GB of VRAM
+- If running on runpod, `runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04` is a good base template.
 
-- Use these instructions to run your subnet locally for your development and testing, or on the Bittensor testnet or mainnet. 
-- **IMPORTANT**: We **strongly recommend** that you first run your subnet locally and complete your development and testing before running the subnet on the Bittensor testnet. Furthermore, make sure that you next run your subnet on the Bittensor testnet before running it on the mainnet.
-- You can run your subnet either as a subnet owner, validator, or miner. 
-- **IMPORTANT:** Make sure you are aware of the minimum compute requirements for your subnet. See the [Minimum compute YAML configuration](./min_compute.yml).
-- Note that installation instructions differ based on your situation. For example, installing for local development and testing will require a few additional steps compared to installing for testnet. Similarly, installation instructions differ for a subnet owner vs a validator or a miner. 
+### Setup
+1. To start, clone the repository and `cd` to it:
+```bash
+git clone https://github.com/omegalabsinc/omegalabs-bittensor-subnet.git
+cd omegalabs-bittensor-subnet
+```
+2. Install ffmpeg. If you're on Ubuntu, just run: `apt-get -y update && apt-get install -y ffmpeg`.
+3. Install pm2 if you don't already have it: [pm2.io](https://pm2.io/docs/runtime/guide/installation/).
+4. Next, install the `omega` package: `pip install -e .`
 
-### Install
+### Run with PM2
+```bash
+pm2 start python neurons/miner.py --name omega-miner --interpreter bash -- \
+    --netuid {netuid} \
+    --wallet.name {wallet} \
+    --wallet.hotkey {hotkey} \
+    --axon.port {port}
+    --blacklist.force_validator_permit
+```
 
-- **Running locally**: Follow the step-by-step instructions described in this section: [Running Subnet Locally](./docs/running_on_staging.md).
-- **Running on Bittensor testnet**: Follow the step-by-step instructions described in this section: [Running on the Test Network](./docs/running_on_testnet.md).
-- **Running on Bittensor mainnet**: Follow the step-by-step instructions described in this section: [Running on the Main Network](./docs/running_on_mainnet.md).
+## Running a Validator
+### Requirements
+- Python 3.8+
+- Pip
+- If running on runpod, `runpod/base:0.5.1-cpu` is a good base template.
 
----
+### Setup
+1. To start, clone the repository and `cd` to it:
+```bash
+git clone https://github.com/omegalabsinc/omegalabs-bittensor-subnet.git
+cd omegalabs-bittensor-subnet
+```
+2. Install ffmpeg. If you used the runpod image recommended above, ffmpeg is already installed. Otherwise, if you're on Ubuntu, just run: `apt-get -y update && apt-get install -y ffmpeg`.
+3. Install pm2 if you don't already have it: [pm2.io](https://pm2.io/docs/runtime/guide/installation/).
+4. Next, install the `omega` package: `pip install -e .`
 
-## Writing your own incentive mechanism
-
-When you are ready to write your own incentive mechanism, update this template repository by editing the following files:
-- `template/protocol.py`: Contains the definition of the wire-protocol used by miners and validators.
-- `neurons/miner.py`: Script that defines the miner's behavior, i.e., how the miner responds to requests from validators.
-- `neurons/validator.py`: This script defines the validator's behavior, i.e., how the validator requests information from the miners and determines the scores.
-- `template/forward.py`: Contains the definition of the validator's forward pass.
-- `template/reward.py`: Contains the definition of how validators reward miner responses.
-
-In addition to the above files, you should also update the following files:
-- `README.md`: This file contains the documentation for your project. Update this file to reflect your project's documentation.
-- `CONTRIBUTING.md`: This file contains the instructions for contributing to your project. Update this file to reflect your project's contribution guidelines.
-- `template/__init__.py`: This file contains the version of your project.
-- `setup.py`: This file contains the metadata about your project. Update this file to reflect your project's metadata.
-- `docs/`: This directory contains the documentation for your project. Update this directory to reflect your project's documentation.
-
-__Note__: The `template` directory should be renamed to your project name.
-
----
-
-## Writing your own subnet API
-To leverage the abstract `SubnetsAPI` in Bittensor, you can implement a standardized interface. This interface is used to interact with the Bittensor network and can be used by a client to interact with the subnet through its exposed axons.
-
-Bittensor communication typically involves two processes:
-1. Preparing data for transit (creating and filling `synapse`s)
-2. Processing the responses received from the `axon`(s)
-
-This protocol uses a handler registry system to associate bespoke interfaces for subnets by implementing two simple abstract functions:
-- `prepare_synapse`
-- `process_responses`
-
-These can be implemented as extensions of the generic `SubnetsAPI` interface.
-
-For detailed examples and instructions on writing your own subnet API, please refer to the [Writing your own subnet API](./docs/writing_your_own_subnet_api.md) documentation.
+### Run with PM2
+```bash
+pm2 start python neurons/validator.py --name omega-validator --interpreter bash -- \
+    --netuid {netuid} \
+    --wallet.name {wallet} \
+    --wallet.hotkey {hotkey} \
+    --axon.port {port}
+```
 
 ## Contributing
 
