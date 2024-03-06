@@ -126,18 +126,27 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
     print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
     # Compute relevance scores
-    description_relevance_score = F.cosine_similarity(
+    description_relevance_scores = F.cosine_similarity(
         embeddings.video, embeddings.description
-    ).sum().item()
-    query_relevance_score = F.cosine_similarity(
+    ).tolist()
+    query_relevance_scores = F.cosine_similarity(
         embeddings.video, imagebind.embed_text([videos.query])
-    ).sum().item()
-    
+    ).tolist()
+
     # Aggregate scores
-    print(f"Description relevance score={description_relevance_score}, Query relevance score={query_relevance_score}, Novelty score={novelty_score}")
-    score = (description_relevance_score + query_relevance_score + novelty_score) / 3 / videos.num_videos
+    score = (
+        sum(description_relevance_scores) +
+        sum(query_relevance_scores) +
+        novelty_score
+    ) / 3 / videos.num_videos
 
     # Schedule upload to HuggingFace
-    dataset_uploader.add_videos(metadata, video_ids)
-    
+    dataset_uploader.add_videos(
+        metadata,
+        video_ids,
+        description_relevance_scores,
+        query_relevance_scores,
+        videos.query,
+    )
+
     return score

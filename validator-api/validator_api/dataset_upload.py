@@ -14,7 +14,7 @@ HF_API = HfApi()
 
 
 def get_data_path(batch_id: str) -> str:
-    return f"partitions/{batch_id}.parquet"
+    return f"default/train/{batch_id}.parquet"
 
 
 class DatasetUploader:
@@ -23,7 +23,11 @@ class DatasetUploader:
         self.desired_batch_size = 1024
         self.min_batch_size = 32
 
-    def add_videos(self, metadata: List[VideoMetadata], video_ids: List[str]) -> None:
+    def add_videos(
+        self, metadata: List[VideoMetadata], video_ids: List[str],
+        description_relevance_scores: List[float], query_relevance_scores: List[float],
+        query: str,
+    ) -> None:
         self.current_batch.extend([
             {
                 "video_id": vid_uuid,
@@ -35,9 +39,12 @@ class DatasetUploader:
                 "video_embed": video.video_emb,
                 "audio_embed": video.audio_emb,
                 "description_embed": video.description_emb,
+                "description_relevance_score": desc_score,
+                "query_relevance_score": query_score,
+                "query": query,
             }
-            for vid_uuid, video in
-            zip(video_ids, metadata)
+            for vid_uuid, video, desc_score, query_score
+            in zip(video_ids, metadata, description_relevance_scores, query_relevance_scores)
         ])
         print(f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}")
         if len(self.current_batch) >= self.desired_batch_size:
