@@ -66,6 +66,12 @@ def main():
         videos: Videos,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> float:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+
         uid = metagraph.hotkeys.index(hotkey)
 
         if not metagraph.validator_permit[uid]:

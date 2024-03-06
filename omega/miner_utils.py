@@ -8,7 +8,7 @@ from omega.constants import MAX_VIDEO_LENGTH
 from omega import video_utils
 
 
-THIRTY_MINUTES = 1800
+TWENTY_MINUTES = 1200
 
 
 def get_description(yt: YouTube, video_path: str) -> str:
@@ -55,9 +55,11 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
     try:
         while len(video_metas) < num_videos:
             for result in s.results:
-                if result.length > THIRTY_MINUTES:
-                    continue
-                download_path = video_utils.download_video(result.video_id)
+                download_path = video_utils.download_video(
+                    result.video_id,
+                    start=0,
+                    end=min(result.length, TWENTY_MINUTES)  # download the first 20 minutes at most
+                )
                 if download_path:
                     clip_path = None
                     try:
