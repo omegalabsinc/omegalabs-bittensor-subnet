@@ -22,8 +22,9 @@ Here's the updated README file with the requested changes and additions:
   - [Miner](#miner)
   - [Validator](#validator)
 - [Roadmap](#roadmap)
-- [Running a Miner](#running-miner)
-- [Running a Validator](#running-validator)
+- [Running Miners and Validators](#running-subnet)
+  - [Running a Miner](#running-miner)
+  - [Running a Validator](#running-validator)
 - [Writing your own incentive mechanism](#writing-your-own-incentive-mechanism)
 - [Writing your own subnet API](#writing-your-own-subnet-api)
 - [Contributing](#contributing)
@@ -114,16 +115,15 @@ The Bittensor Subnet 1 for Text Prompting is built using this template. See [Bit
 - [ ] Generalize the subnet for miners to upload videos from any data source
 - [ ] Incentivize people to record and label their own data using non-deep learning approaches
 
-## Installation
-
-## Running a Miner
-### Requirements
+## Running Miners and Validators
+### Running a Miner
+#### Requirements
 - Python 3.8+
 - Pip
 - GPU with at least 12 GB of VRAM
 - If running on runpod, `runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04` is a good base template.
 
-### Setup
+#### Setup
 1. To start, clone the repository and `cd` to it:
 ```bash
 git clone https://github.com/omegalabsinc/omegalabs-bittensor-subnet.git
@@ -133,7 +133,7 @@ cd omegalabs-bittensor-subnet
 3. Install pm2 if you don't already have it: [pm2.io](https://pm2.io/docs/runtime/guide/installation/).
 4. Next, install the `omega` package: `pip install -e .`
 
-### Run with PM2
+#### Run with PM2
 ```bash
 pm2 start python neurons/miner.py --name omega-miner --interpreter bash -- \
     --netuid {netuid} \
@@ -143,13 +143,13 @@ pm2 start python neurons/miner.py --name omega-miner --interpreter bash -- \
     --blacklist.force_validator_permit
 ```
 
-## Running a Validator
-### Requirements
+### Running a Validator
+#### Requirements
 - Python 3.8+
 - Pip
 - If running on runpod, `runpod/base:0.5.1-cpu` is a good base template.
 
-### Setup
+#### Setup
 1. To start, clone the repository and `cd` to it:
 ```bash
 git clone https://github.com/omegalabsinc/omegalabs-bittensor-subnet.git
@@ -159,7 +159,7 @@ cd omegalabs-bittensor-subnet
 3. Install pm2 if you don't already have it: [pm2.io](https://pm2.io/docs/runtime/guide/installation/).
 4. Next, install the `omega` package: `pip install -e .`
 
-### Run with PM2
+#### Run with PM2
 ```bash
 pm2 start python neurons/validator.py --name omega-validator --interpreter bash -- \
     --netuid {netuid} \
