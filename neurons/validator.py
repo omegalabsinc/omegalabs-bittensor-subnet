@@ -49,7 +49,11 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info("load_state()")
         self.load_state()
 
-        api_root = "https://validator-api.omega-labs.ai"
+        api_root = (
+            "https://dev-validator-api.omega-labs.ai"
+            if self.config.subtensor.network == "test" else
+            "https://validator-api.omega-labs.ai"
+        )
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 8
