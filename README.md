@@ -1,16 +1,13 @@
-Here's the updated README file with the requested changes and additions:
-
 <div align="center">
 
-# Ω OMEGA Labs Bittensor Subnet: Revolutionizing AGI with the World's Largest Decentralized Multimodal Dataset Ω <!-- omit in toc -->
-[![Discord Chat](https://img.shields.io/discord/308323056592486420.svg)](https://discord.gg/opentensor)
+# OMEGA Labs Bittensor Subnet: The World's Largest Decentralized AGI Multimodal Dataset <!-- omit in toc -->
+[![OMEGA](/docs/galacticlandscape.png)](https://omegatron.ai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
 ---
 
-## The Incentivized Internet <!-- omit in toc -->
+## Be, and it becomes ... <!-- omit in toc -->
 
-[Discord](https://discord.gg/opentensor) • [Network](https://taostats.io/) • [Research](https://bittensor.com/whitepaper)
 </div>
 
 ---
@@ -31,25 +28,12 @@ Here's the updated README file with the requested changes and additions:
 - [License](#license)
 
 ---
-## Quickstarter template
-
-This template contains all the required installation instructions, scripts, files, and functions for:
-- Building Bittensor subnets
-- Creating custom incentive mechanisms and running these mechanisms on the subnets
-
-In order to simplify the building of subnets, this template abstracts away the complexity of the underlying blockchain and other boilerplate code. While the default behavior of the template is sufficient for a simple subnet, you should customize the template to meet your specific requirements.
-
----
-
 ## Introduction
 
 Welcome to the OMEGA Labs Bittensor subnet, a groundbreaking initiative that aims to create the world's largest decentralized multimodal dataset for accelerating Artificial General Intelligence (AGI) research and development. Our mission is to democratize access to a vast and diverse dataset that captures the landscape of human knowledge and creation, empowering researchers and developers to push the boundaries of AGI.
 
 By harnessing the power of the Bittensor network and a global community of miners and validators, we are building a dataset that surpasses the scale and diversity of existing resources. With over 1 million hours of footage and 30 million+ 2-minute video clips, the OMEGA Labs dataset will enable the development of powerful AGI models and transform various industries.
 
-### Example
-
-The Bittensor Subnet 1 for Text Prompting is built using this template. See [Bittensor Text-Prompting](https://github.com/opentensor/text-prompting) for how to configure the files and how to add monitoring and telemetry and support multiple miner types. Also, see this Subnet 1 in action on the [Taostats](https://taostats.io/subnets/netuid-1/) explorer.
 
 ## Key Features
 
