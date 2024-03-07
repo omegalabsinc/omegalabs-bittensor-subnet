@@ -1,12 +1,12 @@
 <div align="center">
 
 # OMEGA Labs Bittensor Subnet: The World's Largest Decentralized AGI Multimodal Dataset <!-- omit in toc -->
-[![OMEGA](/docs/galacticlandscape.png)](https://omega-labs.ai)
+[![OMEGA](/docs/galacticlandscape.png)](https://omegatron.ai)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
 ---
 
-## The Incentivized Internet <!-- omit in toc -->
+## Be, and it becomes ... <!-- omit in toc -->
 
 </div>
 
