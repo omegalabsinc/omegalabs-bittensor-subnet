@@ -135,7 +135,7 @@ cd omegalabs-bittensor-subnet
 
 #### Run with PM2
 ```bash
-pm2 start python neurons/miner.py --name omega-miner --interpreter bash -- \
+pm2 start neurons/miner.py --name omega-miner -- \
     --netuid {netuid} \
     --wallet.name {wallet} \
     --wallet.hotkey {hotkey} \
@@ -161,7 +161,7 @@ cd omegalabs-bittensor-subnet
 
 #### Run with PM2
 ```bash
-pm2 start python neurons/validator.py --name omega-validator --interpreter bash -- \
+pm2 start neurons/validator.py --name omega-validator -- \
     --netuid {netuid} \
     --wallet.name {wallet} \
     --wallet.hotkey {hotkey} \
