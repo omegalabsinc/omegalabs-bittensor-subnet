@@ -1,5 +1,6 @@
 from io import BytesIO
 from typing import List
+from datetime import datetime
 
 from datasets import Dataset
 from huggingface_hub import HfApi
@@ -28,6 +29,7 @@ class DatasetUploader:
         description_relevance_scores: List[float], query_relevance_scores: List[float],
         query: str,
     ) -> None:
+        curr_time = datetime.now()
         self.current_batch.extend([
             {
                 "video_id": vid_uuid,
@@ -42,6 +44,7 @@ class DatasetUploader:
                 "description_relevance_score": desc_score,
                 "query_relevance_score": query_score,
                 "query": query,
+                "submitted_at": int(curr_time.timestamp()),
             }
             for vid_uuid, video, desc_score, query_score
             in zip(video_ids, metadata, description_relevance_scores, query_relevance_scores)

@@ -138,6 +138,13 @@ class Miner(BaseMinerNeuron):
         )
         return prirority
 
+    def save_state(self):
+        """
+        We define this function to avoid printing out the log message in the BaseNeuron class
+        that says `save_state() not implemented`.
+        """
+        pass
+
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
