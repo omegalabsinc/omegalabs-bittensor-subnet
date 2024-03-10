@@ -1,3 +1,4 @@
+import os
 import tempfile
 from typing import Optional, BinaryIO
 
@@ -28,6 +29,14 @@ def download_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None
 ) -> Optional[BinaryIO]:
     video_url = f"https://www.youtube.com/watch?v={video_id}"
+
+    # function to skip downloading if it's a live video (yt_dlp doesn't respect the 20 minute
+    # download limit for live videos), and we don't want to hang on an hour long stream
+    def skip_live(info_dict):
+        if info_dict.get('is_live'):
+            return 'Skipping live video'
+        return None
+    
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
     ydl_opts = {
         "format": "worst",  # Download the worst quality
@@ -35,12 +44,22 @@ def download_video(
         "overwrites": True,
         "quiet": True,
         "noprogress": True,
+        "match_filter": skip_live,
     }
+
     if start is not None and end is not None:
         ydl_opts["download_ranges"] = lambda _, __: [{"start_time": start, "end_time": end}]
+
     try:
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
+
+        # Check if the file is empty (download failed)
+        if os.stat(temp_fileobj.name).st_size == 0:
+            print(f"Error downloading video: {temp_fileobj.name} is empty")
+            temp_fileobj.close()
+            return None
+
         return temp_fileobj
     except Exception as e:
         print(f"Error downloading video: {e}")

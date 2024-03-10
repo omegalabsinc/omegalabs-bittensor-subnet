@@ -162,3 +162,5 @@ cython_debug/
 testing/
 cache/
 .checkpoints/
+
+*.env

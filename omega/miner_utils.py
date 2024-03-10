@@ -1,3 +1,4 @@
+import time
 from typing import List, Tuple
 
 from pytube import Search, YouTube
@@ -55,12 +56,14 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
     try:
         while len(video_metas) < num_videos:
             for result in s.results:
+                start = time.time()
                 download_path = video_utils.download_video(
                     result.video_id,
                     start=0,
                     end=min(result.length, TWENTY_MINUTES)  # download the first 20 minutes at most
                 )
                 if download_path:
+                    print(f"Downloaded video {result.video_id} ({min(result.length, TWENTY_MINUTES)}) in {time.time() - start} seconds")
                     clip_path = None
                     try:
                         start, end = get_relevant_timestamps(query, result, download_path)

@@ -69,6 +69,7 @@ class DatasetUploader:
                     repo_id=config.HF_REPO,
                     repo_type=config.REPO_TYPE,
                 )
+                print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
         self.current_batch = self.current_batch[self.desired_batch_size:]
