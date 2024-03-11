@@ -115,7 +115,7 @@ def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> bool:
     return True
 
 
-async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
+async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int) -> float:
     # Randomly check 1 video embedding
     metadata = metadata_check(videos.video_metadata)
     passed_check = random_check(metadata, imagebind)
@@ -159,5 +159,5 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
         query_relevance_scores,
         videos.query,
     )
-
+    print(f"Returning score={score} for validator={uid}")
     return score
