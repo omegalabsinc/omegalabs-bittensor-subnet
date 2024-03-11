@@ -8,7 +8,7 @@ import torch.nn.functional as F
 
 from omega.protocol import Videos, VideoMetadata
 from omega import video_utils
-from omega.constants import MAX_VIDEO_LENGTH
+from omega.constants import MAX_VIDEO_LENGTH, MIN_VIDEO_LENGTH
 from omega.imagebind_wrapper import ImageBind, Embeddings
 
 from validator_api import config
@@ -76,17 +76,28 @@ def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Emb
 
 
 def is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
-    return F.cosine_similarity(emb_1, torch.tensor(emb_2, device=emb_1.device)) > SIMILARITY_THRESHOLD
+    return F.cosine_similarity(
+        emb_1,
+        torch.tensor(emb_2, device=emb_1.device).unsqueeze(0)
+    ) > SIMILARITY_THRESHOLD
 
 
-def random_check(videos: Videos, imagebind: ImageBind) -> bool:
+def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
+    return [
+        video_metadata for video_metadata in metadata
+        if (
+            video_metadata.end_time - video_metadata.start_time <= MAX_VIDEO_LENGTH and
+            video_metadata.end_time - video_metadata.start_time >= MIN_VIDEO_LENGTH
+        )
+    ]
+
+
+def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> bool:
     random_video = None
-    metadata = [v for v in videos.video_metadata]  # list shallow copy
-    while random_video is None and len(metadata) > 0:
-        idx = random.randint(0, len(metadata) - 1)
-        random_video_metadata = metadata.pop(idx)
-        if random_video_metadata.end_time - random_video_metadata.start_time > MAX_VIDEO_LENGTH:
-            return False
+    metadata_copy = [v for v in metadata]  # list shallow copy
+    while random_video is None and len(metadata_copy) > 0:
+        idx = random.randint(0, len(metadata_copy) - 1)
+        random_video_metadata = metadata_copy.pop(idx)
         random_video = video_utils.download_video(
             random_video_metadata.video_id,
             random_video_metadata.start_time,
@@ -106,12 +117,12 @@ def random_check(videos: Videos, imagebind: ImageBind) -> bool:
 
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     # Randomly check 1 video embedding
-    passed_check = random_check(videos, imagebind)
+    metadata = metadata_check(videos.video_metadata)
+    passed_check = random_check(metadata, imagebind)
     if not passed_check:
         return -1.0
 
     # Upload the videos to Pinecone and deduplicate
-    metadata = videos.video_metadata
     print(f"Received {len(metadata)} videos")
     embeddings = Embeddings(
         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
