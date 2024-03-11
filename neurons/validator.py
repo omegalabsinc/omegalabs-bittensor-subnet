@@ -50,9 +50,9 @@ class Validator(BaseValidatorNeuron):
         self.load_state()
 
         api_root = (
-            "https://dev-validator-api.omega-labs.ai"
+            "https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
-            "https://validator-api.omega-labs.ai"
+            "https://validator.api.omega-labs.ai"
         )
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
