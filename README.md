@@ -11,9 +11,7 @@
 </div>
 
 ---
-- [Quickstarter template](#quickstarter-template)
 - [Introduction](#introduction)
-  - [Example](#example)
 - [Key Features](#key-features)
 - [Miner and Validator Functionality](#miner-and-validator-functionality)
   - [Miner](#miner)
@@ -22,8 +20,6 @@
 - [Running Miners and Validators](#running-miners-and-validators)
   - [Running a Miner](#running-a-miner)
   - [Running a Validator](#running-a-validator)
-- [Writing your own incentive mechanism](#writing-your-own-incentive-mechanism)
-- [Writing your own subnet API](#writing-your-own-subnet-api)
 - [Contributing](#contributing)
 - [License](#license)
 
