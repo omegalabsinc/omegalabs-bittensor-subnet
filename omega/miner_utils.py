@@ -3,7 +3,6 @@ import time
 from typing import List, Tuple
 
 from pytube import Search, YouTube
-from openai import OpenAI
 
 from omega.protocol import VideoMetadata
 from omega.imagebind_wrapper import ImageBind
@@ -13,6 +12,7 @@ from omega import video_utils
 
 FIVE_MINUTES = 300
 if os.getenv("OPENAI_API_KEY"):
+    from openai import OpenAI
     OPENAI_CLIENT = OpenAI()
 else:
     OPENAI_CLIENT = None
