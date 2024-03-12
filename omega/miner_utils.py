@@ -2,6 +2,7 @@ import time
 from typing import List, Tuple
 
 from pytube import Search, YouTube
+from openai import OpenAI
 
 from omega.protocol import VideoMetadata
 from omega.imagebind_wrapper import ImageBind
@@ -9,7 +10,8 @@ from omega.constants import MAX_VIDEO_LENGTH
 from omega import video_utils
 
 
-TWENTY_MINUTES = 1200
+FIVE_MINUTES = 300
+OPENAI_CLIENT = OpenAI()
 
 
 def get_description(yt: YouTube, video_path: str) -> str:
@@ -40,6 +42,28 @@ def get_relevant_timestamps(query: str, yt: YouTube, video_path: str) -> Tuple[i
     return start_time, end_time
 
 
+def augment_query_with_openai(query: str) -> str:
+    try:
+        response = OPENAI_CLIENT.chat.completions.create(
+            model="gpt-4-turbo-preview",
+            messages=[
+                {
+                    "role": "user",
+                    "content": f"Take the given query `{query}` and augment it to be more detailed. For example, add specific names, types, embellishments, richness. Do not make it longer than 12 words."
+                }
+            ],
+            temperature=0.9,
+            max_tokens=64,
+            top_p=1
+        )
+        new_query = response.choices[0].message.content.strip("\"").strip("'")
+        print(f"Augmented query '{query}' to '{new_query}'")
+        return new_query
+    except Exception as e:
+        print(f"OpenAI error: {e}")
+        return query
+
+
 def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -> List[VideoMetadata]:
     """
     Search YouTube for videos matching the given query and return a list of VideoMetadata objects.
@@ -52,6 +76,7 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
         List[VideoMetadata]: A list of VideoMetadata objects representing the search results.
     """
     video_metas = []
+    query = augment_query_with_openai(query)
     s = Search(query)
     try:
         while len(video_metas) < num_videos:
@@ -60,10 +85,10 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
                 download_path = video_utils.download_video(
                     result.video_id,
                     start=0,
-                    end=min(result.length, TWENTY_MINUTES)  # download the first 20 minutes at most
+                    end=min(result.length, FIVE_MINUTES)  # download the first 20 minutes at most
                 )
                 if download_path:
-                    print(f"Downloaded video {result.video_id} ({min(result.length, TWENTY_MINUTES)}) in {time.time() - start} seconds")
+                    print(f"Downloaded video {result.video_id} ({min(result.length, FIVE_MINUTES)}) in {time.time() - start} seconds")
                     clip_path = None
                     try:
                         start, end = get_relevant_timestamps(query, result, download_path)
