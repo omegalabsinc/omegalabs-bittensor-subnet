@@ -1,3 +1,4 @@
+import os
 import time
 from typing import List, Tuple
 
@@ -11,7 +12,10 @@ from omega import video_utils
 
 
 FIVE_MINUTES = 300
-OPENAI_CLIENT = OpenAI()
+if os.getenv("OPENAI_API_KEY"):
+    OPENAI_CLIENT = OpenAI()
+else:
+    OPENAI_CLIENT = None
 
 
 def get_description(yt: YouTube, video_path: str) -> str:
@@ -43,6 +47,8 @@ def get_relevant_timestamps(query: str, yt: YouTube, video_path: str) -> Tuple[i
 
 
 def augment_query_with_openai(query: str) -> str:
+    if OPENAI_CLIENT is None:
+        return query
     try:
         response = OPENAI_CLIENT.chat.completions.create(
             model="gpt-4-turbo-preview",
