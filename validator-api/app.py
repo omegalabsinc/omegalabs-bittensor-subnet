@@ -80,7 +80,7 @@ def main():
                 detail="Validator permit required",
             )
 
-        return await score_and_upload_videos(videos, imagebind)
+        return await score_and_upload_videos(videos, imagebind, uid)
 
     @app.get("/api/topic")
     async def get_topic() -> str:
