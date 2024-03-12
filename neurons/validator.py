@@ -57,7 +57,7 @@ class Validator(BaseValidatorNeuron):
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 8
-        self.client_timeout_seconds = 60  # one minute
+        self.client_timeout_seconds = 90  # 1.5 minutes
 
     async def forward(self):
         """
@@ -83,12 +83,17 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info("No miners available")
             return
 
-        async with ClientSession() as session:
-            async with session.get(self.topics_endpoint) as response:
-                response.raise_for_status()
-                query = await response.json()
+        try:
+            async with ClientSession() as session:
+                async with session.get(self.topics_endpoint) as response:
+                    response.raise_for_status()
+                    query = await response.json()
+        except Exception as e:
+            bt.logging.error(f"Error in get_topics: {e}")
+            return
 
         # The dendrite client queries the network.
+        bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
         input_synapse = Videos(query=query, num_videos=self.num_videos)
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
@@ -111,6 +116,7 @@ class Validator(BaseValidatorNeuron):
             finished_responses.append(response)
 
         if len(working_miner_uids) == 0:
+            bt.logging.info("No miner responses available")
             return
 
         # Log the results for monitoring purposes.
