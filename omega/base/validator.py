@@ -233,7 +233,7 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug("raw_weight_uids", self.metagraph.uids.to("cpu"))
         if raw_weights.shape[0] > self.metagraph.uids.shape[0]:
             bt.logging.warning("More raw_weights than metagraph uids, truncating raw_weights.")
-            raw_weights = raw_weights[:self.metagraph.uids.shape[0]]
+        raw_weights = raw_weights[:self.metagraph.uids.shape[0]]
         # Process the raw weights to final_weights via subtensor limitations.
         (
             processed_weight_uids,
