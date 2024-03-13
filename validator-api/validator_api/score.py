@@ -20,15 +20,6 @@ DIFFERENCE_THRESHOLD = 0.05
 SIMILARITY_THRESHOLD = 1 - DIFFERENCE_THRESHOLD
 
 
-def compute_description_relevance_score(embeddings: Embeddings) -> float:
-    return F.cosine_similarity(embeddings.video, embeddings.description).sum().item()
-
-
-def compute_query_relevance_score(embeddings: Embeddings, query: str, imagebind: ImageBind) -> float:
-    query_emb = imagebind.embed_text([query])
-    return F.cosine_similarity(embeddings.video, query_emb).sum().item()
-
-
 def compute_novelty_score(embeddings: Embeddings) -> Tuple[float, List[bool]]:
     """
     Take the top 2nd match from the Pinecone index (cause the 1st match is itself) and then
