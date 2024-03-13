@@ -60,7 +60,7 @@ class Miner(BaseMinerNeuron):
         synapse.video_metadata = search_and_embed_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
-        bt.logging.info(f"SCRAPING COMPLETED: Scraped {synapse.num_videos} videos in {time.time() - start} seconds.")
+        bt.logging.info(f"–––––– SCRAPING COMPLETED: Scraped {synapse.num_videos} videos in {time.time() - start} seconds.")
         return synapse
 
     async def blacklist(

@@ -2,8 +2,12 @@ import os
 import tempfile
 from typing import Optional, BinaryIO
 
+import bittensor as bt
 import ffmpeg
-import yt_dlp
+from pydantic import BaseModel
+from yt_dlp import YoutubeDL
+
+from omega.constants import FIVE_MINUTES
 
 
 def seconds_to_str(seconds):
@@ -25,17 +29,58 @@ def clip_video(video_path: str, start: int, end: int) -> Optional[BinaryIO]:
     return temp_fileobj
 
 
+def skip_live(info_dict):
+    """
+    function to skip downloading if it's a live video (yt_dlp doesn't respect the 20 minute 
+    download limit for live videos), and we don't want to hang on an hour long stream
+    """
+    if info_dict.get("is_live"):
+        return "Skipping live video"
+    return None
+
+
+class YoutubeResult(BaseModel):
+    video_id: str
+    title: str
+    description: Optional[str]
+    length: float
+    views: int
+
+
+def search_videos(query, max_results=8):
+    videos = []
+    ydl_opts = {
+        "format": "worst",
+        "dumpjson": True,
+        "extract_flat": True,
+        "quiet": True,
+        "simulate": True,
+        "match_filter": skip_live,
+    }
+    with YoutubeDL(ydl_opts) as ydl:
+        try:
+            search_query = f"ytsearch{max_results}:{query}"
+            result = ydl.extract_info(search_query, download=False)
+            if "entries" in result and result["entries"]:
+                videos = [
+                    YoutubeResult(
+                        video_id=entry["id"],
+                        title=entry["title"],
+                        description=entry.get("description"),
+                        length=(entry.get("duration") if entry.get("duration") else FIVE_MINUTES),
+                        views=entry["view_count"],
+                    ) for entry in result["entries"]
+                ]
+        except Exception as e:
+            bt.logging.warning(f"Error searching for videos: {e}")
+            return []
+    return videos
+
+
 def download_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None
 ) -> Optional[BinaryIO]:
     video_url = f"https://www.youtube.com/watch?v={video_id}"
-
-    # function to skip downloading if it's a live video (yt_dlp doesn't respect the 20 minute
-    # download limit for live videos), and we don't want to hang on an hour long stream
-    def skip_live(info_dict):
-        if info_dict.get('is_live'):
-            return 'Skipping live video'
-        return None
     
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
     ydl_opts = {
@@ -51,7 +96,7 @@ def download_video(
         ydl_opts["download_ranges"] = lambda _, __: [{"start_time": start, "end_time": end}]
 
     try:
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+        with YoutubeDL(ydl_opts) as ydl:
             ydl.download([video_url])
 
         # Check if the file is empty (download failed)
