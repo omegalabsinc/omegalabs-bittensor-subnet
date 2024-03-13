@@ -160,7 +160,4 @@ class Miner(BaseMinerNeuron):
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
-    with Miner() as miner:
-        while True:
-            bt.logging.info("Miner running...", time.time())
-            time.sleep(5)
+    Miner().run()
