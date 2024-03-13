@@ -235,18 +235,22 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.warning("More raw_weights than metagraph uids, truncating raw_weights.")
         raw_weights = raw_weights[:self.metagraph.uids.shape[0]]
         # Process the raw weights to final_weights via subtensor limitations.
-        (
-            processed_weight_uids,
-            processed_weights,
-        ) = bt.utils.weight_utils.process_weights_for_netuid(
-            uids=self.metagraph.uids.to("cpu"),
-            weights=raw_weights.to("cpu"),
-            netuid=self.config.netuid,
-            subtensor=self.subtensor,
-            metagraph=self.metagraph,
-        )
-        bt.logging.debug("processed_weights", processed_weights)
-        bt.logging.debug("processed_weight_uids", processed_weight_uids)
+        try:
+            (
+                processed_weight_uids,
+                processed_weights,
+            ) = bt.utils.weight_utils.process_weights_for_netuid(
+                uids=self.metagraph.uids.to("cpu"),
+                weights=raw_weights.to("cpu"),
+                netuid=self.config.netuid,
+                subtensor=self.subtensor,
+                metagraph=self.metagraph,
+            )
+            bt.logging.debug("processed_weights", processed_weights)
+            bt.logging.debug("processed_weight_uids", processed_weight_uids)
+        except Exception as e:
+            bt.logging.error(f"Failed to process weights with exception: {e}, skipping set_weights this time")
+            return
 
         # Convert to uint16 weights and uids.
         (
