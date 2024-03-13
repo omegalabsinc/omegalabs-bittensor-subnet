@@ -21,6 +21,7 @@ import torch
 import argparse
 import bittensor as bt
 from loguru import logger
+from enum import Enum
 
 
 def check_config(cls, config: "bt.Config"):
@@ -120,6 +121,12 @@ def add_args(cls, parser):
     )
 
 
+class QueryAugment(Enum):
+    NoAugment = "NoAugment"
+    LocalLLMAugment = "LocalLLMAugment"
+    OpenAIAugment = "OpenAIAugment"
+
+
 def add_miner_args(cls, parser):
     """Add miner specific arguments to the parser."""
 
@@ -128,6 +135,14 @@ def add_miner_args(cls, parser):
         type=str,
         help="Trials for this neuron go in neuron.root / (wallet_cold - wallet_hot) / neuron.name. ",
         default="miner",
+    )
+
+    parser.add_argument(
+        "--neuron.query_augment",
+        type=str,
+        help="The query augmentation class to use.",
+        choices=[e.value for e in QueryAugment],
+        default=QueryAugment.LocalLLMAugment.value,
     )
 
     parser.add_argument(

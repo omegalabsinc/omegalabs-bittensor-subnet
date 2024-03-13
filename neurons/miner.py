@@ -26,6 +26,8 @@ import omega
 from omega.base.miner import BaseMinerNeuron
 from omega.imagebind_wrapper import ImageBind
 from omega.miner_utils import search_and_embed_videos
+from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
+from omega.utils.config import QueryAugment
 
 
 class Miner(BaseMinerNeuron):
@@ -39,16 +41,26 @@ class Miner(BaseMinerNeuron):
 
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
+        query_augment_type = QueryAugment(self.config.neuron.query_augment)
+        if query_augment_type == QueryAugment.NoAugment:
+            self.augment = NoAugment(device=self.config.neuron.device)
+        elif query_augment_type == QueryAugment.LocalLLMAugment:
+            self.augment = LocalLLMAugment(device=self.config.neuron.device)
+        elif query_augment_type == QueryAugment.OpenAIAugment:
+            self.augment = OpenAIAugment(device=self.config.neuron.device)
+        else:
+            raise ValueError("Invalid query augment")
         self.imagebind = ImageBind()
 
     async def forward(
         self, synapse: omega.protocol.Videos
     ) -> omega.protocol.Videos:
+        bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         start = time.time()
         synapse.video_metadata = search_and_embed_videos(
-            synapse.query, synapse.num_videos, self.imagebind
+            self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
-        bt.logging.info(f"Time taken to process request: {time.time() - start} seconds")
+        bt.logging.info(f"SCRAPING COMPLETED: Scraped {synapse.num_videos} videos in {time.time() - start} seconds.")
         return synapse
 
     async def blacklist(
