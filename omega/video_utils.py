@@ -77,6 +77,13 @@ def search_videos(query, max_results=8):
     return videos
 
 
+def get_video_duration(filename: str) -> int:
+    metadata = ffmpeg.probe(filename)
+    video_stream = next((stream for stream in metadata['streams'] if stream['codec_type'] == 'video'), None)
+    duration = int(float(video_stream['duration']))
+    return duration
+
+
 def download_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None
 ) -> Optional[BinaryIO]:
