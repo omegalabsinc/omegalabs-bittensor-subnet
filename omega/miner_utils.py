@@ -54,12 +54,9 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
     Returns:
         List[VideoMetadata]: A list of VideoMetadata objects representing the search results.
     """
-    video_metas = []
     # fetch more videos than we need
     results = video_utils.search_videos(query, max_results=int(num_videos * 1.5))
-    if results == []:
-        bt.logging.error(f"Error searching for videos: {e}")
-        return video_metas
+    video_metas = []
     try:
         # take the first N that we need
         for result in results:
@@ -96,4 +93,5 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
 
     except Exception as e:
         bt.logging.error(f"Error searching for videos: {e}")
-        return video_metas
+
+    return video_metas

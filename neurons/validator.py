@@ -19,7 +19,6 @@
 
 from aiohttp import ClientSession, BasicAuth
 import asyncio
-import time
 from typing import List
 
 # Bittensor
@@ -29,6 +28,7 @@ import torch
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
 from omega.protocol import Videos
+from omega.constants import VALIDATOR_TIMEOUT
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -57,7 +57,7 @@ class Validator(BaseValidatorNeuron):
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 8
-        self.client_timeout_seconds = 90  # 1.5 minutes
+        self.client_timeout_seconds = VALIDATOR_TIMEOUT
 
     async def forward(self):
         """

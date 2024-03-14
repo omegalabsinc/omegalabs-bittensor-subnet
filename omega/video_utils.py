@@ -43,7 +43,7 @@ class YoutubeResult(BaseModel):
     video_id: str
     title: str
     description: Optional[str]
-    length: float
+    length: int
     views: int
 
 
@@ -67,7 +67,7 @@ def search_videos(query, max_results=8):
                         video_id=entry["id"],
                         title=entry["title"],
                         description=entry.get("description"),
-                        length=(entry.get("duration") if entry.get("duration") else FIVE_MINUTES),
+                        length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
                         views=entry["view_count"],
                     ) for entry in result["entries"]
                 ]
