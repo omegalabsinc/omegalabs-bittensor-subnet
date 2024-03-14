@@ -67,10 +67,10 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
                 end=min(result.length, FIVE_MINUTES)  # download the first 5 minutes at most
             )
             if download_path:
-                bt.logging.info(f"Downloaded video {result.video_id} ({min(result.length, FIVE_MINUTES)}) in {time.time() - start} seconds")
                 clip_path = None
                 try:
                     result.length = video_utils.get_video_duration(download_path.name)  # correct the length
+                    bt.logging.info(f"Downloaded video {result.video_id} ({min(result.length, FIVE_MINUTES)}) in {time.time() - start} seconds")
                     start, end = get_relevant_timestamps(query, result, download_path)
                     description = get_description(result, download_path)
                     clip_path = video_utils.clip_video(download_path.name, start, end)
