@@ -111,6 +111,7 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int
     metadata = metadata_check(videos.video_metadata)
     passed_check = random_check(metadata, imagebind)
     if not passed_check:
+        print(f"Returning score={-1} for validator={uid}")
         return -1.0
 
     # Upload the videos to Pinecone and deduplicate
