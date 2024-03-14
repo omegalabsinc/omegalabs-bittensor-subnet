@@ -100,8 +100,8 @@ By harnessing the power of the Bittensor network and a global community of miner
 #### Requirements
 - Python 3.8+
 - Pip
-- GPU with at least 12 GB of VRAM
-- If running on runpod, `runpod/pytorch:2.1.0-py3.10-cuda11.8.0-devel-ubuntu22.04` is a good base template.
+- GPU with at least 12 GB of VRAM or 24 GB if you'd like to run a local LLM
+- If running on runpod, `runpod/pytorch:2.2.1-py3.10-cuda12.1.1-devel-ubuntu22.04` is a good base template.
 
 #### Setup
 1. To start, clone the repository and `cd` to it:

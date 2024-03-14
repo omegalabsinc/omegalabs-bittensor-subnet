@@ -28,6 +28,7 @@ from omega.imagebind_wrapper import ImageBind
 from omega.miner_utils import search_and_embed_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
+from omega.constants import VALIDATOR_TIMEOUT
 
 
 class Miner(BaseMinerNeuron):
@@ -60,7 +61,11 @@ class Miner(BaseMinerNeuron):
         synapse.video_metadata = search_and_embed_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
-        bt.logging.info(f"SCRAPING COMPLETED: Scraped {synapse.num_videos} videos in {time.time() - start} seconds.")
+        time_elapsed = time.time() - start
+        if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:
+            bt.logging.info(f"–––––– SCRAPING SUCCEEDED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
+        else:
+            bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
         return synapse
 
     async def blacklist(
