@@ -163,4 +163,4 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int
         videos.query,
     )
     print(f"Returning score={score} for validator={uid}")
-    return score
+    return max(score, 0.005)
