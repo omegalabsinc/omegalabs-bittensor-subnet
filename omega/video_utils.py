@@ -85,7 +85,7 @@ def get_video_duration(filename: str) -> int:
 
 
 def download_video(
-    video_id: str, start: Optional[int]=None, end: Optional[int]=None
+    video_id: str, start: Optional[int]=None, end: Optional[int]=None, proxy: Optional[str]=None
 ) -> Optional[BinaryIO]:
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
@@ -101,6 +101,9 @@ def download_video(
 
     if start is not None and end is not None:
         ydl_opts["download_ranges"] = lambda _, __: [{"start_time": start, "end_time": end}]
+
+    if proxy is not None:
+        ydl_opts["proxy"] = proxy
 
     try:
         with YoutubeDL(ydl_opts) as ydl:

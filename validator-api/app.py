@@ -14,7 +14,7 @@ from substrateinterface import Keypair
 from omega.protocol import Videos
 from omega.imagebind_wrapper import ImageBind
 
-from validator_api.score import score_and_upload_videos
+from validator_api.score import score_and_upload_videos, get_num_unique_videos
 from validator_api.config import TOPICS_LIST
 from validator_api.dataset_upload import dataset_uploader
 
@@ -81,6 +81,13 @@ def main():
             )
 
         return await score_and_upload_videos(videos, imagebind, uid)
+
+    @app.get("/api/count_unique")
+    async def count_unique(
+        videos: Videos,
+    ) -> str:
+        nunique = await get_num_unique_videos(videos)
+        return f"{nunique} out of {len(videos.video_metadata)} submitted videos are unique"
 
     @app.get("/api/topic")
     async def get_topic() -> str:

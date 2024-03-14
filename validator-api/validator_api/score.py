@@ -106,6 +106,17 @@ def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> bool:
     return True
 
 
+async def get_num_unique_videos(videos: Videos) -> int:
+    metadata = videos.video_metadata
+    embeddings = Embeddings(
+        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]),
+        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
+        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
+    )
+    novelty_score, is_too_similar = compute_novelty_score(embeddings)
+    return sum([not is_sim for is_sim in is_too_similar])
+
+
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int) -> float:
     # Randomly check 1 video embedding
     metadata = metadata_check(videos.video_metadata)
