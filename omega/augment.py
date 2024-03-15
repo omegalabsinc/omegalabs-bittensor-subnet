@@ -17,6 +17,7 @@ class AbstractAugment:
         try:
             new_query = self.augment_query(query)
             bt.logging.info(f"Augmented query: '{query}' -> '{new_query}'")
+            return new_query
         except Exception as e:
             print(f"Error augmenting query: {e}")
             return query
