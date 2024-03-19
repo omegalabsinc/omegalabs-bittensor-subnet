@@ -123,7 +123,7 @@ def download_video(
         return temp_fileobj
     except Exception as e:
         temp_fileobj.close()
-        if "Your IP is likely being blocked by Youtube" in e:
+        if "Your IP is likely being blocked by Youtube" in str(e):
             raise IPBlockedException(e)
         print(f"Error downloading video: {e}")
         return None
