@@ -1,4 +1,5 @@
-from typing import List, BinaryIO
+import asyncio
+from typing import List, BinaryIO, Dict
 
 from imagebind import data
 from imagebind.models import imagebind_model
@@ -31,6 +32,11 @@ def load_and_transform_text(text, device):
     return tokens
 
 
+def run_async(func, *args, **kwargs):
+    loop = asyncio.get_event_loop()
+    return loop.run_in_executor(None, func, *args, **kwargs)
+
+
 class ImageBind:
     def __init__(self):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
@@ -38,8 +44,7 @@ class ImageBind:
         self.imagebind.eval()
         self.imagebind.to(self.device)
 
-    @torch.no_grad()
-    def embed(self, descriptions: List[str], video_files: List[BinaryIO]) -> Embeddings:
+    def get_inputs(self, descriptions: List[str], video_files: List[BinaryIO]) -> dict:
         audio_files = [video_utils.copy_audio(video_file.name) for video_file in video_files]
         audio_filepaths = [audio_file.name for audio_file in audio_files]
         video_filepaths = [video_file.name for video_file in video_files]
@@ -51,18 +56,36 @@ class ImageBind:
                 ModalityType.VISION: video_data,
                 ModalityType.AUDIO: audio_data,
             }
-            embeddings = self.imagebind(inputs)
-            return Embeddings(
-                video=embeddings[ModalityType.VISION],
-                audio=embeddings[ModalityType.AUDIO],
-                description=embeddings[ModalityType.TEXT]
-            )
+            return inputs
         finally:
             for audio_file in audio_files:
                 audio_file.close()
+
+    @torch.no_grad()
+    def embed(self, descriptions: List[str], video_files: List[BinaryIO]) -> Embeddings:
+        inputs = self.get_inputs(descriptions, video_files)
+        embeddings = self.imagebind(inputs)
+        return Embeddings(
+            video=embeddings[ModalityType.VISION],
+            audio=embeddings[ModalityType.AUDIO],
+            description=embeddings[ModalityType.TEXT]
+        )
 
     @torch.no_grad()
     def embed_text(self, texts: List[str]) -> torch.Tensor:
         return self.imagebind({
             ModalityType.TEXT: load_and_transform_text(texts, self.device),
         })[ModalityType.TEXT]
+
+    @torch.no_grad()
+    async def embed_async(self, descriptions: List[str], video_files: List[BinaryIO]) -> Embeddings:
+        inputs = self.get_inputs(descriptions, video_files)  # cannot be async
+        embeddings = await run_async(self.imagebind, inputs)
+        return Embeddings(
+            video=embeddings[ModalityType.VISION],
+            audio=embeddings[ModalityType.AUDIO],
+            description=embeddings[ModalityType.TEXT]
+        )
+
+    async def embed_text_async(self, texts: List[str]) -> torch.Tensor:
+        return await run_async(self.embed_text, texts)

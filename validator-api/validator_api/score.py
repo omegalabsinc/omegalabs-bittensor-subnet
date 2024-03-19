@@ -1,3 +1,4 @@
+import asyncio
 import random
 import uuid
 from typing import List, Tuple
@@ -9,7 +10,7 @@ import torch.nn.functional as F
 from omega.protocol import Videos, VideoMetadata
 from omega import video_utils
 from omega.constants import MAX_VIDEO_LENGTH, MIN_VIDEO_LENGTH
-from omega.imagebind_wrapper import ImageBind, Embeddings
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
@@ -18,6 +19,8 @@ from validator_api.dataset_upload import dataset_uploader
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
 DIFFERENCE_THRESHOLD = 0.05
 SIMILARITY_THRESHOLD = 1 - DIFFERENCE_THRESHOLD
+GPU_SEMAPHORE = asyncio.Semaphore(1)
+DOWNLOAD_SEMAPHORE = asyncio.Semaphore(1)
 
 
 def compute_novelty_score(embeddings: Embeddings) -> Tuple[float, List[bool]]:
@@ -83,27 +86,38 @@ def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
     ]
 
 
-def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> bool:
+async def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> bool:
     random_video = None
     metadata_copy = [v for v in metadata]  # list shallow copy
     while random_video is None and len(metadata_copy) > 0:
         idx = random.randint(0, len(metadata_copy) - 1)
-        random_video_metadata = metadata_copy.pop(idx)
-        random_video = video_utils.download_video(
-            random_video_metadata.video_id,
-            random_video_metadata.start_time,
-            random_video_metadata.end_time,
-        )
+        random_metadata = metadata_copy.pop(idx)
+        try:
+            async with DOWNLOAD_SEMAPHORE:
+                random_video = await run_async(
+                    video_utils.download_video,
+                    random_metadata.video_id,
+                    random_metadata.start_time,
+                    random_metadata.end_time,
+                )
+        except video_utils.IPBlockedException:
+            # IP is blocked, cannot download video, check description only
+            async with GPU_SEMAPHORE:
+                desc_embeddings = await imagebind.embed_text_async([random_metadata.description])
+            return is_similar(desc_embeddings, random_metadata.description_emb)
+
+    # IP not blocked, but video download failed regardless, bad video submitted
     if random_video is None:
         return False
-    embeddings = imagebind.embed([random_video_metadata.description], [random_video])
-    if not (
-        is_similar(embeddings.video, random_video_metadata.video_emb) and
-        is_similar(embeddings.audio, random_video_metadata.audio_emb) and
-        is_similar(embeddings.description, random_video_metadata.description_emb)
-    ):
-        return False
-    return True
+    
+    # Video downloaded, check all embeddings
+    async with GPU_SEMAPHORE:
+        embeddings = await imagebind.embed_async([random_metadata.description], [random_video])
+    return (
+        is_similar(embeddings.video, random_metadata.video_emb) and
+        is_similar(embeddings.audio, random_metadata.audio_emb) and
+        is_similar(embeddings.description, random_metadata.description_emb)
+    )
 
 
 async def get_num_unique_videos(videos: Videos) -> int:
@@ -120,7 +134,7 @@ async def get_num_unique_videos(videos: Videos) -> int:
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int) -> float:
     # Randomly check 1 video embedding
     metadata = metadata_check(videos.video_metadata)
-    passed_check = random_check(metadata, imagebind)
+    passed_check = await random_check(metadata, imagebind)
     if not passed_check:
         print(f"Returning score={-1} for validator={uid}")
         return -1.0
@@ -143,8 +157,10 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int
     description_relevance_scores = F.cosine_similarity(
         embeddings.video, embeddings.description
     ).tolist()
+    async with GPU_SEMAPHORE:
+        query_emb = await imagebind.embed_text_async([videos.query])
     query_relevance_scores = F.cosine_similarity(
-        embeddings.video, imagebind.embed_text([videos.query])
+        embeddings.video, query_emb
     ).tolist()
 
     # Aggregate scores
