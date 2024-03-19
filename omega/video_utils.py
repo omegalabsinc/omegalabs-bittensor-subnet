@@ -68,7 +68,7 @@ def search_videos(query, max_results=8):
                         title=entry["title"],
                         description=entry.get("description"),
                         length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
-                        views=entry["view_count"],
+                        views=(entry.get("view_count") if entry.get("view_count") else 0),
                     ) for entry in result["entries"]
                 ]
         except Exception as e:
@@ -82,6 +82,11 @@ def get_video_duration(filename: str) -> int:
     video_stream = next((stream for stream in metadata['streams'] if stream['codec_type'] == 'video'), None)
     duration = int(float(video_stream['duration']))
     return duration
+
+
+class IPBlockedException(Exception):
+    def __init__(self, message: str):
+        super().__init__(message)
 
 
 def download_video(
@@ -117,8 +122,10 @@ def download_video(
 
         return temp_fileobj
     except Exception as e:
-        print(f"Error downloading video: {e}")
         temp_fileobj.close()
+        if "Your IP is likely being blocked by Youtube" in str(e):
+            raise IPBlockedException(e)
+        print(f"Error downloading video: {e}")
         return None
 
 
