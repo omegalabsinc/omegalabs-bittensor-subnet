@@ -1,5 +1,6 @@
 import asyncio
-from typing import List, BinaryIO, Dict
+import functools
+from typing import List, BinaryIO
 
 from imagebind import data
 from imagebind.models import imagebind_model
@@ -34,7 +35,7 @@ def load_and_transform_text(text, device):
 
 def run_async(func, *args, **kwargs):
     loop = asyncio.get_event_loop()
-    return loop.run_in_executor(None, func, *args, **kwargs)
+    return loop.run_in_executor(None, functools.partial(func, *args, **kwargs))
 
 
 class ImageBind:

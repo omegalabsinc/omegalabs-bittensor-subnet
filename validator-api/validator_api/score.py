@@ -86,6 +86,10 @@ def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
     ]
 
 
+def get_proxy_url() -> str:
+    return random.choice(config.PROXY_LIST)
+
+
 async def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> bool:
     random_video = None
     metadata_copy = [v for v in metadata]  # list shallow copy
@@ -99,6 +103,7 @@ async def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> b
                     random_metadata.video_id,
                     random_metadata.start_time,
                     random_metadata.end_time,
+                    proxy=get_proxy_url(),
                 )
         except video_utils.IPBlockedException:
             # IP is blocked, cannot download video, check description only
