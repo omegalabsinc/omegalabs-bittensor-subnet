@@ -107,6 +107,7 @@ async def random_check(metadata: List[VideoMetadata], imagebind: ImageBind) -> b
                 )
         except video_utils.IPBlockedException:
             # IP is blocked, cannot download video, check description only
+            print("WARNING: IP is blocked, cannot download video, checking description only")
             async with GPU_SEMAPHORE:
                 desc_embeddings = await imagebind.embed_text_async([random_metadata.description])
             return is_similar(desc_embeddings, random_metadata.description_emb)
