@@ -1,6 +1,7 @@
 import asyncio
 import random
 import uuid
+import time
 from typing import List, Tuple
 
 from pinecone import Pinecone
@@ -138,6 +139,8 @@ async def get_num_unique_videos(videos: Videos) -> int:
 
 
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int) -> float:
+    start_time = time.time()
+
     # Randomly check 1 video embedding
     metadata = metadata_check(videos.video_metadata)
     passed_check = await random_check(metadata, imagebind)
@@ -185,5 +188,5 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind, uid: int
         videos.query,
     )
     score = max(score, 0.005)
-    print(f"Returning score={score} for validator={uid}")
+    print(f"Returning score={score} for validator={uid} in {time.time() - start_time:.2f}s")
     return score
