@@ -82,7 +82,7 @@ def main():
             )
 
         start_time = time.time()
-        score = await score_and_upload_videos(videos, imagebind, uid)
+        score = await score_and_upload_videos(videos, imagebind)
         print(f"Returning score={score} for validator={uid} in {time.time() - start_time:.2f}s")
         return score
 
