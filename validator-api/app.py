@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import datetime
+import time
 from typing import Annotated, List
 import random
 
@@ -14,8 +15,8 @@ from substrateinterface import Keypair
 from omega.protocol import Videos
 from omega.imagebind_wrapper import ImageBind
 
-from validator_api.score import score_and_upload_videos, get_num_unique_videos
-from validator_api.config import TOPICS_LIST
+from validator_api import score
+from validator_api.config import TOPICS_LIST, IS_PROD
 from validator_api.dataset_upload import dataset_uploader
 
 
@@ -80,14 +81,25 @@ def main():
                 detail="Validator permit required",
             )
 
-        return await score_and_upload_videos(videos, imagebind, uid)
+        start_time = time.time()
+        computed_score = await score.score_and_upload_videos(videos, imagebind)
+        print(f"Returning score={computed_score} for validator={uid} in {time.time() - start_time:.2f}s")
+        return computed_score
 
-    @app.get("/api/count_unique")
-    async def count_unique(
-        videos: Videos,
-    ) -> str:
-        nunique = await get_num_unique_videos(videos)
-        return f"{nunique} out of {len(videos.video_metadata)} submitted videos are unique"
+    if not IS_PROD:
+        @app.get("/api/count_unique")
+        async def count_unique(
+            videos: Videos,
+        ) -> str:
+            nunique = await score.get_num_unique_videos(videos)
+            return f"{nunique} out of {len(videos.video_metadata)} submitted videos are unique"
+
+        @app.get("/api/check_score")
+        async def check_score(
+            videos: Videos,
+        ) -> dict:
+            detailed_score = await score.score_videos_for_testing(videos, imagebind)
+            return detailed_score
 
     @app.get("/api/topic")
     async def get_topic() -> str:
