@@ -82,9 +82,9 @@ def main():
             )
 
         start_time = time.time()
-        score = await score.score_and_upload_videos(videos, imagebind)
-        print(f"Returning score={score} for validator={uid} in {time.time() - start_time:.2f}s")
-        return score
+        computed_score = await score.score_and_upload_videos(videos, imagebind)
+        print(f"Returning score={computed_score} for validator={uid} in {time.time() - start_time:.2f}s")
+        return computed_score
 
     if not IS_PROD:
         @app.get("/api/count_unique")
