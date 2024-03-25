@@ -19,14 +19,12 @@ RUN rm /usr/bin/python3 && \
 WORKDIR /app/
 
 # Install python requirements
-RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel
-COPY ./omega ./omega
-COPY ./setup.py ./setup.py
 COPY ./requirements.txt ./requirements.txt
-COPY ./README.md ./README.md
-RUN python -m pip install -e . --no-cache-dir
+RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel
+RUN python -m ensurepip && python -m pip install -r requirements.txt
 
 COPY . .
+RUN python -m pip install -e . --no-cache-dir
 
 ENTRYPOINT bash
 # Run the miner launch command like this inside the container:

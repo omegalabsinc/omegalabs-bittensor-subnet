@@ -21,6 +21,7 @@ DIFFERENCE_THRESHOLD = 0.05
 SIMILARITY_THRESHOLD = 1 - DIFFERENCE_THRESHOLD
 GPU_SEMAPHORE = asyncio.Semaphore(1)
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
+VIDEO_DOWNLOAD_TIMEOUT = 10
 
 
 def compute_novelty_score(embeddings: Embeddings, already_uploaded: bool) -> Tuple[float, List[bool]]:
@@ -100,17 +101,19 @@ async def get_random_video(metadata: List[VideoMetadata]) -> Optional[Tuple[Vide
         random_metadata = metadata_copy.pop(idx)
         try:
             async with DOWNLOAD_SEMAPHORE:
-                random_video = await run_async(
+                random_video = await asyncio.wait_for(run_async(
                     video_utils.download_video,
                     random_metadata.video_id,
                     random_metadata.start_time,
                     random_metadata.end_time,
                     proxy=get_proxy_url(),
-                )
+                ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
         except video_utils.IPBlockedException:
             # IP is blocked, cannot download video, check description only
             print("WARNING: IP is blocked, cannot download video, checking description only")
             return random_metadata, None
+        except asyncio.TimeoutError:
+            continue
 
     # IP not blocked, but video download failed regardless, bad video submitted
     if random_video is None:
