@@ -1,6 +1,7 @@
 import asyncio
 import os
 from datetime import datetime
+import time
 from typing import Annotated, List
 import random
 
@@ -80,7 +81,10 @@ def main():
                 detail="Validator permit required",
             )
 
-        return await score_and_upload_videos(videos, imagebind, uid)
+        start_time = time.time()
+        score = await score_and_upload_videos(videos, imagebind, uid)
+        print(f"Returning score={score} for validator={uid} in {time.time() - start_time:.2f}s")
+        return score
 
     @app.get("/api/count_unique")
     async def count_unique(
