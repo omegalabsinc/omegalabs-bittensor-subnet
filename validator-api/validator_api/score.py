@@ -48,18 +48,21 @@ def compute_novelty_score(embeddings: Embeddings, already_uploaded: bool) -> Tup
 
 def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) -> None:
     video_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
-    PINECONE_INDEX.upsert(
-        vectors=[
-            {
-                "id": video_uuid,
-                "values": embedding.tolist(),
-                "metadata": {
-                    "youtube_id": video.video_id,
+    try:
+        PINECONE_INDEX.upsert(
+            vectors=[
+                {
+                    "id": video_uuid,
+                    "values": embedding.tolist(),
+                    "metadata": {
+                        "youtube_id": video.video_id,
+                    }
                 }
-            }
-            for video_uuid, video, embedding in zip(video_ids, metadata, embeddings.video)
-        ],
-    )
+                for video_uuid, video, embedding in zip(video_ids, metadata, embeddings.video)
+            ],
+        )
+    except Exception as e:
+        print(f"Failed to upload to Pinecone: {e}")
     return video_ids
 
 
@@ -194,14 +197,17 @@ async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> floa
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     # Randomly check 1 video embedding
     metadata = metadata_check(videos.video_metadata)
-    random_meta_and_vid = await get_random_video(metadata)
-    if random_meta_and_vid is None:
-        return -0.4
+    check_video = config.CHECK_PROBABILITY > random.random()
+    if check_video:
+        random_meta_and_vid = await get_random_video(metadata)
+        if random_meta_and_vid is None:
+            return -0.4
 
     async with GPU_SEMAPHORE:
-        passed_check = await random_check(random_meta_and_vid, imagebind)
-        if not passed_check:
-            return -1.0
+        if check_video:
+            passed_check = await random_check(random_meta_and_vid, imagebind)
+            if not passed_check:
+                return -1.0
         query_emb = await imagebind.embed_text_async([videos.query])
 
     # Upload the videos to Pinecone and deduplicate
