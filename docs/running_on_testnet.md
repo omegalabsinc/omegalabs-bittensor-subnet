@@ -201,7 +201,7 @@ miner    default  1      True   0.00000  0.00000  0.00000    0.00000    0.00000 
 Run the subnet miner:
 
 ```bash
-python neurons/miner.py --netuid 1 --subtensor.network test --wallet.name miner --wallet.hotkey default --logging.debug
+python neurons/miner.py --netuid 96 --subtensor.network test --wallet.name miner --wallet.hotkey default --logging.debug
 ```
 
 You will see the below terminal output:
