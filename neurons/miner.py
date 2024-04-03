@@ -58,8 +58,12 @@ class Miner(BaseMinerNeuron):
     ) -> omega.protocol.Videos:
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         start = time.time()
+        number_videos = synapse.num_videos
+        if number_videos > 8:
+            number_videos = 8
+        bt.logging.info(f"Refine scraping request: {number_videos} videos for query '{synapse.query}'")
         synapse.video_metadata = search_and_embed_videos(
-            self.augment(synapse.query), synapse.num_videos, self.imagebind
+            self.augment(synapse.query), number_videos, self.imagebind
         )
         time_elapsed = time.time() - start
         if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:

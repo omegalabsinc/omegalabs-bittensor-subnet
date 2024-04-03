@@ -9,11 +9,14 @@ from omega.imagebind_wrapper import ImageBind
 from omega.constants import MAX_VIDEO_LENGTH, FIVE_MINUTES
 from omega import video_utils
 import concurrent.futures
-import moviepy.editor as mp
-from transformers import GPT2LMHeadModel, GPT2Tokenizer
-tokenizer = GPT2Tokenizer.from_pretrained("gpt2")
-model = GPT2LMHeadModel.from_pretrained("gpt2")
+import cv2
+import os
 
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
+import pytesseract
+from sklearn.feature_extraction.text import TfidfVectorizer
+import numpy as np
 if os.getenv("OPENAI_API_KEY"):
     from openai import OpenAI
 
@@ -136,6 +139,13 @@ def process_video(result, query: str, imagebind: ImageBind):
                 start, end = get_relevant_timestamps(query, result, download_path)
                 description = get_description(result, download_path)
                 clip_path = video_utils.clip_video(download_path.name, start, end)
+
+                try:
+                    description_alternative = generate_video_description(download_path)
+                    bt.logging.info(f"description {description_alternative})")
+                finally:
+                    pass
+
                 embeddings = imagebind.embed([description], [clip_path])
                 return VideoMetadata(
                     video_id=result.video_id,
@@ -156,3 +166,86 @@ def process_video(result, query: str, imagebind: ImageBind):
     except Exception as e:
         bt.logging.error(f"Error processing video {result.video_id}: {e}")
         return None
+
+model = "gpt-4-32k"
+def describe_frame(frame):
+    response = OPENAI_CLIENT.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": frame,
+            }
+        ],
+        model=model,
+        temperature=0.7,
+        max_tokens=100
+    )
+    description = response.choices[0].message.content.strip()
+    return description
+
+def frame_to_text(frame):
+    gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    text = pytesseract.image_to_string(gray)
+    return text
+
+def generate_video_description(video_path):
+    # Initialize variables for accumulating descriptions
+    video_descriptions = []
+
+    # Initialize ChatGPT
+
+    # Load the video
+    cap = cv2.VideoCapture(video_path)
+
+    # Process each frame and generate descriptions
+    while cap.isOpened():
+        ret, frame = cap.read()
+        if not ret:
+            break
+
+        # Convert the frame to text (You may need to preprocess/resize the frame)
+        frame_text = frame_to_text(frame)
+
+        # Generate description using ChatGPT
+        description = describe_frame(frame_text)
+
+        # Accumulate descriptions
+        video_descriptions.append(description)
+
+    # Release the VideoCapture
+    cap.release()
+
+    # Combine descriptions into a single document
+    all_descriptions = ' '.join(video_descriptions)
+
+    # Compute TF-IDF scores
+    tfidf_vectorizer = TfidfVectorizer()
+    tfidf_matrix = tfidf_vectorizer.fit_transform([all_descriptions])
+
+    # Get feature names
+    feature_names = tfidf_vectorizer.get_feature_names_out()
+
+    # Summarize based on TF-IDF scores
+    top_indices = np.argsort(tfidf_matrix.toarray())[0][-10:][::-1]  # Select top 10 terms
+    top_terms = [feature_names[idx] for idx in top_indices]
+
+    # Generate description based on top terms
+    prompt = "Describe the most relevant and information-rich aspects of the video: \n" + ', '.join(top_terms)
+    response = OPENAI_CLIENT.chat.completions.create(
+        messages=[
+            {
+                "role": "user",
+                "content": prompt,
+            }
+        ],
+        model=model,
+        temperature=0.7,
+        max_tokens=100
+    )
+    video_description = response.choices[0].message.content.strip()
+
+    return video_description
+
+
+
+
