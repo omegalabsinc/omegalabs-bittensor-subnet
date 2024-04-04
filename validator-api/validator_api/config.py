@@ -20,3 +20,4 @@ TOPICS_LIST = json.loads(os.environ["TOPICS_LIST"])
 PROXY_LIST = parse_proxies(json.loads(os.environ["PROXY_LIST"]))
 IS_PROD = os.environ.get("IS_PROD", "false").lower() == "true"
 CHECK_PROBABILITY = float(os.environ.get("CHECK_PROBABILITY", 0.1))
+UPLOAD_BATCH_SIZE = int(os.environ.get("UPLOAD_BATCH_SIZE", 1024))

@@ -21,7 +21,7 @@ def get_data_path(batch_id: str) -> str:
 class DatasetUploader:
     def __init__(self):
         self.current_batch = []
-        self.desired_batch_size = 1024
+        self.desired_batch_size = config.UPLOAD_BATCH_SIZE
         self.min_batch_size = 32
 
     def add_videos(
