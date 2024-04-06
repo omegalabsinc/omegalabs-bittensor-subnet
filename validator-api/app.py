@@ -40,7 +40,7 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
     )
 
 
-def main():
+async def main():
     app = FastAPI()
 
     subtensor = bittensor.subtensor(network=NETWORK)
@@ -55,8 +55,6 @@ def main():
             metagraph.sync(subtensor=subtensor)
 
             await asyncio.sleep(90)
-
-    asyncio.get_event_loop().create_task(resync_metagraph())
 
     @app.on_event("shutdown")
     async def shutdown_event():
@@ -113,8 +111,11 @@ def main():
     def healthcheck():
         return datetime.utcnow()
 
-    uvicorn.run(app, host="0.0.0.0", port=8001)
+    await asyncio.gather(
+        resync_metagraph(),
+        asyncio.to_thread(uvicorn.run, app, host="0.0.0.0", port=8001)
+    )
 
 
 if __name__ == "__main__":
-    main()
+    asyncio.run(main())
