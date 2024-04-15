@@ -33,6 +33,8 @@ from omega.constants import VALIDATOR_TIMEOUT
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
 
+NO_RESPONSE_PENALTY = -0.005
+
 
 class Validator(BaseValidatorNeuron):
     """
@@ -95,15 +97,15 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
         input_synapse = Videos(query=query, num_videos=self.num_videos)
+        axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
-            axons=[self.metagraph.axons[uid] for uid in miner_uids],
+            axons=axons,
             synapse=input_synapse,
             deserialize=False,
             timeout=self.client_timeout_seconds,
         )
 
-        axons = [self.metagraph.axons[uid] for uid in miner_uids]
         working_miner_uids = []
         finished_responses = []
 
@@ -132,6 +134,8 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info(f"Scored responses: {rewards}")
         # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
         self.update_scores(rewards, working_miner_uids)
+        bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
+        self.update_scores(NO_RESPONSE_PENALTY, bad_miner_uids)
 
     async def reward(self, input_synapse: Videos, response: Videos) -> float:
         """
