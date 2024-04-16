@@ -20,10 +20,13 @@
 from aiohttp import ClientSession, BasicAuth
 import asyncio
 from typing import List
+import datetime as dt
+import os
 
 # Bittensor
 import bittensor as bt
 import torch
+import wandb
 
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
@@ -51,6 +54,14 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info("load_state()")
         self.load_state()
 
+        if not self.config.wandb.off:
+            if os.getenv("WANDB_API_KEY"):
+                self.new_wandb_run()
+            else:
+                raise Exception("WANDB_API_KEY not found. Set it with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.of, but it is strongly recommended to run with W&B enabled.")
+        else:
+            bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
+
         api_root = (
             "https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
@@ -60,6 +71,30 @@ class Validator(BaseValidatorNeuron):
         self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT
+
+    def new_wandb_run(self):
+        # Shoutout SN13 for the wandb snippet!
+        """Creates a new wandb run to save information to."""
+        # Create a unique run id for this run.
+        now = dt.datetime.now()
+        self.wandb_run_start = now
+        run_id = now.strftime("%Y-%m-%d_%H-%M-%S")
+        name = "validator-" + str(self.uid) + "-" + run_id
+        self.wandb_run = wandb.init(
+            name=name,
+            project="omega-sn24-validator-logs",
+            entity="omega-labs",
+            config={
+                "uid": self.uid,
+                "hotkey": self.wallet.hotkey.ss58_address,
+                "run_name": run_id,
+                "type": "validator",
+            },
+            allow_val_change=True,
+            anonymous="allow",
+        )
+
+        bt.logging.debug(f"Started a new wandb run: {name}")
 
     async def forward(self):
         """
@@ -135,7 +170,14 @@ class Validator(BaseValidatorNeuron):
         # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
         self.update_scores(rewards, working_miner_uids)
         bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
-        self.update_scores(NO_RESPONSE_PENALTY, bad_miner_uids)
+        penalty_tensor = torch.FloatTensor([NO_RESPONSE_PENALTY] * len(bad_miner_uids)).to(self.device)
+        self.update_scores(penalty_tensor, bad_miner_uids)
+
+        for reward, miner_uid in zip(rewards, working_miner_uids):
+            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+        
+        for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
+            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
 
     async def reward(self, input_synapse: Videos, response: Videos) -> float:
         """
