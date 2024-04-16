@@ -49,7 +49,7 @@ async def main():
     async def resync_metagraph():
         while True:
             """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
-            bittensor.logging.info("resync_metagraph()")
+            print("resync_metagraph()")
 
             # Sync the metagraph.
             metagraph.sync(subtensor=subtensor)
