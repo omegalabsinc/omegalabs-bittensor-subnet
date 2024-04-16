@@ -24,20 +24,30 @@ DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
 VIDEO_DOWNLOAD_TIMEOUT = 10
 
 
-def compute_novelty_score(embeddings: Embeddings, already_uploaded: bool) -> Tuple[float, List[bool]]:
+async def query_pinecone(vector: List[float], top_k: int, select_idx: int) -> float:
+    response = await run_async(
+        PINECONE_INDEX.query,
+        vector=vector,
+        top_k=top_k,
+    )
+    return 1 - response["matches"][select_idx]["score"]
+
+
+async def compute_novelty_score(embeddings: Embeddings, already_uploaded: bool) -> Tuple[float, List[bool]]:
     """
     Take the top 2nd match from the Pinecone index (cause the 1st match is itself) and then
     take the complement of the score to be the novelty score.
     """
     top_k = 2 if already_uploaded else 1
     select_idx = 1 if already_uploaded else 0
-    novelty_scores = [
-        1 - PINECONE_INDEX.query(
+    novelty_scores = await asyncio.gather(*[
+        query_pinecone(
             vector=embedding.tolist(),
             top_k=top_k,
-        )["matches"][select_idx]["score"]
+            select_idx=select_idx,
+        )
         for embedding in embeddings.video
-    ]
+    ])
     is_too_similar = [score < DIFFERENCE_THRESHOLD for score in novelty_scores]
     novelty_score = sum([
         score for score, is_too_similar
@@ -148,7 +158,7 @@ async def get_num_unique_videos(videos: Videos) -> int:
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
     )
-    novelty_score, is_too_similar = compute_novelty_score(embeddings, already_uploaded=False)
+    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=False)
     return sum([not is_sim for is_sim in is_too_similar])
 
 
@@ -164,7 +174,7 @@ async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> floa
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
     )
-    novelty_score, is_too_similar = compute_novelty_score(embeddings, already_uploaded=False)
+    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=False)
     embeddings = filter_embeddings(embeddings, is_too_similar)
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
 
@@ -217,8 +227,8 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
     )
-    video_ids = upload_to_pinecone(embeddings, metadata)
-    novelty_score, is_too_similar = compute_novelty_score(embeddings, already_uploaded=True)
+    video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
+    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=True)
     embeddings = filter_embeddings(embeddings, is_too_similar)
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
     video_ids = [video_id for video_id, too_similar in zip(video_ids, is_too_similar) if not too_similar]
