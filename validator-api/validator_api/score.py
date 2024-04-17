@@ -22,6 +22,7 @@ SIMILARITY_THRESHOLD = 1 - DIFFERENCE_THRESHOLD
 GPU_SEMAPHORE = asyncio.Semaphore(1)
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
 VIDEO_DOWNLOAD_TIMEOUT = 10
+MIN_SCORE = 0.005
 
 
 async def query_pinecone(vector: List[float], top_k: int, select_idx: int) -> float:
@@ -207,6 +208,10 @@ async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> floa
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     # Randomly check 1 video embedding
     metadata = metadata_check(videos.video_metadata)
+
+    if len(metadata) == 0:
+        return MIN_SCORE
+
     check_video = config.CHECK_PROBABILITY > random.random()
     if check_video:
         random_meta_and_vid = await get_random_video(metadata)
@@ -257,6 +262,6 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
         query_relevance_scores,
         videos.query,
     )
-    score = max(score, 0.005)
+    score = max(score, MIN_SCORE)
 
     return score
