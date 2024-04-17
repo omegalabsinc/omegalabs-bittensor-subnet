@@ -31,7 +31,7 @@ import wandb
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
 from omega.protocol import Videos
-from omega.constants import VALIDATOR_TIMEOUT
+from omega.constants import VALIDATOR_TIMEOUT, VALIDATOR_TIMEOUT_MARGIN
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -70,7 +70,7 @@ class Validator(BaseValidatorNeuron):
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.num_videos = 8
-        self.client_timeout_seconds = VALIDATOR_TIMEOUT
+        self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
     def new_wandb_run(self):
         # Shoutout SN13 for the wandb snippet!
