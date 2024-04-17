@@ -145,7 +145,7 @@ class Validator(BaseValidatorNeuron):
         finished_responses = []
 
         for response in responses:
-            if not response.video_metadata or not response.axon or not response.axon.hotkey:
+            if response.video_metadata is None or not response.axon or not response.axon.hotkey:
                 continue
 
             uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
