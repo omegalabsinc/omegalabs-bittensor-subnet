@@ -36,7 +36,7 @@ from omega.constants import VALIDATOR_TIMEOUT, VALIDATOR_TIMEOUT_MARGIN
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
 
-NO_RESPONSE_PENALTY = -0.005
+NO_RESPONSE_PENALTY = 0.005
 
 
 class Validator(BaseValidatorNeuron):
