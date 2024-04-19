@@ -141,7 +141,7 @@ cd omegalabs-bittensor-subnet
 
 #### Run auto-updating validator with PM2 (recommended)
 ```bash
-pm2 start neurons/auto_updating_validator.sh --name omega-validator -- \
+pm2 start auto_updating_validator.sh --name omega-validator -- \
     --netuid {netuid} \
     --wallet.name {wallet} \
     --wallet.hotkey {hotkey} \
