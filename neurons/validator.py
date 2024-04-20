@@ -161,19 +161,27 @@ class Validator(BaseValidatorNeuron):
 
         # Adjust the scores based on responses from miners.
         try:
-            rewards = (await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)).to(self.device)
+            rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
         except Exception as e:
             bt.logging.error(f"Error in get_rewards: {e}")
             return
 
-        bt.logging.info(f"Scored responses: {rewards}")
-        # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
-        self.update_scores(rewards, working_miner_uids)
+        # give reward to all miners who responded and had a non-null reward
+        rewards = []
+        reward_uids = []
+        for r, r_uid in zip(rewards_list, working_miner_uids):
+            if r is not None:
+                rewards.append(r)
+                reward_uids.append(r_uid)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        self.update_scores(rewards, reward_uids)
+        
+        # give min reward to miners who didn't respond
         bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
         penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
         self.update_scores(penalty_tensor, bad_miner_uids)
 
-        for reward, miner_uid in zip(rewards, working_miner_uids):
+        for reward, miner_uid in zip(rewards, reward_uids):
             bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
         
         for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
@@ -190,15 +198,19 @@ class Validator(BaseValidatorNeuron):
         keypair = self.dendrite.keypair
         hotkey = keypair.ss58_address
         signature = f"0x{keypair.sign(hotkey).hex()}"
-        async with ClientSession() as session:
-            async with session.post(
-                self.validation_endpoint,
-                auth=BasicAuth(hotkey, signature),
-                json=response.to_serializable_dict(input_synapse),
-            ) as response:
-                response.raise_for_status()
-                score = await response.json()
-        return score
+        try:
+            async with ClientSession() as session:
+                async with session.post(
+                    self.validation_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=response.to_serializable_dict(input_synapse),
+                ) as response:
+                    response.raise_for_status()
+                    score = await response.json()
+            return score
+        except Exception as e:
+            bt.logging.debug(f"Error in reward: {e}")
+            return None
 
     async def get_rewards(
         self,
