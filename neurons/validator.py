@@ -228,7 +228,7 @@ class Validator(BaseValidatorNeuron):
             )
             for response in responses
         ])
-        return torch.FloatTensor(rewards).to(self.device)
+        return rewards
 
 
 # The main function parses the configuration and runs the validator.
