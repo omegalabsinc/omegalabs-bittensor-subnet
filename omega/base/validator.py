@@ -131,7 +131,7 @@ class BaseValidatorNeuron(BaseNeuron):
 
     def should_restart(self) -> bool:
         # Check if enough time has elapsed since the last update check, if not assume we are up to date.
-        if (datetime.now() - self.last_update_check).seconds > self.update_check_interval:
+        if (datetime.now() - self.last_update_check).seconds < self.update_check_interval:
             return False
         
         self.last_update_check = datetime.now()
