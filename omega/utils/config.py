@@ -244,10 +244,10 @@ def add_validator_args(cls, parser):
     )
 
     parser.add_argument(
-        "--wandb.entity",
-        type=str,
-        help="The name of the project where you are sending the new run.",
-        default="opentensor-dev",
+        "--neuron.auto_update",
+        action="store_true",
+        help="Quits the validator if it is out of date.",
+        default=False,
     )
 
 

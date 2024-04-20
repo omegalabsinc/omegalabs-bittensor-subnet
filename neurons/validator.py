@@ -36,7 +36,7 @@ from omega.constants import VALIDATOR_TIMEOUT, VALIDATOR_TIMEOUT_MARGIN
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
 
-NO_RESPONSE_PENALTY = -0.005
+NO_RESPONSE_MINIMUM = 0.005
 
 
 class Validator(BaseValidatorNeuron):
@@ -170,7 +170,7 @@ class Validator(BaseValidatorNeuron):
         # Update the scores based on the rewards. You may want to define your own update_scores function for custom behavior.
         self.update_scores(rewards, working_miner_uids)
         bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
-        penalty_tensor = torch.FloatTensor([NO_RESPONSE_PENALTY] * len(bad_miner_uids)).to(self.device)
+        penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
         self.update_scores(penalty_tensor, bad_miner_uids)
 
         for reward, miner_uid in zip(rewards, working_miner_uids):

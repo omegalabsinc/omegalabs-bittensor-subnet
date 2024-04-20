@@ -119,7 +119,7 @@ pm2 start neurons/miner.py --name omega-miner -- \
     --netuid {netuid} \
     --wallet.name {wallet} \
     --wallet.hotkey {hotkey} \
-    --axon.port {port}
+    --axon.port {port} \
     --blacklist.force_validator_permit
 ```
 
@@ -139,13 +139,25 @@ cd omegalabs-bittensor-subnet
 3. Install pm2 if you don't already have it: [pm2.io](https://pm2.io/docs/runtime/guide/installation/).
 4. Next, install the `omega` package: `pip install -e .`
 
-#### Run with PM2
+#### Run auto-updating validator with PM2 (recommended)
+```bash
+pm2 start auto_updating_validator.sh --name omega-validator -- \
+    --netuid {netuid} \
+    --wallet.name {wallet} \
+    --wallet.hotkey {hotkey} \
+    --axon.port {port} \
+    --logging.trace
+```
+Note: you might need to adjust "python" to "python3" within the `neurons/auto_updating_validator.sh` depending on your preferred system python.
+
+#### Run basic validator with PM2
 ```bash
 pm2 start neurons/validator.py --name omega-validator -- \
     --netuid {netuid} \
     --wallet.name {wallet} \
     --wallet.hotkey {hotkey} \
-    --axon.port {port}
+    --axon.port {port} \
+    --logging.trace
 ```
 
 ## Contributing
