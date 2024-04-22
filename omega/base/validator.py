@@ -72,6 +72,11 @@ class BaseValidatorNeuron(BaseNeuron):
         else:
             bt.logging.warning("axon off, not serving ip to chain.")
 
+        if self.config.neuron.auto_update:
+            bt.logging.info("Auto update enabled.")
+        else:
+            bt.logging.info("Auto update disabled.")
+
         # Create asyncio event loop to manage async tasks.
         self.loop = asyncio.get_event_loop()
 
