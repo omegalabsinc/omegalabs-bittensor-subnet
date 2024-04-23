@@ -123,6 +123,18 @@ pm2 start neurons/miner.py --name omega-miner -- \
     --blacklist.force_validator_permit
 ```
 
+#### Tips for Better Incentive
+The subnet has become quite competitive, and the basic miner template is no longer sufficient to earn good emissions and avoid deregistration. Here are some tips to consider improving your miner:
+1. Use proxies or frequently change your pod.
+  a) We've heard good things about [Storm Proxies]([url](https://stormproxies.com/)).
+2. Make sure your videos are unique. You can de-duplicate your collected video with this [video ID index]([url](https://huggingface.co/datasets/jondurbin/omega-multimodal-ids)) graciously offered by Jon, one of the miners on the OMEGA subnet.
+3. Improve the descriptions you are submitting alongside your uploaded videos. You can try doing this by using video captioning models or incorporating the transcript. Lots of experimentation room here.
+4. You can use the `check_score` endpoint that we offer to check your score breakdown. See [this gist]([url](https://gist.github.com/salmanshah1d/f5a8e83cb4af6444ffdef4325a59b489)).
+
+#### Common Troubleshooting Tips
+1. If you've been running for several minutes and have not received any requests, make sure your port is open to receiving requests. You can try hitting your IP and port with `curl`. If you get no response, it means your port is not open.
+2. You can use our [validator logs W&B]([url](https://wandb.ai/omega-labs/omega-sn24-validator-logs)) to see how your miner is scoring in practice.
+
 ### Running a Validator
 #### Requirements
 - Python 3.8+
