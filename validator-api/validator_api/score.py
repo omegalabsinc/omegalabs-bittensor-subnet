@@ -168,19 +168,19 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     print(f"Filtered {len(videos.video_metadata)} down to {len(metadata)} videos")
 
     if len(metadata) == 0:
-        return MIN_SCORE
+        return {"score": MIN_SCORE}
 
     check_video = (not is_check_only) and config.CHECK_PROBABILITY > random.random()
     if check_video:
         random_meta_and_vid = await get_random_video(metadata)
         if random_meta_and_vid is None:
-            return -0.4
+            return {"score": -0.4}
 
     async with GPU_SEMAPHORE:
         if check_video:
             passed_check = await random_check(random_meta_and_vid, imagebind)
             if not passed_check:
-                return -1.0
+                return {"score": -1.0}
         query_emb = await imagebind.embed_text_async([videos.query])
 
     # Upload the videos to Pinecone and deduplicate
