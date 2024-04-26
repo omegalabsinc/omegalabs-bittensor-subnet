@@ -72,6 +72,6 @@ class Videos(bt.Synapse):
         json_str = Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
-            video_metadata=self.video_metadata,
+            video_metadata=self.video_metadata[:input_synapse.num_videos],
         ).json(include={"query", "num_videos", "video_metadata"})
         return json.loads(json_str)

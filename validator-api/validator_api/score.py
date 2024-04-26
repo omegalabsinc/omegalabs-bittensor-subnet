@@ -163,56 +163,14 @@ async def get_num_unique_videos(videos: Videos) -> int:
     return sum([not is_sim for is_sim in is_too_similar])
 
 
-async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> float:
-    metadata = metadata_check(videos.video_metadata)
-
-    async with GPU_SEMAPHORE:
-        query_emb = await imagebind.embed_text_async([videos.query])
-
-    # Upload the videos to Pinecone and deduplicate
-    embeddings = Embeddings(
-        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
-        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
-        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
-    )
-    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=False)
-    embeddings = filter_embeddings(embeddings, is_too_similar)
-    metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
-
-    # Compute relevance scores
-    description_relevance_scores = F.cosine_similarity(
-        embeddings.video, embeddings.description
-    ).tolist()
-    query_relevance_scores = F.cosine_similarity(
-        embeddings.video, query_emb
-    ).tolist()
-
-    # Aggregate scores
-    score = (
-        sum(description_relevance_scores) +
-        sum(query_relevance_scores) +
-        novelty_score
-    ) / 3 / videos.num_videos
-
-    score = max(score, 0.005)
-
-    return {
-        "is_unique": [not is_sim for is_sim in is_too_similar],
-        "description_relevance_scores": description_relevance_scores,
-        "query_relevance_scores": query_relevance_scores,
-        "novelty_score": novelty_score,
-        "score": score,
-    }
-
-
-async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
-    # Randomly check 1 video embedding
-    metadata = metadata_check(videos.video_metadata)
+async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only: bool) -> float:
+    metadata = metadata_check(videos.video_metadata)[:videos.num_videos]
+    print(f"Filtered {len(videos.video_metadata)} down to {len(metadata)} videos")
 
     if len(metadata) == 0:
         return MIN_SCORE
 
-    check_video = config.CHECK_PROBABILITY > random.random()
+    check_video = (not is_check_only) and config.CHECK_PROBABILITY > random.random()
     if check_video:
         random_meta_and_vid = await get_random_video(metadata)
         if random_meta_and_vid is None:
@@ -226,18 +184,20 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
         query_emb = await imagebind.embed_text_async([videos.query])
 
     # Upload the videos to Pinecone and deduplicate
-    print(f"Received {len(metadata)} videos")
+    original_length = len(metadata)
     embeddings = Embeddings(
         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
     )
-    video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
-    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=True)
+    if not is_check_only:
+        video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
+    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=(not is_check_only))
     embeddings = filter_embeddings(embeddings, is_too_similar)
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
-    video_ids = [video_id for video_id, too_similar in zip(video_ids, is_too_similar) if not too_similar]
-    print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+    if not is_check_only:
+        video_ids = [video_id for video_id, too_similar in zip(video_ids, is_too_similar) if not too_similar]
+    print(f"Deduplicated {original_length} videos down to {len(metadata)} videos")
 
     # Compute relevance scores
     description_relevance_scores = F.cosine_similarity(
@@ -254,14 +214,30 @@ async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float
         novelty_score
     ) / 3 / videos.num_videos
 
-    # Schedule upload to HuggingFace
-    dataset_uploader.add_videos(
-        metadata,
-        video_ids,
-        description_relevance_scores,
-        query_relevance_scores,
-        videos.query,
-    )
+    if not is_check_only:
+        # Schedule upload to HuggingFace
+        dataset_uploader.add_videos(
+            metadata,
+            video_ids,
+            description_relevance_scores,
+            query_relevance_scores,
+            videos.query,
+        )
     score = max(score, MIN_SCORE)
 
-    return score
+    return {
+        "is_unique": [not is_sim for is_sim in is_too_similar],
+        "description_relevance_scores": description_relevance_scores,
+        "query_relevance_scores": query_relevance_scores,
+        "novelty_score": novelty_score,
+        "score": score,
+    }
+
+
+async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> float:
+    return await _run_video_scoring(videos, imagebind, is_check_only=True)
+
+
+async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
+    scores_dict = await _run_video_scoring(videos, imagebind, is_check_only=False)
+    return scores_dict["score"]
