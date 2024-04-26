@@ -225,6 +225,9 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         )
     score = max(score, MIN_SCORE)
 
+    if score > 0.4:
+        print(f"Videos with score > 0.4: {metadata}")
+
     return {
         "is_unique": [not is_sim for is_sim in is_too_similar],
         "description_relevance_scores": description_relevance_scores,
