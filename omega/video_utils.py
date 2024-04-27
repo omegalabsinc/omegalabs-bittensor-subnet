@@ -89,9 +89,21 @@ class IPBlockedException(Exception):
         super().__init__(message)
 
 
+class FakeVideoException(Exception):
+    def __init__(self, message: str):
+        super().__init__(message)
+
+
+def is_valid_id(youtube_id: str) -> bool:
+    return youtube_id is not None and len(youtube_id) == 11
+
+
 def download_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None, proxy: Optional[str]=None
 ) -> Optional[BinaryIO]:
+    if not is_valid_id(video_id):
+        raise FakeVideoException(f"Invalid video ID: {video_id}")
+
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
@@ -128,6 +140,8 @@ def download_video(
             "Requested format is not available" in str(e)
         ):
             raise IPBlockedException(e)
+        if any(fake_vid_msg in str(e) for fake_vid_msg in ["Video unavailable", "is not a valid URL", "Incomplete YouTube ID"]):
+            raise FakeVideoException(e)
         print(f"Error downloading video: {e}")
         return None
 

@@ -23,6 +23,7 @@ GPU_SEMAPHORE = asyncio.Semaphore(1)
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
 VIDEO_DOWNLOAD_TIMEOUT = 10
 MIN_SCORE = 0.005
+FAKE_VIDEO_PUNISHMENT = -5.0
 
 
 async def query_pinecone(vector: List[float], top_k: int, select_idx: int) -> float:
@@ -107,7 +108,11 @@ def get_proxy_url() -> str:
     return random.choice(config.PROXY_LIST + [None])
 
 
-async def get_random_video(metadata: List[VideoMetadata]) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
+async def get_random_video(metadata: List[VideoMetadata], check_video: bool) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
+    if not check_video:
+        random_metadata = random.choice(metadata)
+        return random_metadata, None
+
     random_video = None
     metadata_copy = [v for v in metadata]  # list shallow copy
     while random_video is None and len(metadata_copy) > 0:
@@ -126,12 +131,16 @@ async def get_random_video(metadata: List[VideoMetadata]) -> Optional[Tuple[Vide
             # IP is blocked, cannot download video, check description only
             print("WARNING: IP is blocked, cannot download video, checking description only")
             return random_metadata, None
+        except video_utils.FakeVideoException:
+            print(f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
+            return None
         except asyncio.TimeoutError:
             continue
 
-    # IP not blocked, but video download failed regardless, bad video submitted
+    # IP is not blocked, video is not fake, but video download failed for some reason. We don't
+    # know why it failed so we won't punish the miner, but we will check the description only.
     if random_video is None:
-        return None
+        return random_metadata, None
 
     return random_metadata, random_video
 
@@ -164,23 +173,24 @@ async def get_num_unique_videos(videos: Videos) -> int:
 
 
 async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only: bool) -> float:
+    if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
+        return {"score": FAKE_VIDEO_PUNISHMENT}
+
     metadata = metadata_check(videos.video_metadata)[:videos.num_videos]
-    print(f"Filtered {len(videos.video_metadata)} down to {len(metadata)} videos")
+    print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
     if len(metadata) == 0:
         return {"score": MIN_SCORE}
 
-    check_video = (not is_check_only) and config.CHECK_PROBABILITY > random.random()
-    if check_video:
-        random_meta_and_vid = await get_random_video(metadata)
-        if random_meta_and_vid is None:
-            return {"score": -0.4}
+    check_video = config.CHECK_PROBABILITY > random.random()
+    random_meta_and_vid = await get_random_video(metadata, check_video)
+    if random_meta_and_vid is None:
+        return {"score": FAKE_VIDEO_PUNISHMENT}
 
     async with GPU_SEMAPHORE:
-        if check_video:
-            passed_check = await random_check(random_meta_and_vid, imagebind)
-            if not passed_check:
-                return {"score": -1.0}
+        passed_check = await random_check(random_meta_and_vid, imagebind)
+        if not passed_check:
+            return {"score": FAKE_VIDEO_PUNISHMENT}
         query_emb = await imagebind.embed_text_async([videos.query])
 
     # Upload the videos to Pinecone and deduplicate
