@@ -94,6 +94,10 @@ def is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
     ) > SIMILARITY_THRESHOLD
 
 
+def strict_is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
+    return torch.allclose(emb_1, torch.tensor(emb_2, device=emb_1.device), atol=1e-4)
+
+
 def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
     return [
         video_metadata for video_metadata in metadata
@@ -150,15 +154,25 @@ async def random_check(random_meta_and_vid: List[VideoMetadata], imagebind: Imag
 
     if random_video is None:
         desc_embeddings = await imagebind.embed_text_async([random_metadata.description])
-        return is_similar(desc_embeddings, random_metadata.description_emb)
+        is_similar = is_similar(desc_embeddings, random_metadata.description_emb)
+        strict_is_similar = strict_is_similar(desc_embeddings, random_metadata.description_emb)
+        print(f"Description similarity: {is_similar}, strict description similarity: {strict_is_similar}")
+        return is_similar
 
     # Video downloaded, check all embeddings
     embeddings = await imagebind.embed_async([random_metadata.description], [random_video])
-    return (
+    is_simlar = (
         is_similar(embeddings.video, random_metadata.video_emb) and
         is_similar(embeddings.audio, random_metadata.audio_emb) and
         is_similar(embeddings.description, random_metadata.description_emb)
     )
+    strict_is_similar = (
+        strict_is_similar(embeddings.video, random_metadata.video_emb) and
+        strict_is_similar(embeddings.audio, random_metadata.audio_emb) and
+        strict_is_similar(embeddings.description, random_metadata.description_emb)
+    )
+    print(f"Total similarity: {is_simlar}, strict total similarity: {strict_is_similar}")
+    return is_simlar
 
 
 async def get_num_unique_videos(videos: Videos) -> int:
