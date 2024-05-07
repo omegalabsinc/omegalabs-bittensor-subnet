@@ -12,7 +12,7 @@ from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from starlette import status
 from substrateinterface import Keypair
 
-from omega.protocol import Videos
+from omega.protocol import Videos, VideoMetadata
 from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
@@ -86,7 +86,7 @@ async def main():
 
     @app.post("/api/get_pinecone_novelty")
     async def get_pinecone_novelty(
-        videos: Videos,
+        metadata: List[VideoMetadata],
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> List[float]:
         if hotkey not in metagraph.hotkeys:
@@ -108,12 +108,8 @@ async def main():
             )
         
         start_time = time.time()
-        # check and deduplicate the batch of videos
-        original_length = len(videos)
-        deduplicated_videos = score.deduplicate_videos(videos)
-        print(f"Deduplicated {original_length} videos down to {len(deduplicated_videos)} videos")
         # query the pinecone index to get novelty scores
-        novelty_scores = await score.get_pinecone_novelty(deduplicated_videos)
+        novelty_scores = await score.get_pinecone_novelty(metadata)
         print(f"Returning novelty scores={novelty_scores} for validator={uid} in {time.time() - start_time:.2f}s")
         return novelty_scores
 

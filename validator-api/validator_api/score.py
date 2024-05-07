@@ -6,7 +6,6 @@ from typing import List, Tuple, Optional, BinaryIO
 from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
-from torch.nn import CosineSimilarity
 
 from omega.protocol import Videos, VideoMetadata
 from omega import video_utils
@@ -35,7 +34,7 @@ async def query_pinecone(vector: List[float], top_k: int, select_idx: int) -> fl
     )
     return 1 - response["matches"][select_idx]["score"]
 
-async def get_pinecone_novelty(videos: Videos) -> List[float]:
+async def get_pinecone_novelty(metadata: List[VideoMetadata]) -> List[float]:
     """
     Take the top match from the Pinecone index.
     """
@@ -43,33 +42,13 @@ async def get_pinecone_novelty(videos: Videos) -> List[float]:
     select_idx = 0
     novelty_scores = await asyncio.gather(*[
         query_pinecone(
-            vector=embedding,
+            vector=mdata.video_emb,
             top_k=top_k,
             select_idx=select_idx,
         )
-        for embedding in videos.video_emb
-    ])
+        for mdata in metadata
+    ])    
     return novelty_scores
-
-async def deduplicate_videos(videos: Videos) -> Videos:
-    # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
-    metadata = videos.video_metadata
-    embeddings = Embeddings(
-        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]),
-        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
-        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
-    )
-
-    video_tensor = embeddings.video
-    num_videos = video_tensor.shape[0]
-    cossim = CosineSimilarity(dim=1)
-    is_similar = []
-    for i in range(num_videos):
-        similarity_score = cossim(video_tensor[[i]], video_tensor[i + 1:])
-        has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
-        is_similar.append(has_duplicates.item())
-    
-    return is_similar
 
 async def compute_novelty_score(embeddings: Embeddings, already_uploaded: bool) -> Tuple[float, List[bool]]:
     """

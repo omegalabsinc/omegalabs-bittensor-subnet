@@ -22,22 +22,38 @@ import asyncio
 from typing import List
 import datetime as dt
 import os
+import random
 
 # Bittensor
 import bittensor as bt
 import torch
+from torch.nn import CosineSimilarity
 import wandb
 
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
-from omega.protocol import Videos
-from omega.constants import VALIDATOR_TIMEOUT, VALIDATOR_TIMEOUT_MARGIN
+from omega.protocol import Videos, VideoMetadata
+from omega.constants import (
+    VALIDATOR_TIMEOUT, 
+    VALIDATOR_TIMEOUT_MARGIN, 
+    MAX_VIDEO_LENGTH, 
+    MIN_VIDEO_LENGTH,
+    CHECK_PROBABILITY,
+    DIFFERENCE_THRESHOLD, 
+    SIMILARITY_THRESHOLD, 
+    VIDEO_DOWNLOAD_TIMEOUT, 
+    MIN_SCORE, 
+    FAKE_VIDEO_PUNISHMENT
+)
+from omega import video_utils
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
 
 NO_RESPONSE_MINIMUM = 0.005
-
+GPU_SEMAPHORE = asyncio.Semaphore(1)
+DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
 
 class Validator(BaseValidatorNeuron):
     """
@@ -164,7 +180,7 @@ class Validator(BaseValidatorNeuron):
         # Adjust the scores based on responses from miners.
         try:
             #rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
-            rewards_list = await self.check_videos_and_calculate_rewards(input_synapse=input_synapse, responses=finished_responses)
+            rewards_list = await self.check_videos_and_calculate_rewards(videos=input_synapse, responses=finished_responses)
         except Exception as e:
             bt.logging.error(f"Error in get_rewards: {e}")
             return
@@ -190,23 +206,77 @@ class Validator(BaseValidatorNeuron):
         for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
             bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
 
+
+    def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
+        return [
+            video_metadata for video_metadata in metadata
+            if (
+                video_metadata.end_time - video_metadata.start_time <= MAX_VIDEO_LENGTH and
+                video_metadata.end_time - video_metadata.start_time >= MIN_VIDEO_LENGTH
+            )
+        ]
     
+    async def deduplicate_videos(metadata: VideoMetadata) -> Videos:
+        # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
+        embeddings = Embeddings(
+            video=torch.stack([torch.tensor(v.video_emb) for v in metadata]),
+            audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
+            description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
+        )
+
+        video_tensor = embeddings.video
+        num_videos = video_tensor.shape[0]
+        cossim = CosineSimilarity(dim=1)
+        is_similar = []
+        for i in range(num_videos):
+            similarity_score = cossim(video_tensor[[i]], video_tensor[i + 1:])
+            has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
+            is_similar.append(has_duplicates.item())
+        
+        return is_similar
+
     async def check_videos_and_calculate_rewards(
         self,
-        input_synapse: Videos,
+        videos: Videos,
         responses: List[Videos],
     ) -> torch.FloatTensor:
         
+        # check video_ids for fake videos
+        if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
+            return {"score": FAKE_VIDEO_PUNISHMENT}
+
+        # check and filter duplicate metadata
+        metadata = self.metadata_check(videos.video_metadata)[:videos.num_videos]
+        print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+
+        # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+        metadata_is_similar = self.deduplicate_videos(metadata)
+        print(f"Deduplicated {len(videos.video_metadata)} videos down to {len([m for m in metadata_is_similar if not m])} videos")
+
+        if len(metadata) == 0:
+            return {"score": MIN_SCORE}
+
+        check_video = CHECK_PROBABILITY > random.random()
+        random_meta_and_vid = await get_random_video(metadata, check_video)
+        if random_meta_and_vid is None:
+            return {"score": FAKE_VIDEO_PUNISHMENT}
+
+        async with GPU_SEMAPHORE:
+            passed_check = await random_check(random_meta_and_vid, imagebind)
+            if not passed_check:
+                return {"score": FAKE_VIDEO_PUNISHMENT}
+            query_emb = await imagebind.embed_text_async([videos.query])
+
         # first get the novelty_scores from the validator api
         novelty_scores = await asyncio.gather(*[
             self.get_novelty_scores(
-                input_synapse,
+                data,
                 response,
             )
-            for response in responses
+            for data in metadata
         ])
 
-
+        rewards = []
         return rewards
         
     
