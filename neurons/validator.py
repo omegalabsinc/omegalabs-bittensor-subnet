@@ -69,6 +69,8 @@ class Validator(BaseValidatorNeuron):
         )
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
+        self.proxy_endpoint = f"{api_root}/api/get_proxy"
+        self.novelty_scores_endpoint = f"{api_root}/api/get_novelty_scores"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
@@ -161,7 +163,8 @@ class Validator(BaseValidatorNeuron):
 
         # Adjust the scores based on responses from miners.
         try:
-            rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
+            #rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
+            rewards_list = await self.check_videos_and_calculate_rewards(input_synapse=input_synapse, responses=finished_responses)
         except Exception as e:
             bt.logging.error(f"Error in get_rewards: {e}")
             return
@@ -186,6 +189,51 @@ class Validator(BaseValidatorNeuron):
         
         for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
             bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+
+    
+    async def check_videos_and_calculate_rewards(
+        self,
+        input_synapse: Videos,
+        responses: List[Videos],
+    ) -> torch.FloatTensor:
+        
+        # first get the novelty_scores from the validator api
+        novelty_scores = await asyncio.gather(*[
+            self.get_novelty_scores(
+                input_synapse,
+                response,
+            )
+            for response in responses
+        ])
+
+
+        return rewards
+        
+    
+    async def get_novelty_scores(self, input_synapse: Videos, response: Videos) -> List[float]:
+        """
+        Queries the validator api to get novelty scores for supplied videos. 
+        Returns a list of float novelty scores for each video after deduplicating.
+
+        Returns:
+        - List[float: The novelty scores for the miner's videos.
+        """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
+        try:
+            async with ClientSession() as session:
+                async with session.post(
+                    self.novelty_scores_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=response.to_serializable_dict(input_synapse),
+                ) as response:
+                    response.raise_for_status()
+                    novelty_scores = await response.json()
+            return novelty_scores
+        except Exception as e:
+            bt.logging.debug(f"Error trying novelty_scores_endpoint: {e}")
+            return None
 
     async def reward(self, input_synapse: Videos, response: Videos) -> float:
         """

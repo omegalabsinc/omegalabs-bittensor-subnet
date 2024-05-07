@@ -16,7 +16,7 @@ from omega.protocol import Videos
 from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
-from validator_api.config import TOPICS_LIST, IS_PROD
+from validator_api.config import TOPICS_LIST, PROXY_LIST, IS_PROD
 from validator_api.dataset_upload import dataset_uploader
 
 
@@ -83,6 +83,63 @@ async def main():
         computed_score = await score.score_and_upload_videos(videos, imagebind)
         print(f"Returning score={computed_score} for validator={uid} in {time.time() - start_time:.2f}s")
         return computed_score
+
+    @app.post("/api/get_pinecone_novelty")
+    async def get_pinecone_novelty(
+        videos: Videos,
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> List[float]:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+
+        uid = metagraph.hotkeys.index(hotkey)
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+        if metagraph.S[uid] < 1000:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator requires 1000+ staked TAO",
+            )
+        
+        start_time = time.time()
+        # check and deduplicate the batch of videos
+        original_length = len(videos)
+        deduplicated_videos = score.deduplicate_videos(videos)
+        print(f"Deduplicated {original_length} videos down to {len(deduplicated_videos)} videos")
+        # query the pinecone index to get novelty scores
+        novelty_scores = await score.get_pinecone_novelty(deduplicated_videos)
+        print(f"Returning novelty scores={novelty_scores} for validator={uid} in {time.time() - start_time:.2f}s")
+        return novelty_scores
+
+    @app.post("/api/get_proxy")
+    async def get_proxy(
+        hotkey: Annotated[str, Depends(get_hotkey)]
+    ) -> str:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+        
+        uid = metagraph.hotkeys.index(hotkey)
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+        if metagraph.S[uid] < 1000:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator requires 1000+ staked TAO",
+            )
+        
+        return random.choice(PROXY_LIST)
 
     if not IS_PROD:
         @app.get("/api/count_unique")
