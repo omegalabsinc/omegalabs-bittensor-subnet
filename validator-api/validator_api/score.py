@@ -24,36 +24,55 @@ DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
 VIDEO_DOWNLOAD_TIMEOUT = 10
 MIN_SCORE = 0.005
 FAKE_VIDEO_PUNISHMENT = -5.0
+VIDEO_TYPE = "video"
+AUDIO_TYPE = "audio"
+DESCRIPTION_TYPE = "description"
 
 
-async def query_pinecone(vector: List[float], top_k: int, select_idx: int) -> float:
+async def query_pinecone(vector: List[float]) -> float:
+    print(vector)
     response = await run_async(
         PINECONE_INDEX.query,
         vector=vector,
-        top_k=top_k,
+        top_k=1,
+        filter={
+            "modality_type": {"$eq": VIDEO_TYPE},
+        },
     )
-    return 1 - response["matches"][select_idx]["score"]
+    return 1 - response["matches"][0]["score"]
 
 
-async def compute_novelty_score(embeddings: Embeddings, already_uploaded: bool) -> Tuple[float, List[bool]]:
-    """
-    Take the top 2nd match from the Pinecone index (cause the 1st match is itself) and then
-    take the complement of the score to be the novelty score.
-    """
-    top_k = 2 if already_uploaded else 1
-    select_idx = 1 if already_uploaded else 0
-    novelty_scores = await asyncio.gather(*[
-        query_pinecone(
-            vector=embedding.tolist(),
-            top_k=top_k,
-            select_idx=select_idx,
-        )
-        for embedding in embeddings.video
+def compute_novelty_score_among_batch(emb: Embeddings) -> List[float]:
+    video_tensor = emb.video
+    num_videos = video_tensor.shape[0]
+    novelty_scores = []
+    for i in range(num_videos - 1):
+        similarity_score = F.cosine_similarity(video_tensor[[i]], video_tensor[i + 1:]).max()
+        novelty_scores.append(1 - similarity_score.item())
+    novelty_scores.append(1.0)  # last video is 100% novel
+    return novelty_scores
+
+
+async def async_zero() -> None:
+    return 0
+
+
+async def compute_novelty_score(embeddings: Embeddings) -> Tuple[float, List[bool]]:
+    local_novelty_scores = compute_novelty_score_among_batch(embeddings)
+    global_novelty_scores = await asyncio.gather(*[
+        async_zero() if local_score < DIFFERENCE_THRESHOLD else  # don't even query Pinecone if it's already too similar
+        query_pinecone(vector=embedding.tolist())
+        for embedding, local_score in zip(embeddings.video, local_novelty_scores)
     ])
-    is_too_similar = [score < DIFFERENCE_THRESHOLD for score in novelty_scores]
+    true_novelty_scores = [
+        min(local_score, global_score) for local_score, global_score
+        in zip(local_novelty_scores, global_novelty_scores)
+    ]
+    is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
     novelty_score = sum([
         score for score, is_too_similar
-        in zip(novelty_scores, is_too_similar) if not is_too_similar
+        in zip(true_novelty_scores, is_too_similar)
+        if not is_too_similar
     ])
     return novelty_score, is_too_similar
 
@@ -62,16 +81,25 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
     video_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
     try:
         PINECONE_INDEX.upsert(
-            vectors=[
-                {
-                    "id": video_uuid,
-                    "values": embedding.tolist(),
-                    "metadata": {
-                        "youtube_id": video.video_id,
+            vectors=sum([
+                [
+                    {
+                        "id": f"{modality_type[:3]}{video_uuid}",
+                        "values": emb.tolist(),
+                        "metadata": {
+                            "youtube_id": video.video_id,
+                            "modality_type": modality_type,
+                        }
                     }
-                }
-                for video_uuid, video, embedding in zip(video_ids, metadata, embeddings.video)
-            ],
+                    for emb, modality_type
+                    in zip(
+                        [embedding_vid, embedding_aud, embedding_des],
+                        [VIDEO_TYPE, AUDIO_TYPE, DESCRIPTION_TYPE]
+                    )
+                ]
+                for video_uuid, video, embedding_vid, embedding_aud, embedding_des
+                in zip(video_ids, metadata, embeddings.video, embeddings.audio, embeddings.description)
+            ], []),
         )
     except Exception as e:
         print(f"Failed to upload to Pinecone: {e}")
@@ -182,7 +210,7 @@ async def get_num_unique_videos(videos: Videos) -> int:
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
     )
-    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=False)
+    novelty_score, is_too_similar = await compute_novelty_score(embeddings)
     return sum([not is_sim for is_sim in is_too_similar])
 
 
@@ -214,13 +242,9 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
     )
-    if not is_check_only:
-        video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
-    novelty_score, is_too_similar = await compute_novelty_score(embeddings, already_uploaded=(not is_check_only))
+    novelty_score, is_too_similar = await compute_novelty_score(embeddings)
     embeddings = filter_embeddings(embeddings, is_too_similar)
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
-    if not is_check_only:
-        video_ids = [video_id for video_id, too_similar in zip(video_ids, is_too_similar) if not too_similar]
     print(f"Deduplicated {original_length} videos down to {len(metadata)} videos")
 
     # Compute relevance scores
@@ -238,7 +262,8 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         novelty_score
     ) / 3 / videos.num_videos
 
-    if not is_check_only:
+    if not is_check_only and len(metadata) > 0:
+        video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
         # Schedule upload to HuggingFace
         dataset_uploader.add_videos(
             metadata,
