@@ -60,30 +60,6 @@ async def main():
     async def shutdown_event():
         dataset_uploader.submit()
 
-    @app.post("/api/validate")
-    async def validate(
-        videos: Videos,
-        hotkey: Annotated[str, Depends(get_hotkey)],
-    ) -> float:
-        if hotkey not in metagraph.hotkeys:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Valid hotkey required",
-            )
-
-        uid = metagraph.hotkeys.index(hotkey)
-
-        if not metagraph.validator_permit[uid]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator permit required",
-            )
-
-        start_time = time.time()
-        computed_score = await score.score_and_upload_videos(videos, imagebind)
-        print(f"Returning score={computed_score} for validator={uid} in {time.time() - start_time:.2f}s")
-        return computed_score
-
     @app.post("/api/get_pinecone_novelty")
     async def get_pinecone_novelty(
         metadata: List[VideoMetadata],
@@ -136,6 +112,31 @@ async def main():
             )
         
         return random.choice(PROXY_LIST)
+
+    """ TO BE DEPRECATED """
+    @app.post("/api/validate")
+    async def validate(
+        videos: Videos,
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> float:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+
+        uid = metagraph.hotkeys.index(hotkey)
+
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+
+        start_time = time.time()
+        computed_score = await score.score_and_upload_videos(videos, imagebind)
+        print(f"Returning score={computed_score} for validator={uid} in {time.time() - start_time:.2f}s")
+        return computed_score
 
     if not IS_PROD:
         @app.get("/api/count_unique")
