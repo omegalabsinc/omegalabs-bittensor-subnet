@@ -30,7 +30,6 @@ DESCRIPTION_TYPE = "description"
 
 
 async def query_pinecone(vector: List[float]) -> float:
-    print(vector)
     response = await run_async(
         PINECONE_INDEX.query,
         vector=vector,
