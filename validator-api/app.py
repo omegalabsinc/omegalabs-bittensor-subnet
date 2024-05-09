@@ -7,13 +7,13 @@ import random
 
 import bittensor
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from starlette import status
 from substrateinterface import Keypair
 
 from omega.protocol import Videos, VideoMetadata
-from omega.imagebind_wrapper import ImageBind
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 
 from validator_api import score
 from validator_api.config import TOPICS_LIST, PROXY_LIST, IS_PROD
@@ -88,6 +88,37 @@ async def main():
         novelty_scores = await score.get_pinecone_novelty(metadata)
         print(f"Returning novelty scores={novelty_scores} for validator={uid} in {time.time() - start_time:.2f}s")
         return novelty_scores
+
+    @app.post("/api/upload_video_metadata")
+    async def upload_video_metadata(
+        metadata: List[VideoMetadata],
+        description_relevance_scores: List[float],
+        query_relevance_scores: List[float],
+        topic_query: str = Body(...),
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> bool:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+
+        uid = metagraph.hotkeys.index(hotkey)
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+        if metagraph.S[uid] < 1000:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator requires 1000+ staked TAO",
+            )
+
+        start_time = time.time()
+        video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
+        print(f"Uploaded {len(video_ids)} video metadata from validator={uid} in {time.time() - start_time:.2f}s")
+        return True
 
     @app.post("/api/get_proxy")
     async def get_proxy(

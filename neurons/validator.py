@@ -89,6 +89,7 @@ class Validator(BaseValidatorNeuron):
         self.validation_endpoint = f"{api_root}/api/validate"
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_novelty_scores"
+        self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
@@ -368,12 +369,22 @@ class Validator(BaseValidatorNeuron):
             # create query embeddings for relevance scoring
             query_emb = await self.imagebind.embed_text_async([videos.query])
 
+        # TODO: HANDLE UPLOADING TO PINECONE
         # first get the novelty_scores from the validator api
         base_novelty_scores = await asyncio.gather(*[
             self.get_novelty_scores(
                 metadata
             )
         ])
+        pre_filter_metadata_length = len(metadata)
+        # check scores from index for being too similar
+        is_too_similar = [score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
+        # filter out metadata too similar
+        metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+        # filter out embeddings too similar
+        embeddings = self.filter_embeddings(embeddings, is_too_similar)
+        print(f"Filtering out {len(pre_filter_metadata_length)}  videos down to {len(metadata)} videos that are too similar to videos in our index.")
+
         novelty_score = await self.compute_novelty_score(base_novelty_scores)
         
         # Compute relevance scores
@@ -403,6 +414,13 @@ class Validator(BaseValidatorNeuron):
             score: {score}
         ''')
 
+        # Upload our final results to API endpoint for index and dataset insertion
+        upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query)
+        if upload_result:
+            bt.logging.info("Uploading of video metadata successful.")
+        else:
+            bt.logging.error("Issue uploading video metadata.")
+
         return score
 
     # Get all the reward results by iteratively calling your reward() function.
@@ -422,6 +440,41 @@ class Validator(BaseValidatorNeuron):
         return rewards
         
     
+    async def upload_video_metadata(self, metadata: List[VideoMetadata], description_relevance_scores: List[float], query_relevance_scores: List[float], query: str) -> bool:
+        """
+        Queries the validator api to get novelty scores for supplied videos. 
+        Returns a list of float novelty scores for each video after deduplicating.
+
+        Returns:
+        - List[float]: The novelty scores for the miner's videos.
+        """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
+        try:
+            async with ClientSession() as session:
+                # Serialize the list of VideoMetadata
+                serialized_metadata = [item.dict() for item in metadata]
+                # Construct the JSON payload
+                payload = {
+                    "metadata": serialized_metadata,
+                    "description_relevance_scores": description_relevance_scores,
+                    "query_relevance_scores": query_relevance_scores,
+                    "topic_query": query
+                }
+
+                async with session.post(
+                    self.upload_video_metadata_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+            return True
+        except Exception as e:
+            bt.logging.debug(f"Error trying upload_video_metadata_endpoint: {e}")
+            return False
+
     async def get_novelty_scores(self, metadata: List[VideoMetadata]) -> List[float]:
         """
         Queries the validator api to get novelty scores for supplied videos. 
@@ -435,14 +488,17 @@ class Validator(BaseValidatorNeuron):
         signature = f"0x{keypair.sign(hotkey).hex()}"
         try:
             async with ClientSession() as session:
-                # serialize the list of VideoMetadata
-                json_str = json.dumps([item.dict() for item in metadata])
-                serialized_metadata = json.loads(json_str)
+                # Serialize the list of VideoMetadata
+                serialized_metadata = [item.dict() for item in metadata]
+                # Construct the JSON payload
+                payload = {
+                    "metadata": serialized_metadata
+                }
 
                 async with session.post(
                     self.novelty_scores_endpoint,
                     auth=BasicAuth(hotkey, signature),
-                    json=serialized_metadata,
+                    json=payload,
                 ) as response:
                     response.raise_for_status()
                     novelty_scores = await response.json()
