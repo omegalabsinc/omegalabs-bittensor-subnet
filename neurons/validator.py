@@ -17,9 +17,10 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-from aiohttp import ClientSession, BasicAuth
+from aiohttp import ClientSession, BasicAuth, ClientResponseError
 import asyncio
 from typing import List, Tuple, Optional, BinaryIO
+from pydantic import ValidationError
 import datetime as dt
 import os
 import random
@@ -81,14 +82,15 @@ class Validator(BaseValidatorNeuron):
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
 
         api_root = (
-            "https://dev-validator.api.omega-labs.ai"
+            "http://localhost:8001"
+            #"https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
         self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
-        self.novelty_scores_endpoint = f"{api_root}/api/get_novelty_scores"
+        self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
@@ -138,6 +140,7 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        miner_uids = [56]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
@@ -185,9 +188,9 @@ class Validator(BaseValidatorNeuron):
         # Adjust the scores based on responses from miners.
         try:
             #rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
-            rewards_list = await self.handle_checks_and_rewards(input_synapse=input_synapse, videos=finished_responses)
+            rewards_list = await self.handle_checks_and_rewards(input_synapse=input_synapse, responses=finished_responses)
         except Exception as e:
-            bt.logging.error(f"Error in get_rewards: {e}")
+            bt.logging.error(f"Error in handle_checks_and_rewards: {e}")
             return
 
         # give reward to all miners who responded and had a non-null reward
@@ -212,7 +215,7 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
 
 
-    def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
+    def metadata_check(self, metadata: List[VideoMetadata]) -> List[VideoMetadata]:
         return [
             video_metadata for video_metadata in metadata
             if (
@@ -221,7 +224,7 @@ class Validator(BaseValidatorNeuron):
             )
         ]
     
-    def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
+    def filter_embeddings(self, embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
         """Filter the embeddings based on whether they are too similar to the query."""
         is_too_similar = torch.tensor(is_too_similar)
         embeddings.video = embeddings.video[~is_too_similar]
@@ -229,7 +232,7 @@ class Validator(BaseValidatorNeuron):
         embeddings.description = embeddings.description[~is_too_similar]
         return embeddings
 
-    async def deduplicate_videos(embeddings: Embeddings) -> Videos:
+    async def deduplicate_videos(self, embeddings: Embeddings) -> Videos:
         # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
         video_tensor = embeddings.video
         num_videos = video_tensor.shape[0]
@@ -242,13 +245,13 @@ class Validator(BaseValidatorNeuron):
         
         return is_similar
     
-    def is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
+    def is_similar(self, emb_1: torch.Tensor, emb_2: List[float]) -> bool:
         return F.cosine_similarity(
             emb_1,
             torch.tensor(emb_2, device=emb_1.device).unsqueeze(0)
         ) > SIMILARITY_THRESHOLD
 
-    def strict_is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
+    def strict_is_similar(self, emb_1: torch.Tensor, emb_2: List[float]) -> bool:
         return torch.allclose(emb_1, torch.tensor(emb_2, device=emb_1.device), atol=1e-4)
     
     async def get_random_video(self, metadata: List[VideoMetadata], check_video: bool) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
@@ -261,6 +264,7 @@ class Validator(BaseValidatorNeuron):
         while random_video is None and len(metadata_copy) > 0:
             idx = random.randint(0, len(metadata_copy) - 1)
             random_metadata = metadata_copy.pop(idx)
+            proxy_url = await self.get_proxy_url(),
             try:
                 async with DOWNLOAD_SEMAPHORE:
                     random_video = await asyncio.wait_for(run_async(
@@ -268,7 +272,7 @@ class Validator(BaseValidatorNeuron):
                         random_metadata.video_id,
                         random_metadata.start_time,
                         random_metadata.end_time,
-                        proxy=self.get_proxy_url(),
+                        proxy=proxy_url
                     ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
             except video_utils.IPBlockedException:
                 # IP is blocked, cannot download video, check description only
@@ -313,7 +317,7 @@ class Validator(BaseValidatorNeuron):
         return is_similar_
     
     # algorithm for computing final novelty score
-    def compute_final_novelty_score(base_novelty_scores: List[float]) -> float:
+    def compute_final_novelty_score(self, base_novelty_scores: List[float]) -> float:
         is_too_similar = [score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
         novelty_score = sum([
             score for score, is_too_similar
@@ -344,7 +348,7 @@ class Validator(BaseValidatorNeuron):
         )
 
         # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
-        metadata_is_similar = self.deduplicate_videos(embeddings)
+        metadata_is_similar = await self.deduplicate_videos(embeddings)
         metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
         embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
         print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
@@ -369,13 +373,16 @@ class Validator(BaseValidatorNeuron):
             # create query embeddings for relevance scoring
             query_emb = await self.imagebind.embed_text_async([videos.query])
 
-        # TODO: HANDLE UPLOADING TO PINECONE
         # first get the novelty_scores from the validator api
         base_novelty_scores = await asyncio.gather(*[
             self.get_novelty_scores(
                 metadata
             )
         ])
+        if base_novelty_scores is None or len(base_novelty_scores) == 0:
+            bt.logging.info("Issue retrieving base novelty scores, returning minimum score.")
+            return {"score": MIN_SCORE}
+
         pre_filter_metadata_length = len(metadata)
         # check scores from index for being too similar
         is_too_similar = [score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
@@ -491,18 +498,19 @@ class Validator(BaseValidatorNeuron):
                 # Serialize the list of VideoMetadata
                 serialized_metadata = [item.dict() for item in metadata]
                 # Construct the JSON payload
-                payload = {
-                    "metadata": serialized_metadata
-                }
+                #payload = {
+                #    "metadata": serialized_metadata
+                #}
 
                 async with session.post(
                     self.novelty_scores_endpoint,
                     auth=BasicAuth(hotkey, signature),
-                    json=payload,
+                    json=serialized_metadata,
                 ) as response:
                     response.raise_for_status()
                     novelty_scores = await response.json()
             return novelty_scores
+        
         except Exception as e:
             bt.logging.debug(f"Error trying novelty_scores_endpoint: {e}")
             return None
