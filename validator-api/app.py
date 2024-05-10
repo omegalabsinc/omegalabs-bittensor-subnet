@@ -4,6 +4,7 @@ from datetime import datetime
 import time
 from typing import Annotated, List
 import random
+from pydantic import BaseModel
 
 import bittensor
 import uvicorn
@@ -19,14 +20,17 @@ from validator_api import score
 from validator_api.config import TOPICS_LIST, PROXY_LIST, IS_PROD
 from validator_api.dataset_upload import dataset_uploader
 
-
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
-
 
 security = HTTPBasic()
 imagebind = ImageBind()
 
+class VideoMetadataUpload(BaseModel):
+    metadata: List[VideoMetadata]
+    description_relevance_scores: List[float]
+    query_relevance_scores: List[float]
+    topic_query: str
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -38,7 +42,6 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Signature mismatch",
     )
-
 
 async def main():
     app = FastAPI()
@@ -77,7 +80,7 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator permit required",
             )
-        if metagraph.S[uid] < 1000:
+        if metagraph.S[uid] < 1000 and NETWORK != "test":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator requires 1000+ staked TAO",
@@ -91,10 +94,7 @@ async def main():
 
     @app.post("/api/upload_video_metadata")
     async def upload_video_metadata(
-        metadata: List[VideoMetadata],
-        description_relevance_scores: List[float],
-        query_relevance_scores: List[float],
-        topic_query: str = Body(...),
+        upload_data: VideoMetadataUpload,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
         if hotkey not in metagraph.hotkeys:
@@ -109,11 +109,16 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator permit required",
             )
-        if metagraph.S[uid] < 1000:
+        if metagraph.S[uid] < 1000 and NETWORK != "test":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator requires 1000+ staked TAO",
             )
+
+        metadata = upload_data.metadata
+        description_relevance_scores = upload_data.description_relevance_scores
+        query_relevance_scores = upload_data.query_relevance_scores
+        topic_query = upload_data.topic_query
 
         start_time = time.time()
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
@@ -136,7 +141,7 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator permit required",
             )
-        if metagraph.S[uid] < 1000:
+        if metagraph.S[uid] < 1000 and NETWORK != "test":
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator requires 1000+ staked TAO",

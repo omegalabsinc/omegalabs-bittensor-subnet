@@ -17,7 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-from aiohttp import ClientSession, BasicAuth, ClientResponseError
+from aiohttp import ClientSession, BasicAuth
 import asyncio
 from typing import List, Tuple, Optional, BinaryIO
 from pydantic import ValidationError
@@ -25,6 +25,7 @@ import datetime as dt
 import os
 import random
 import json
+import traceback
 
 # Bittensor
 import bittensor as bt
@@ -82,8 +83,7 @@ class Validator(BaseValidatorNeuron):
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
 
         api_root = (
-            "http://localhost:8001"
-            #"https://dev-validator.api.omega-labs.ai"
+            "https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
@@ -140,7 +140,6 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
-        miner_uids = [56]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
@@ -191,6 +190,7 @@ class Validator(BaseValidatorNeuron):
             rewards_list = await self.handle_checks_and_rewards(input_synapse=input_synapse, responses=finished_responses)
         except Exception as e:
             bt.logging.error(f"Error in handle_checks_and_rewards: {e}")
+            traceback.print_exc()
             return
 
         # give reward to all miners who responded and had a non-null reward
@@ -264,7 +264,8 @@ class Validator(BaseValidatorNeuron):
         while random_video is None and len(metadata_copy) > 0:
             idx = random.randint(0, len(metadata_copy) - 1)
             random_metadata = metadata_copy.pop(idx)
-            proxy_url = await self.get_proxy_url(),
+            proxy_url = await self.get_proxy_url()
+            print("Got proxy_url from API. Attempting download for random_video check")
             try:
                 async with DOWNLOAD_SEMAPHORE:
                     random_video = await asyncio.wait_for(run_async(
@@ -295,14 +296,14 @@ class Validator(BaseValidatorNeuron):
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
-            desc_embeddings = await self.imagebind.embed_text_async([random_metadata.description])
+            desc_embeddings = self.imagebind.embed_text([random_metadata.description])
             is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
             strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
             print(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
             return is_similar_
 
         # Video downloaded, check all embeddings
-        embeddings = await self.imagebind.embed_async([random_metadata.description], [random_video])
+        embeddings = self.imagebind.embed([random_metadata.description], [random_video])
         is_similar_ = (
             self.is_similar(embeddings.video, random_metadata.video_emb) and
             self.is_similar(embeddings.audio, random_metadata.audio_emb) and
@@ -316,6 +317,19 @@ class Validator(BaseValidatorNeuron):
         print(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
         return is_similar_
     
+    def compute_novelty_score_among_batch(self, emb: Embeddings) -> List[float]:
+        video_tensor = emb.video
+        num_videos = video_tensor.shape[0]
+        novelty_scores = []
+        for i in range(num_videos - 1):
+            similarity_score = F.cosine_similarity(video_tensor[[i]], video_tensor[i + 1:]).max()
+            novelty_scores.append(1 - similarity_score.item())
+        novelty_scores.append(1.0)  # last video is 100% novel
+        return novelty_scores
+
+    async def async_zero() -> None:
+        return 0
+
     # algorithm for computing final novelty score
     def compute_final_novelty_score(self, base_novelty_scores: List[float]) -> float:
         is_too_similar = [score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
@@ -334,11 +348,29 @@ class Validator(BaseValidatorNeuron):
         
         # check video_ids for fake videos
         if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
-            return {"score": FAKE_VIDEO_PUNISHMENT}
+            return FAKE_VIDEO_PUNISHMENT
 
         # check and filter duplicate metadata
         metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
-        print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+        if len(metadata) < len(videos.video_metadata):
+            print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+
+        # if randomly tripped, flag our random check to pull a video from miner's submissions
+        check_video = CHECK_PROBABILITY > random.random()
+        
+        # pull a random video and/or description only
+        random_meta_and_vid = await self.get_random_video(metadata, check_video)
+        if random_meta_and_vid is None:
+            return FAKE_VIDEO_PUNISHMENT
+
+        # execute the random check on metadata and video
+        async with GPU_SEMAPHORE:
+            passed_check = await self.random_check(random_meta_and_vid)
+            # punish miner if not passing
+            if not passed_check:
+                return FAKE_VIDEO_PUNISHMENT
+            # create query embeddings for relevance scoring
+            query_emb = await self.imagebind.embed_text_async([videos.query])
 
         # generate embeddings
         embeddings = Embeddings(
@@ -351,48 +383,51 @@ class Validator(BaseValidatorNeuron):
         metadata_is_similar = await self.deduplicate_videos(embeddings)
         metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
         embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
-        print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+        if len(metadata) < len(videos.video_metadata):
+            print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
         # return minimum score if no unique videos were found
         if len(metadata) == 0:
-            return {"score": MIN_SCORE}
-
-        # if randomly tripped, flag our random check to pull a video from miner's submissions
-        check_video = CHECK_PROBABILITY > random.random()
-        # pull a random video and/or description only
-        random_meta_and_vid = await self.get_random_video(metadata, check_video)
-        if random_meta_and_vid is None:
-            return {"score": FAKE_VIDEO_PUNISHMENT}
-
-        # execute the random check on metadata and video
-        async with GPU_SEMAPHORE:
-            passed_check = await self.random_check(random_meta_and_vid)
-            # punish miner if not passing
-            if not passed_check:
-                return {"score": FAKE_VIDEO_PUNISHMENT}
-            # create query embeddings for relevance scoring
-            query_emb = await self.imagebind.embed_text_async([videos.query])
-
-        # first get the novelty_scores from the validator api
-        base_novelty_scores = await asyncio.gather(*[
-            self.get_novelty_scores(
-                metadata
-            )
+            return MIN_SCORE
+        
+        # first get local novelty scores
+        local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
+        bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
+        # second get the novelty scores from the validator api if not already too similar
+        global_novelty_scores = await asyncio.gather(*[
+            async_zero() if local_score < DIFFERENCE_THRESHOLD else  # don't even query Pinecone if it's already too similar
+            self.get_novelty_scores(metadata)
+            for embedding, local_score in zip(embeddings.video, local_novelty_scores)
         ])
-        if base_novelty_scores is None or len(base_novelty_scores) == 0:
-            bt.logging.info("Issue retrieving base novelty scores, returning minimum score.")
-            return {"score": MIN_SCORE}
+        if global_novelty_scores is None or len(global_novelty_scores) == 0:
+            bt.logging.error("Issue retrieving global novelty scores, returning minimum score.")
+            return MIN_SCORE
+        # get the first item in our list, which should be a list of floats
+        global_novelty_scores = global_novelty_scores[0]
+        bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+        # calculate true novelty scores between local and global
+        true_novelty_scores = [
+            min(local_score, global_score) for local_score, global_score
+            in zip(local_novelty_scores, global_novelty_scores)
+        ]
+        bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
         pre_filter_metadata_length = len(metadata)
         # check scores from index for being too similar
-        is_too_similar = [score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
+        is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
         # filter out metadata too similar
         metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
         # filter out embeddings too similar
         embeddings = self.filter_embeddings(embeddings, is_too_similar)
-        print(f"Filtering out {len(pre_filter_metadata_length)}  videos down to {len(metadata)} videos that are too similar to videos in our index.")
+        if len(metadata) < pre_filter_metadata_length:
+            print(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
-        novelty_score = await self.compute_novelty_score(base_novelty_scores)
+        # return minimum score if no unique videos were found
+        if len(metadata) == 0:
+            return MIN_SCORE
+
+        # compute our final novelty score
+        novelty_score = self.compute_final_novelty_score(true_novelty_scores)
         
         # Compute relevance scores
         description_relevance_scores = F.cosine_similarity(
@@ -414,7 +449,7 @@ class Validator(BaseValidatorNeuron):
 
         # Log all our scores
         bt.logging.info(f'''
-            is_unique: {[not is_sim for is_sim in metadata_is_similar]},
+            is_unique: {[not is_sim for is_sim in is_too_similar]},
             description_relevance_scores: {description_relevance_scores},
             query_relevance_scores: {query_relevance_scores},
             novelty_score: {novelty_score},
@@ -497,10 +532,6 @@ class Validator(BaseValidatorNeuron):
             async with ClientSession() as session:
                 # Serialize the list of VideoMetadata
                 serialized_metadata = [item.dict() for item in metadata]
-                # Construct the JSON payload
-                #payload = {
-                #    "metadata": serialized_metadata
-                #}
 
                 async with session.post(
                     self.novelty_scores_endpoint,
