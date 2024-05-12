@@ -78,7 +78,7 @@ class Validator(BaseValidatorNeuron):
             if os.getenv("WANDB_API_KEY"):
                 self.new_wandb_run()
             else:
-                bt.logging.exception("WANDB_API_KEY not found. Set it with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.of, but it is strongly recommended to run with W&B enabled.")
+                bt.logging.exception("WANDB_API_KEY not found. Set it with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.off, but it is strongly recommended to run with W&B enabled.")
         else:
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
 

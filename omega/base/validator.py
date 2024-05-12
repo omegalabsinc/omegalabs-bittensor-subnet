@@ -23,6 +23,7 @@ import asyncio
 import argparse
 import os
 import threading
+import datetime as dt
 import bittensor as bt
 from datetime import datetime
 from subprocess import Popen, PIPE
@@ -188,6 +189,17 @@ class BaseValidatorNeuron(BaseNeuron):
                 self.sync()
 
                 self.step += 1
+
+                # Check if we should start a new wandb run.
+                if not self.config.wandb.off:
+                    if (dt.datetime.now() - self.wandb_run_start) >= dt.timedelta(
+                        days=1
+                    ):
+                        bt.logging.info(
+                            "Current wandb run is more than 1 day old. Starting a new run."
+                        )
+                        self.wandb_run.finish()
+                        self.new_wandb_run()
 
         # If someone intentionally stops the validator, it'll safely terminate operations.
         except KeyboardInterrupt:
