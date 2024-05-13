@@ -54,8 +54,14 @@ async def main():
             """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
             print("resync_metagraph()")
 
-            # Sync the metagraph.
-            metagraph.sync(subtensor=subtensor)
+            try:
+                # Sync the metagraph.
+                metagraph.sync(subtensor=subtensor)
+            
+            # In case of unforeseen errors, the api will log the error and continue operations.
+            except Exception as err:
+                print("Error during metagraph sync", str(err))
+                print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
 

@@ -95,7 +95,18 @@ class Validator(BaseValidatorNeuron):
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
-        self.imagebind = ImageBind()
+        self.imagebind = None
+        if not self.config.neuron.decentralization.off:
+            if torch.cuda.is_available():
+                bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
+                self.decentralization = True
+                self.imagebind = ImageBind()
+            else:
+                bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
+                self.decentralization = False
+        else:
+            bt.logging.warning("Running with --decentralization.off. It is strongly recommended to run with decentralization enabled.")
+            self.decentralization = False
 
     def new_wandb_run(self):
         # Shoutout SN13 for the wandb snippet!
@@ -186,8 +197,13 @@ class Validator(BaseValidatorNeuron):
 
         # Adjust the scores based on responses from miners.
         try:
-            #rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
-            rewards_list = await self.handle_checks_and_rewards(input_synapse=input_synapse, responses=finished_responses)
+            # Check if this validator is running decentralization
+            if not self.decentralization:
+                # if not, use validator API get_rewards system
+                rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
+            else:
+                # if so, use decentralization logic with local GPU
+                rewards_list = await self.handle_checks_and_rewards(input_synapse=input_synapse, responses=finished_responses)
         except Exception as e:
             bt.logging.error(f"Error in handle_checks_and_rewards: {e}")
             traceback.print_exc()
