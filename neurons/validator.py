@@ -415,7 +415,7 @@ class Validator(BaseValidatorNeuron):
             self.get_novelty_scores(metadata)
             for embedding, local_score in zip(embeddings.video, local_novelty_scores)
         ])
-        if global_novelty_scores is None or len(global_novelty_scores) == 0:
+        if global_novelty_scores is None or len(global_novelty_scores) == 0 or global_novelty_scores[0] is None:
             bt.logging.error("Issue retrieving global novelty scores, returning minimum score.")
             return MIN_SCORE
         # get the first item in our list, which should be a list of floats
