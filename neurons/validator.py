@@ -281,7 +281,10 @@ class Validator(BaseValidatorNeuron):
             idx = random.randint(0, len(metadata_copy) - 1)
             random_metadata = metadata_copy.pop(idx)
             proxy_url = await self.get_proxy_url()
-            print("Got proxy_url from API. Attempting download for random_video check")
+            if proxy_url is None:
+                bt.logging.info("Issue getting proxy_url from API, not using proxy. Attempting download for random_video check")
+            else:
+                bt.logging.info("Got proxy_url from API. Attempting download for random_video check")
             try:
                 async with DOWNLOAD_SEMAPHORE:
                     random_video = await asyncio.wait_for(run_async(
@@ -362,124 +365,129 @@ class Validator(BaseValidatorNeuron):
         videos: Videos,
     ) -> torch.FloatTensor:
         
-        # check video_ids for fake videos
-        if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
-            return FAKE_VIDEO_PUNISHMENT
-
-        # check and filter duplicate metadata
-        metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
-        if len(metadata) < len(videos.video_metadata):
-            print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
-
-        # if randomly tripped, flag our random check to pull a video from miner's submissions
-        check_video = CHECK_PROBABILITY > random.random()
-        
-        # pull a random video and/or description only
-        random_meta_and_vid = await self.get_random_video(metadata, check_video)
-        if random_meta_and_vid is None:
-            return FAKE_VIDEO_PUNISHMENT
-
-        # execute the random check on metadata and video
-        async with GPU_SEMAPHORE:
-            passed_check = await self.random_check(random_meta_and_vid)
-            # punish miner if not passing
-            if not passed_check:
+        try:
+            # check video_ids for fake videos
+            if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
-            # create query embeddings for relevance scoring
-            query_emb = await self.imagebind.embed_text_async([videos.query])
 
-        # generate embeddings
-        embeddings = Embeddings(
-            video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
-            audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
-            description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
-        )
+            # check and filter duplicate metadata
+            metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
+            if len(metadata) < len(videos.video_metadata):
+                print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
-        # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
-        metadata_is_similar = await self.deduplicate_videos(embeddings)
-        metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
-        embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
-        if len(metadata) < len(videos.video_metadata):
-            print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+            # if randomly tripped, flag our random check to pull a video from miner's submissions
+            check_video = CHECK_PROBABILITY > random.random()
+            
+            # pull a random video and/or description only
+            random_meta_and_vid = await self.get_random_video(metadata, check_video)
+            if random_meta_and_vid is None:
+                return FAKE_VIDEO_PUNISHMENT
 
-        # return minimum score if no unique videos were found
-        if len(metadata) == 0:
-            return MIN_SCORE
-        
-        # first get local novelty scores
-        local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
-        bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
-        # second get the novelty scores from the validator api if not already too similar
-        global_novelty_scores = await asyncio.gather(*[
-            async_zero() if local_score < DIFFERENCE_THRESHOLD else  # don't even query Pinecone if it's already too similar
-            self.get_novelty_scores(metadata)
-            for embedding, local_score in zip(embeddings.video, local_novelty_scores)
-        ])
-        if global_novelty_scores is None or len(global_novelty_scores) == 0 or global_novelty_scores[0] is None:
-            bt.logging.error("Issue retrieving global novelty scores, returning minimum score.")
-            return MIN_SCORE
-        # get the first item in our list, which should be a list of floats
-        global_novelty_scores = global_novelty_scores[0]
-        bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
-        # calculate true novelty scores between local and global
-        true_novelty_scores = [
-            min(local_score, global_score) for local_score, global_score
-            in zip(local_novelty_scores, global_novelty_scores)
-        ]
-        bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
+            # execute the random check on metadata and video
+            async with GPU_SEMAPHORE:
+                passed_check = await self.random_check(random_meta_and_vid)
+                # punish miner if not passing
+                if not passed_check:
+                    return FAKE_VIDEO_PUNISHMENT
+                # create query embeddings for relevance scoring
+                query_emb = await self.imagebind.embed_text_async([videos.query])
 
-        pre_filter_metadata_length = len(metadata)
-        # check scores from index for being too similar
-        is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
-        # filter out metadata too similar
-        metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
-        # filter out embeddings too similar
-        embeddings = self.filter_embeddings(embeddings, is_too_similar)
-        if len(metadata) < pre_filter_metadata_length:
-            print(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
+            # generate embeddings
+            embeddings = Embeddings(
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+            )
 
-        # return minimum score if no unique videos were found
-        if len(metadata) == 0:
-            return MIN_SCORE
+            # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+            metadata_is_similar = await self.deduplicate_videos(embeddings)
+            metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
+            if len(metadata) < len(videos.video_metadata):
+                print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
-        # compute our final novelty score
-        novelty_score = self.compute_final_novelty_score(true_novelty_scores)
-        
-        # Compute relevance scores
-        description_relevance_scores = F.cosine_similarity(
-            embeddings.video, embeddings.description
-        ).tolist()
-        query_relevance_scores = F.cosine_similarity(
-            embeddings.video, query_emb
-        ).tolist()
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            # first get local novelty scores
+            local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
+            bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
+            # second get the novelty scores from the validator api if not already too similar
+            global_novelty_scores = await asyncio.gather(*[
+                async_zero() if local_score < DIFFERENCE_THRESHOLD else  # don't even query Pinecone if it's already too similar
+                self.get_novelty_scores(metadata)
+                for embedding, local_score in zip(embeddings.video, local_novelty_scores)
+            ])
+            if global_novelty_scores is None or len(global_novelty_scores) == 0 or global_novelty_scores[0] is None:
+                bt.logging.error("Issue retrieving global novelty scores, returning None.")
+                return None
+            # get the first item in our list, which should be a list of floats
+            global_novelty_scores = global_novelty_scores[0]
+            bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            # calculate true novelty scores between local and global
+            true_novelty_scores = [
+                min(local_score, global_score) for local_score, global_score
+                in zip(local_novelty_scores, global_novelty_scores)
+            ]
+            bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
-        # Aggregate scores
-        score = (
-            sum(description_relevance_scores) +
-            sum(query_relevance_scores) +
-            novelty_score
-        ) / 3 / videos.num_videos
-        
-        # Set final score, giving minimum if necessary
-        score = max(score, MIN_SCORE)
+            pre_filter_metadata_length = len(metadata)
+            # check scores from index for being too similar
+            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+            # filter out metadata too similar
+            metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+            # filter out embeddings too similar
+            embeddings = self.filter_embeddings(embeddings, is_too_similar)
+            if len(metadata) < pre_filter_metadata_length:
+                print(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
-        # Log all our scores
-        bt.logging.info(f'''
-            is_unique: {[not is_sim for is_sim in is_too_similar]},
-            description_relevance_scores: {description_relevance_scores},
-            query_relevance_scores: {query_relevance_scores},
-            novelty_score: {novelty_score},
-            score: {score}
-        ''')
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
 
-        # Upload our final results to API endpoint for index and dataset insertion
-        upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query)
-        if upload_result:
-            bt.logging.info("Uploading of video metadata successful.")
-        else:
-            bt.logging.error("Issue uploading video metadata.")
+            # compute our final novelty score
+            novelty_score = self.compute_final_novelty_score(true_novelty_scores)
+            
+            # Compute relevance scores
+            description_relevance_scores = F.cosine_similarity(
+                embeddings.video, embeddings.description
+            ).tolist()
+            query_relevance_scores = F.cosine_similarity(
+                embeddings.video, query_emb
+            ).tolist()
 
-        return score
+            # Aggregate scores
+            score = (
+                sum(description_relevance_scores) +
+                sum(query_relevance_scores) +
+                novelty_score
+            ) / 3 / videos.num_videos
+            
+            # Set final score, giving minimum if necessary
+            score = max(score, MIN_SCORE)
+
+            # Log all our scores
+            bt.logging.info(f'''
+                is_unique: {[not is_sim for is_sim in is_too_similar]},
+                description_relevance_scores: {description_relevance_scores},
+                query_relevance_scores: {query_relevance_scores},
+                novelty_score: {novelty_score},
+                score: {score}
+            ''')
+
+            # Upload our final results to API endpoint for index and dataset insertion
+            upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query)
+            if upload_result:
+                bt.logging.info("Uploading of video metadata successful.")
+            else:
+                bt.logging.error("Issue uploading video metadata.")
+
+            return score
+
+        except Exception as e:
+            bt.logging.error(f"Error in check_videos_and_calculate_rewards: {e}")
+            return None
 
     # Get all the reward results by iteratively calling your reward() function.
     async def handle_checks_and_rewards(
