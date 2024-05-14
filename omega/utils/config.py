@@ -163,6 +163,7 @@ def add_miner_args(cls, parser):
         "--blacklist.validator_min_stake",
         help="Minimum stake a validator must have to allow queries",
         default=1024,
+        type=int,
     )
 
     parser.add_argument(
