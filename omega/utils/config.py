@@ -100,6 +100,13 @@ def add_args(cls, parser):
     )
 
     parser.add_argument(
+        "--neuron.decentralization.off",
+        action="store_true",
+        help="Disable decentralization (not recommended).",
+        default=False,
+    )
+
+    parser.add_argument(
         "--wandb.off",
         action="store_true",
         help="Turn off wandb.",

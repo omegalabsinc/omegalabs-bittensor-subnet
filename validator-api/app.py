@@ -4,29 +4,33 @@ from datetime import datetime
 import time
 from typing import Annotated, List
 import random
+from pydantic import BaseModel
 
 import bittensor
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends
+from fastapi import FastAPI, HTTPException, Depends, Body
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from starlette import status
 from substrateinterface import Keypair
 
-from omega.protocol import Videos
-from omega.imagebind_wrapper import ImageBind
+from omega.protocol import Videos, VideoMetadata
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 
 from validator_api import score
-from validator_api.config import TOPICS_LIST, IS_PROD
+from validator_api.config import TOPICS_LIST, PROXY_LIST, IS_PROD
 from validator_api.dataset_upload import dataset_uploader
-
 
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
 
-
 security = HTTPBasic()
 imagebind = ImageBind()
 
+class VideoMetadataUpload(BaseModel):
+    metadata: List[VideoMetadata]
+    description_relevance_scores: List[float]
+    query_relevance_scores: List[float]
+    topic_query: str
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -39,7 +43,6 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
         detail="Signature mismatch",
     )
 
-
 async def main():
     app = FastAPI()
 
@@ -51,8 +54,14 @@ async def main():
             """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
             print("resync_metagraph()")
 
-            # Sync the metagraph.
-            metagraph.sync(subtensor=subtensor)
+            try:
+                # Sync the metagraph.
+                metagraph.sync(subtensor=subtensor)
+            
+            # In case of unforeseen errors, the api will log the error and continue operations.
+            except Exception as err:
+                print("Error during metagraph sync", str(err))
+                print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
 
@@ -60,6 +69,93 @@ async def main():
     async def shutdown_event():
         dataset_uploader.submit()
 
+    @app.post("/api/get_pinecone_novelty")
+    async def get_pinecone_novelty(
+        metadata: List[VideoMetadata],
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> List[float]:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+
+        uid = metagraph.hotkeys.index(hotkey)
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+        if metagraph.S[uid] < 1000 and NETWORK != "test":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator requires 1000+ staked TAO",
+            )
+        
+        start_time = time.time()
+        # query the pinecone index to get novelty scores
+        novelty_scores = await score.get_pinecone_novelty(metadata)
+        print(f"Returning novelty scores={novelty_scores} for validator={uid} in {time.time() - start_time:.2f}s")
+        return novelty_scores
+
+    @app.post("/api/upload_video_metadata")
+    async def upload_video_metadata(
+        upload_data: VideoMetadataUpload,
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> bool:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+
+        uid = metagraph.hotkeys.index(hotkey)
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+        if metagraph.S[uid] < 1000 and NETWORK != "test":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator requires 1000+ staked TAO",
+            )
+
+        metadata = upload_data.metadata
+        description_relevance_scores = upload_data.description_relevance_scores
+        query_relevance_scores = upload_data.query_relevance_scores
+        topic_query = upload_data.topic_query
+
+        start_time = time.time()
+        video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
+        print(f"Uploaded {len(video_ids)} video metadata from validator={uid} in {time.time() - start_time:.2f}s")
+        return True
+
+    @app.post("/api/get_proxy")
+    async def get_proxy(
+        hotkey: Annotated[str, Depends(get_hotkey)]
+    ) -> str:
+        if hotkey not in metagraph.hotkeys:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Valid hotkey required",
+            )
+        
+        uid = metagraph.hotkeys.index(hotkey)
+        if not metagraph.validator_permit[uid]:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator permit required",
+            )
+        if metagraph.S[uid] < 1000 and NETWORK != "test":
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail="Validator requires 1000+ staked TAO",
+            )
+        
+        return random.choice(PROXY_LIST)
+
+    """ TO BE DEPRECATED """
     @app.post("/api/validate")
     async def validate(
         videos: Videos,

@@ -67,17 +67,17 @@ By harnessing the power of the Bittensor network and a global community of miner
 
 ### Phase 1: Foundation (Q1 2024)
 - [x] Launch OMEGA Labs subnet on Bittensor testnet
-- [ ] Reach 100,000 hours of footage and 3 million video clips
+- [x] Reach 100,000 hours of footage and 3 million video clips
 
 ### Phase 2: Expansion (Q2 2024)
-- [ ] Reach 500,000 hours of footage and 15 million video clips
-- [ ] Train and demo any-to-any models on the dataset
+- [x] Reach 250,000 hours of footage and 15 million video clips
+- [x] Train and demo any-to-any models on the dataset
 - [ ] Build synthetic data pipelines to enhance dataset quality
 - [ ] Publish a research paper on the Bittensor-powered Ω AGI dataset
 - [ ] Expand into running inference for state-of-the-art any-to-any multimodal models
 
 ### Phase 3: Refinement (Q3 2024)
-- [ ] Reach 1 million+ hours of footage and 30 million+ video clips
+- [ ] Reach 500,000+ hours of footage and 30 million+ video clips
 - [ ] Use the dataset to train powerful unified representation models
 - [ ] Fine-tune any-to-any models for advanced audio-video synchronized generation
 - [ ] Open up an auctioning page for companies and groups to bid on validation topics using various currencies (in addition to TAO)
@@ -139,7 +139,11 @@ The subnet has become quite competitive, and the basic miner template is no long
 #### Requirements
 - Python 3.8+
 - Pip
-- If running on runpod, `runpod/base:0.5.1-cpu` is a good base template.
+- GPU with at least 24 GB of VRAM
+- If running on runpod, `runpod/pytorch:2.2.1-py3.10-cuda12.1.1-devel-ubuntu22.04` is a good base template.
+
+#### Recommended
+- Setting up wandb. Set environment variable with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.off
 
 #### Setup
 1. To start, clone the repository and `cd` to it:
