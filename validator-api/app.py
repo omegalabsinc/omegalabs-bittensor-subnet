@@ -14,10 +14,8 @@ from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from starlette import status
 from substrateinterface import Keypair
 
-from communex.client import CommuneClient
-from communex.module.client import ModuleClient
-from communex.module.module import Module
-from communex.types import Ss58Address
+from validator_api.communex.client import CommuneClient
+from validator_api.communex.types import Ss58Address
 
 from omega.protocol import Videos, VideoMetadata
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
@@ -31,11 +29,18 @@ NETUID = int(os.environ["NETUID"])
 
 ENABLE_COMMUNE = bool(os.environ["ENABLE_COMMUNE"])
 COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
+COMMUNE_NETWORK = "wss://commune-api-node-0.communeai.net"
 COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
 
-commune_client = None
-if ENABLE_COMMUNE:
-    commune_client = CommuneClient()
+# This is only for testing. We'll remove for production
+COMMUNE_SN17_KEYS = [
+    '5DfXHcZPUJKbiwymhBh7GAjQQ5hCpWSBgHW4z22PRavSkw45',
+    'THISISDEFINITELYACOMMUNESUBNETSEVENTEENHOTKEYYO'
+    '5FN9ywbHh7J7YT47n2JAQ3Xk9LPYnnqWEdvirBLmANxHzcav',
+    '5CLgUYNeN2MEYwcLDbUQ9TX1z2bMPo6QNgKYtniLJ1dZMkfn',
+    '5FKeHZxLtUPwWizVZfwQ7tQfaM7d1zyQBRP1Gyz1cEnEeA2J',
+    '5FYpYMgYNSegkWnmQ23YTP7c7qFuWqUwsy2Y6Y9oCjKBjLvL'
+]
 
 security = HTTPBasic()
 imagebind = ImageBind()
@@ -57,38 +62,26 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
         detail="Signature mismatch",
     )
 
-def get_commune_addresses(client: CommuneClient, netuid: int) -> dict[int, str]:
-    """
-    Retrieve all module addresses from the subnet.
-
-    Args:
-        client: The CommuneClient instance used to query the subnet.
-        netuid: The unique identifier of the subnet.
-
-    Returns:
-        A dictionary mapping module IDs to their addresses.
-    """
-
-    # Makes a blockchain query for the miner addresses
-    module_addreses = client.query_map_address(netuid)
-    return module_addreses
-
-def check_commune_validator_hotkey(hotkey: str):
+def check_commune_validator_hotkey(hotkey: str, modules_keys):
     #keypair = Keypair(ss58_address=credentials.username)
-
-    #modules_addresses = get_commune_addresses(commune_client, COMMUNE_NETUID)
-    modules_keys = commune_client.query_map_key(COMMUNE_NETUID)
     val_ss58 = hotkey
-    print("hotkey:", hotkey)
-    print("modules_keys", modules_keys)
+    
     if val_ss58 not in modules_keys.values():
-        raise RuntimeError(f"validator key {val_ss58} is not registered in subnet")
+        return False
+    
+    return True
 
 async def main():
     app = FastAPI()
 
     subtensor = bittensor.subtensor(network=NETWORK)
     metagraph: bittensor.metagraph = subtensor.metagraph(NETUID)
+
+    commune_client = None
+    commune_keys = None
+    if ENABLE_COMMUNE:
+        commune_client = CommuneClient(COMMUNE_NETWORK)
+        commune_keys = commune_client.query_map_key(COMMUNE_NETUID)
 
     async def resync_metagraph():
         while True:
@@ -98,6 +91,11 @@ async def main():
             try:
                 # Sync the metagraph.
                 metagraph.sync(subtensor=subtensor)
+
+                # Sync latest commune keys
+                if ENABLE_COMMUNE:
+                    commune_keys = commune_client.query_map_key(COMMUNE_NETUID)
+                    print("commune keys synced")
             
             # In case of unforeseen errors, the api will log the error and continue operations.
             except Exception as err:
@@ -176,8 +174,14 @@ async def main():
     async def get_proxy(
         hotkey: Annotated[str, Depends(get_hotkey)]
     ) -> str:
-        check_commune_validator_hotkey(hotkey)
-        
+        """ This is for testing
+        #hotkey = random.choice(COMMUNE_SN17_KEYS) # for testing purposes
+        if not check_commune_validator_hotkey(hotkey, commune_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Commune validator key {hotkey} is not registered on subnet {COMMUNE_NETUID}",
+            )
+        """
         if hotkey not in metagraph.hotkeys:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
