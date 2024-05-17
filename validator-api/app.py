@@ -33,16 +33,6 @@ ENABLE_COMMUNE = bool(os.environ["ENABLE_COMMUNE"])
 COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
 COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
 
-# This is only for testing. We'll remove for production
-COMMUNE_SN17_KEYS = [
-    '5DfXHcZPUJKbiwymhBh7GAjQQ5hCpWSBgHW4z22PRavSkw45',
-    'THISISDEFINITELYACOMMUNESUBNETSEVENTEENHOTKEYYO'
-    '5FN9ywbHh7J7YT47n2JAQ3Xk9LPYnnqWEdvirBLmANxHzcav',
-    '5CLgUYNeN2MEYwcLDbUQ9TX1z2bMPo6QNgKYtniLJ1dZMkfn',
-    '5FKeHZxLtUPwWizVZfwQ7tQfaM7d1zyQBRP1Gyz1cEnEeA2J',
-    '5FYpYMgYNSegkWnmQ23YTP7c7qFuWqUwsy2Y6Y9oCjKBjLvL'
-]
-
 security = HTTPBasic()
 imagebind = ImageBind()
 
