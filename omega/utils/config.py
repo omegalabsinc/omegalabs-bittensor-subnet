@@ -100,6 +100,13 @@ def add_args(cls, parser):
     )
 
     parser.add_argument(
+        "--neuron.decentralization.off",
+        action="store_true",
+        help="Disable decentralization (not recommended).",
+        default=False,
+    )
+
+    parser.add_argument(
         "--wandb.off",
         action="store_true",
         help="Turn off wandb.",
@@ -157,6 +164,13 @@ def add_miner_args(cls, parser):
         action="store_true",
         help="If set, miners will accept queries from non registered entities. (Dangerous!)",
         default=False,
+    )
+    
+    parser.add_argument(
+        "--blacklist.validator_min_stake",
+        help="Minimum stake a validator must have to allow queries",
+        default=10240,
+        type=int,
     )
 
     parser.add_argument(

@@ -119,6 +119,11 @@ class Miner(BaseMinerNeuron):
                 )
                 return True, "Non-validator hotkey"
 
+        stake = self.metagraph.S[uid].item()
+        if self.config.blacklist.validator_min_stake and stake < self.config.blacklist.validator_min_stake:
+            bt.logging.warning(f"Blacklisting request from {synapse.dendrite.hotkey} [uid={uid}], not enough stake -- {stake}")
+            return True, "Stake below minimum"
+
         bt.logging.trace(
             f"Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}"
         )

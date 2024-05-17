@@ -5,6 +5,7 @@ import time
 from typing import Annotated, List
 import random
 from pydantic import BaseModel
+
 from traceback import print_exception
 
 import bittensor
@@ -168,25 +169,7 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Valid hotkey required.",
             )
-        """
-        if hotkey not in metagraph.hotkeys:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Valid hotkey required",
-            )
-
-        uid = metagraph.hotkeys.index(hotkey)
-        if not metagraph.validator_permit[uid]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator permit required",
-            )
-        if metagraph.S[uid] < 1000 and NETWORK != "test":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator requires 1000+ staked TAO",
-            )
-        """
+        
         uid = None
         if ENABLE_COMMUNE and hotkey in commune_keys.values():
             # get uid of commune validator
@@ -222,25 +205,6 @@ async def main():
                 detail=f"Valid hotkey required.",
             )
         
-        """
-        if hotkey not in metagraph.hotkeys:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Valid hotkey required",
-            )
-        
-        uid = metagraph.hotkeys.index(hotkey)
-        if not metagraph.validator_permit[uid]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator permit required",
-            )
-        if metagraph.S[uid] < 1000 and NETWORK != "test":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator requires 1000+ staked TAO",
-            )
-        """
         return random.choice(PROXY_LIST)
 
     """ TO BE DEPRECATED """

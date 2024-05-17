@@ -40,6 +40,17 @@ async def query_pinecone(vector: List[float]) -> float:
     )
     return 1 - response["matches"][0]["score"]
 
+async def get_pinecone_novelty(metadata: List[VideoMetadata]) -> List[float]:
+    """
+    Take the top match from the Pinecone index.
+    """
+    novelty_scores = await asyncio.gather(*[
+        query_pinecone(
+            vector=mdata.video_emb
+        )
+        for mdata in metadata
+    ])    
+    return novelty_scores
 
 def compute_novelty_score_among_batch(emb: Embeddings) -> List[float]:
     video_tensor = emb.video
@@ -51,10 +62,8 @@ def compute_novelty_score_among_batch(emb: Embeddings) -> List[float]:
     novelty_scores.append(1.0)  # last video is 100% novel
     return novelty_scores
 
-
 async def async_zero() -> None:
     return 0
-
 
 async def compute_novelty_score(embeddings: Embeddings) -> Tuple[float, List[bool]]:
     local_novelty_scores = compute_novelty_score_among_batch(embeddings)
@@ -104,6 +113,30 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
         print(f"Failed to upload to Pinecone: {e}")
     return video_ids
 
+async def upload_video_metadata(
+    metadata: List[VideoMetadata], 
+    description_relevance_scores: List[float], 
+    query_relevance_scores: List[float], 
+    query: str, 
+    imagebind: ImageBind
+) -> None:
+    # generate embeddings from our metadata
+    embeddings = Embeddings(
+        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
+        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
+        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
+    )
+    # upload embeddings and metadata to pinecone
+    video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
+    # Schedule upload to HuggingFace
+    dataset_uploader.add_videos(
+        metadata,
+        video_ids,
+        description_relevance_scores,
+        query_relevance_scores,
+        query,
+    )
+    return video_ids
 
 def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
     """Filter the embeddings based on whether they are too similar to the query."""
