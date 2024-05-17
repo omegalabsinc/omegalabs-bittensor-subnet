@@ -16,6 +16,7 @@ from substrateinterface import Keypair
 
 from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
+from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
@@ -29,7 +30,6 @@ NETUID = int(os.environ["NETUID"])
 
 ENABLE_COMMUNE = bool(os.environ["ENABLE_COMMUNE"])
 COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
-COMMUNE_NETWORK = "wss://commune-api-node-0.communeai.net"
 COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
 
 # This is only for testing. We'll remove for production
@@ -63,12 +63,30 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
     )
 
 def check_commune_validator_hotkey(hotkey: str, modules_keys):
-    #keypair = Keypair(ss58_address=credentials.username)
-    val_ss58 = hotkey
-    
-    if val_ss58 not in modules_keys.values():
+    if hotkey not in modules_keys.values():
+        print("Commune validator key not found")
         return False
     
+    return True
+
+def authenticate_with_bittensor(hotkey, metagraph):
+    if hotkey not in metagraph.hotkeys:
+        return False
+
+    uid = metagraph.hotkeys.index(hotkey)
+    if not metagraph.validator_permit[uid]:
+        print("Bittensor validator permit required")
+        return False
+    
+    if metagraph.S[uid] < 1000 and NETWORK != "test":
+        print("Bittensor validator requires 1000+ staked TAO")
+        return False
+    
+    return True
+
+def authenticate_with_commune(hotkey, commune_keys):
+    if ENABLE_COMMUNE and not check_commune_validator_hotkey(hotkey, commune_keys):
+        return False
     return True
 
 async def main():
@@ -80,7 +98,7 @@ async def main():
     commune_client = None
     commune_keys = None
     if ENABLE_COMMUNE:
-        commune_client = CommuneClient(COMMUNE_NETWORK)
+        commune_client = CommuneClient(get_node_url(use_testnet=True if COMMUNE_NETWORK == "test" else False))
         commune_keys = commune_client.query_map_key(COMMUNE_NETUID)
 
     async def resync_metagraph():
@@ -113,28 +131,30 @@ async def main():
         metadata: List[VideoMetadata],
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> List[float]:
-        if hotkey not in metagraph.hotkeys:
+        
+        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Valid hotkey required",
+                detail=f"Valid hotkey required.",
             )
-
-        uid = metagraph.hotkeys.index(hotkey)
-        if not metagraph.validator_permit[uid]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator permit required",
-            )
-        if metagraph.S[uid] < 1000 and NETWORK != "test":
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator requires 1000+ staked TAO",
-            )
+        
+        uid = None
+        if ENABLE_COMMUNE and hotkey in commune_keys.values():
+            # get uid of commune validator
+            for key_uid, key_hotkey in commune_keys.items():
+                if key_hotkey == hotkey:
+                    uid = key_uid
+                    break
+            validator_chain = "commune"
+        elif uid is None and hotkey in metagraph.hotkeys:
+            # get uid of bittensor validator
+            uid = metagraph.hotkeys.index(hotkey)
+            validator_chain = "bittensor"
         
         start_time = time.time()
         # query the pinecone index to get novelty scores
         novelty_scores = await score.get_pinecone_novelty(metadata)
-        print(f"Returning novelty scores={novelty_scores} for validator={uid} in {time.time() - start_time:.2f}s")
+        print(f"Returning novelty scores={novelty_scores} for {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         return novelty_scores
 
     @app.post("/api/upload_video_metadata")
@@ -142,6 +162,13 @@ async def main():
         upload_data: VideoMetadataUpload,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
+        
+        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Valid hotkey required.",
+            )
+        """
         if hotkey not in metagraph.hotkeys:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -159,6 +186,19 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator requires 1000+ staked TAO",
             )
+        """
+        uid = None
+        if ENABLE_COMMUNE and hotkey in commune_keys.values():
+            # get uid of commune validator
+            for key_uid, key_hotkey in commune_keys.items():
+                if key_hotkey == hotkey:
+                    uid = key_uid
+                    break
+            validator_chain = "commune"
+        elif uid is None and hotkey in metagraph.hotkeys:
+            # get uid of bittensor validator
+            uid = metagraph.hotkeys.index(hotkey)
+            validator_chain = "bittensor"
 
         metadata = upload_data.metadata
         description_relevance_scores = upload_data.description_relevance_scores
@@ -167,20 +207,21 @@ async def main():
 
         start_time = time.time()
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
-        print(f"Uploaded {len(video_ids)} video metadata from validator={uid} in {time.time() - start_time:.2f}s")
+        print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         return True
 
     @app.post("/api/get_proxy")
     async def get_proxy(
         hotkey: Annotated[str, Depends(get_hotkey)]
     ) -> str:
-        """ This is for testing
+        
         #hotkey = random.choice(COMMUNE_SN17_KEYS) # for testing purposes
-        if not check_commune_validator_hotkey(hotkey, commune_keys):
+        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Commune validator key {hotkey} is not registered on subnet {COMMUNE_NETUID}",
+                detail=f"Valid hotkey required.",
             )
+        
         """
         if hotkey not in metagraph.hotkeys:
             raise HTTPException(
@@ -199,7 +240,7 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator requires 1000+ staked TAO",
             )
-        
+        """
         return random.choice(PROXY_LIST)
 
     """ TO BE DEPRECATED """
