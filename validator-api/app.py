@@ -20,7 +20,7 @@ from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
+from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
 from validator_api.config import TOPICS_LIST, PROXY_LIST, IS_PROD
@@ -29,7 +29,8 @@ from validator_api.dataset_upload import dataset_uploader
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
 
-ENABLE_COMMUNE = bool(os.environ["ENABLE_COMMUNE"])
+ENABLE_COMMUNE = True if os.environ["ENABLE_COMMUNE"] == "True" else False
+print("Running with ENABLE_COMMUNE:", ENABLE_COMMUNE)
 COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
 COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
 
