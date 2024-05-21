@@ -38,7 +38,11 @@ async def query_pinecone(vector: List[float]) -> float:
             "modality_type": {"$eq": VIDEO_TYPE},
         },
     )
-    return 1 - response["matches"][0]["score"]
+    if len(response["matches"]) > 0:
+        return 1 - response["matches"][0]["score"] 
+    else:
+        print("No pinecone matches, returning 0")
+        return 0
 
 async def get_pinecone_novelty(metadata: List[VideoMetadata]) -> List[float]:
     """

@@ -414,17 +414,24 @@ class Validator(BaseValidatorNeuron):
             local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
             bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
             # second get the novelty scores from the validator api if not already too similar
-            global_novelty_scores = await asyncio.gather(*[
-                async_zero() if local_score < DIFFERENCE_THRESHOLD else  # don't even query Pinecone if it's already too similar
-                self.get_novelty_scores(metadata)
-                for embedding, local_score in zip(embeddings.video, local_novelty_scores)
-            ])
-            if global_novelty_scores is None or len(global_novelty_scores) == 0 or global_novelty_scores[0] is None:
+            embeddings_to_check = [
+                (embedding, metadata)
+                for embedding, local_score, metadata in zip(embeddings.video, local_novelty_scores, metadata)
+                if local_score >= DIFFERENCE_THRESHOLD
+            ]
+            # If there are embeddings to check, call get_novelty_scores once
+            if embeddings_to_check:
+                embeddings_to_check, metadata_to_check = zip(*embeddings_to_check)
+                global_novelty_scores = await self.get_novelty_scores(metadata_to_check)
+            else:
+                # If no embeddings to check, return an empty list or appropriate default value
+                global_novelty_scores = []
+
+            if global_novelty_scores is None or len(global_novelty_scores) == 0:
                 bt.logging.error("Issue retrieving global novelty scores, returning None.")
                 return None
-            # get the first item in our list, which should be a list of floats
-            global_novelty_scores = global_novelty_scores[0]
             bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            
             # calculate true novelty scores between local and global
             true_novelty_scores = [
                 min(local_score, global_score) for local_score, global_score
