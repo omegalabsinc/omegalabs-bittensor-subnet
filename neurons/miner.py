@@ -100,17 +100,18 @@ class Miner(BaseMinerNeuron):
 
         Otherwise, allow the request to be processed further.
         """
-        uid = self.metagraph.hotkeys.index(synapse.dendrite.hotkey)
-        if (
-            not self.config.blacklist.allow_non_registered
-            and synapse.dendrite.hotkey not in self.metagraph.hotkeys
-        ):
-            # Ignore requests from un-registered entities.
+        if not synapse.dendrite.hotkey:
+            return True, "Hotkey not provided"
+        registered = synapse.dendrite.hotkey in self.metagraph.hotkeys
+        if self.config.blacklist.allow_non_registered and not registered:
+            return False, "Allowing un-registered hotkey"
+        elif not registered:
             bt.logging.trace(
                 f"Blacklisting un-registered hotkey {synapse.dendrite.hotkey}"
             )
-            return True, "Unrecognized hotkey"
+            return True, f"Unrecognized hotkey {synapse.dendrite.hotkey}"
 
+        uid = self.metagraph.hotkeys.index(synapse.dendrite.hotkey)
         if self.config.blacklist.force_validator_permit:
             # If the config is set to force validator permit, then we should only allow requests from validators.
             if not self.metagraph.validator_permit[uid]:
