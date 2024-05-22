@@ -100,6 +100,17 @@ class Miner(BaseMinerNeuron):
 
         Otherwise, allow the request to be processed further.
         """
+        if not synapse.dendrite.hotkey:
+            return True, "Hotkey not provided"
+        registered = synapse.dendrite.hotkey in self.metagraph.hotkeys
+        if self.config.blacklist.allow_non_registered and not registered:
+            return False, "Allowing un-registered hotkey"
+        elif not registered:
+            bt.logging.trace(
+                f"Blacklisting un-registered hotkey {synapse.dendrite.hotkey}"
+            )
+            return True, f"Unrecognized hotkey {synapse.dendrite.hotkey}"
+
         uid = self.metagraph.hotkeys.index(synapse.dendrite.hotkey)
         if (
             not self.config.blacklist.allow_non_registered
