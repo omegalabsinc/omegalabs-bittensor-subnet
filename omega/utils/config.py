@@ -264,6 +264,12 @@ def add_validator_args(cls, parser):
         default=False,
     )
 
+    parser.add_argument(
+        "--topics_path",
+        type=str,
+        help="Path to text file containing a list of random topics to collect data for.",
+        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "topics.txt")
+    )
 
 def config(cls):
     """

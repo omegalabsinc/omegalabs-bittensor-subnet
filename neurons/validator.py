@@ -87,13 +87,13 @@ class Validator(BaseValidatorNeuron):
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
-        self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
+        self.all_topics = [line.strip() for line in open(config.topics_path) if line.strip()]
 
         self.imagebind = None
         if not self.config.neuron.decentralization.off:
@@ -156,16 +156,8 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info("No miners available")
             return
 
-        try:
-            async with ClientSession() as session:
-                async with session.get(self.topics_endpoint) as response:
-                    response.raise_for_status()
-                    query = await response.json()
-        except Exception as e:
-            bt.logging.error(f"Error in get_topics: {e}")
-            return
-
         # The dendrite client queries the network.
+        query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
         input_synapse = Videos(query=query, num_videos=self.num_videos)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
