@@ -10,8 +10,9 @@ from traceback import print_exception
 
 import bittensor
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Body
+from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
+from fastapi.security.api_key import APIKeyHeader
 from starlette import status
 from substrateinterface import Keypair
 
@@ -23,19 +24,37 @@ from omega.protocol import Videos, VideoMetadata
 from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
-from validator_api.config import TOPICS_LIST, PROXY_LIST, IS_PROD
+from validator_api.config import (
+    NETWORK, NETUID, 
+    ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
+    API_KEY_NAME, API_KEYS, DB_CONFIG,
+    TOPICS_LIST, PROXY_LIST, IS_PROD
+)
 from validator_api.dataset_upload import dataset_uploader
 
-NETWORK = os.environ["NETWORK"]
-NETUID = int(os.environ["NETUID"])
+import mysql.connector
 
-ENABLE_COMMUNE = True if os.environ["ENABLE_COMMUNE"] == "True" else False
-print("Running with ENABLE_COMMUNE:", ENABLE_COMMUNE)
-COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
-COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
+def connect_to_db():
+    try:
+        connection = mysql.connector.connect(**DB_CONFIG)
+        return connection
+    except mysql.connector.Error as err:
+        print("Error in connect_to_db while creating MySQL database connection:", err)
+
+# define the APIKeyHeader for API authorization to our multi-modal endpoints
+api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 security = HTTPBasic()
 imagebind = ImageBind()
+
+async def get_api_key(api_key_header: str = Security(api_key_header)):
+    if api_key_header in API_KEYS:
+        return api_key_header
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key"
+        )
 
 class VideoMetadataUpload(BaseModel):
     metadata: List[VideoMetadata]
@@ -250,11 +269,59 @@ async def main():
     def healthcheck():
         return datetime.utcnow()
 
+    ################ START MULTI-MODAL API / OPENTENSOR CONNECTOR ################
+    @app.get("/api/mm/topics")
+    async def get_mm_topics(api_key: str = Security(get_api_key)):
+        try:
+            connection = connect_to_db()
+            query = f"SELECT DISTINCT query FROM omega_multimodal"
+            cursor = connection.cursor()
+            cursor.execute(query)
+            data = [row[0] for row in cursor.fetchall()]
+            
+            cursor.close()
+            connection.close()
+            return data
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+        
+
+    @app.get("/api/mm/topic_video_count")
+    async def get_mm_topic_video_count(api_key: str = Security(get_api_key)):
+        try:
+            connection = connect_to_db()
+            query = f"SELECT query, COUNT(*) AS num_videos FROM omega_multimodal GROUP BY query"
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query)
+            data = cursor.fetchall()
+            
+            cursor.close()
+            connection.close()
+            return data        
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+
+
+    @app.get("/api/mm/topic_relevant/{topic}")
+    async def get_mm_topic_relevant(api_key: str = Security(get_api_key), topic: str = Path(...)):
+        try:
+            connection = connect_to_db()
+            query = f"SELECT video_id, youtube_id, description, start_time, end_time FROM omega_multimodal where query = '{topic}' ORDER BY query_relevance_score DESC LIMIT 100"
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query)
+            data = cursor.fetchall()
+            
+            cursor.close()
+            connection.close()
+            return data        
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+    ################ END MULTI-MODAL API / OPENTENSOR CONNECTOR ################
+
     await asyncio.gather(
         resync_metagraph(),
         asyncio.to_thread(uvicorn.run, app, host="0.0.0.0", port=8001)
     )
-
 
 if __name__ == "__main__":
     asyncio.run(main())
