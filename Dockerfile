@@ -21,8 +21,8 @@ WORKDIR /app/
 
 # Install python requirements
 COPY ./requirements.txt ./requirements.txt
-RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel
-RUN python -m pip install -r requirements.txt --no-cache-dir
+RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel uv
+RUN python -m uv pip install -r requirements.txt --prerelease=allow --no-cache-dir
 
 COPY . .
 RUN python -m pip install -e . --no-cache-dir
