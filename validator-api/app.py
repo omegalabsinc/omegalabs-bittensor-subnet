@@ -61,6 +61,9 @@ class VideoMetadataUpload(BaseModel):
     description_relevance_scores: List[float]
     query_relevance_scores: List[float]
     topic_query: str
+    novelty_score: float
+    total_score: float
+    miner_hotkey: str
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -181,6 +184,8 @@ async def main():
             )
         
         uid = None
+        is_bittensor = 0
+        is_commune = 0
         if ENABLE_COMMUNE and hotkey in commune_keys.values():
             # get uid of commune validator
             for key_uid, key_hotkey in commune_keys.items():
@@ -188,10 +193,12 @@ async def main():
                     uid = key_uid
                     break
             validator_chain = "commune"
+            is_commune = 1
         elif uid is None and hotkey in metagraph.hotkeys:
             # get uid of bittensor validator
             uid = metagraph.hotkeys.index(hotkey)
             validator_chain = "bittensor"
+            is_bittensor = 1
 
         metadata = upload_data.metadata
         description_relevance_scores = upload_data.description_relevance_scores
@@ -201,6 +208,60 @@ async def main():
         start_time = time.time()
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+
+        if IS_PROD:
+            # Calculate and upsert leaderboard data
+            datapoints = len(video_ids)
+            avg_desc_relevance = sum(description_relevance_scores) / len(description_relevance_scores)
+            avg_query_relevance = sum(query_relevance_scores) / len(query_relevance_scores)
+            novelty_score = upload_data.novelty_score
+            total_score = upload_data.total_score
+            miner_hotkey = upload_data.miner_hotkey
+            
+            try:
+                start_time = time.time()
+                connection = connect_to_db()
+                query = """
+                INSERT INTO miner_leaderboard (
+                    hotkey,
+                    is_bittensor,
+                    is_commune,
+                    datapoints,
+                    avg_desc_relevance,
+                    avg_query_relevance,
+                    avg_novelty,
+                    avg_score,
+                    last_updated
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                ) ON DUPLICATE KEY UPDATE
+                    datapoints = datapoints + VALUES(datapoints),
+                    avg_desc_relevance = ((avg_desc_relevance * (datapoints - VALUES(datapoints))) + (VALUES(avg_desc_relevance) * VALUES(datapoints))) / datapoints,
+                    avg_query_relevance = ((avg_query_relevance * (datapoints - VALUES(datapoints))) + (VALUES(avg_query_relevance) * VALUES(datapoints))) / datapoints,
+                    avg_novelty = ((avg_novelty * (datapoints - VALUES(datapoints))) + (VALUES(avg_novelty) * VALUES(datapoints))) / datapoints,
+                    avg_score = ((avg_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_score) * VALUES(datapoints))) / datapoints,
+                    last_updated = NOW();
+                """
+                cursor = connection.cursor()
+                cursor.execute(query, (
+                    miner_hotkey,
+                    is_bittensor,
+                    is_commune,
+                    datapoints,
+                    avg_desc_relevance,
+                    avg_query_relevance,
+                    novelty_score,
+                    total_score
+                ))
+                connection.commit()
+                print(f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+                
+            except mysql.connector.Error as err:
+                raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+            finally:
+                if connection:
+                    connection.close()
+        
         return True
 
     @app.post("/api/get_proxy")
