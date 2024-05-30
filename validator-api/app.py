@@ -63,9 +63,9 @@ class VideoMetadataUpload(BaseModel):
     description_relevance_scores: List[float]
     query_relevance_scores: List[float]
     topic_query: str
-    novelty_score: float
-    total_score: float
-    miner_hotkey: str
+    novelty_score: Optional[float] = None
+    total_score: Optional[float] = None
+    miner_hotkey: Optional[str] = None
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -213,7 +213,7 @@ async def main():
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
 
-        if IS_PROD:
+        if IS_PROD and upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
             datapoints = len(video_ids)
             avg_desc_relevance = sum(description_relevance_scores) / len(description_relevance_scores)
@@ -265,6 +265,8 @@ async def main():
             finally:
                 if connection:
                     connection.close()
+        else:
+            print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
         
         return True
 
