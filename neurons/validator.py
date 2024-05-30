@@ -93,7 +93,7 @@ class Validator(BaseValidatorNeuron):
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
-        self.all_topics = [line.strip() for line in open(config.topics_path) if line.strip()]
+        self.all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
 
         self.imagebind = None
         if not self.config.neuron.decentralization.off:
