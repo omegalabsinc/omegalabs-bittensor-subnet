@@ -2,7 +2,7 @@ import asyncio
 import os
 from datetime import datetime
 import time
-from typing import Annotated, List
+from typing import Annotated, List, Optional
 import random
 from pydantic import BaseModel
 
@@ -13,6 +13,8 @@ import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from fastapi.security.api_key import APIKeyHeader
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
 
@@ -105,6 +107,8 @@ def authenticate_with_commune(hotkey, commune_keys):
 
 async def main():
     app = FastAPI()
+    # Mount the static directory to serve static files
+    app.mount("/static", StaticFiles(directory="validator-api/static"), name="static")
 
     subtensor = bittensor.subtensor(network=NETWORK)
     metagraph: bittensor.metagraph = subtensor.metagraph(NETUID)
@@ -378,6 +382,58 @@ async def main():
         except mysql.connector.Error as err:
             raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
     ################ END MULTI-MODAL API / OPENTENSOR CONNECTOR ################
+
+    ################ START LEADERBOARD ################
+    @app.get("/api/leaderboard")
+    async def get_leaderboard_data(hotkey: Optional[str] = None, sort_by: Optional[str] = None, sort_order: Optional[str] = None):
+        try:
+            connection = connect_to_db()
+            query = "SELECT * FROM miner_leaderboard"
+            params = []
+
+            # Filter by hotkey if provided
+            if hotkey:
+                query += " WHERE hotkey = %s"
+                params.append(hotkey)
+
+            # Sort by the specified column if provided, default to 'datapoints'
+            sort_column = "datapoints"  # Default sort column
+            sort_order = "DESC"  # Default sort order
+            if sort_by:
+                # Validate and map sort_by to actual column names if necessary
+                valid_sort_columns = {
+                    "datapoints": "datapoints",
+                    "avg_desc_relevance": "avg_desc_relevance",
+                    "avg_query_relevance": "avg_query_relevance",
+                    "avg_novelty": "avg_novelty",
+                    "avg_score": "avg_score",
+                    "last_updated": "last_updated"
+                }
+                sort_column = valid_sort_columns.get(sort_by, sort_column)
+            if sort_order:
+                # Validate and map sort_order to actual values if necessary
+                valid_sort_orders = {
+                    "asc": "ASC",
+                    "desc": "DESC"
+                }
+                sort_order = valid_sort_orders.get(sort_order.lower(), sort_order)
+            
+            query += f" ORDER BY {sort_column} {sort_order}"
+
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query, params)
+            data = cursor.fetchall()
+            
+            cursor.close()
+            connection.close()
+            return data        
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+    
+    @app.get("/leaderboard")
+    def leaderboard():
+        return FileResponse('validator-api/static/leaderboard.html')
+    ################ END LEADERBOARD ################
 
     await asyncio.gather(
         resync_metagraph(),
