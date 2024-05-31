@@ -212,8 +212,7 @@ async def main():
         start_time = time.time()
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-
-        #if IS_PROD and upload_data.miner_hotkey is not None:
+        
         if upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
             datapoints = len(video_ids)
@@ -226,8 +225,12 @@ async def main():
             try:
                 start_time = time.time()
                 connection = connect_to_db()
-                query = """
-                INSERT INTO miner_leaderboard (
+
+                leaderboard_table_name = "miner_leaderboard"
+                if not IS_PROD:
+                    leaderboard_table_name += "_test"
+                query = f"""
+                INSERT INTO {leaderboard_table_name} (
                     hotkey,
                     is_bittensor,
                     is_commune,
@@ -390,8 +393,11 @@ async def main():
     @app.get("/api/leaderboard")
     async def get_leaderboard_data(hotkey: Optional[str] = None, sort_by: Optional[str] = None, sort_order: Optional[str] = None):
         try:
+            leaderboard_table_name = "miner_leaderboard"
+            if not IS_PROD:
+                leaderboard_table_name += "_test"
             connection = connect_to_db()
-            query = "SELECT * FROM miner_leaderboard"
+            query = f"SELECT * FROM {leaderboard_table_name}"
             params = []
 
             # Filter by hotkey if provided
