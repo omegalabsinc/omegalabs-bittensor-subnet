@@ -213,7 +213,8 @@ async def main():
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
 
-        if IS_PROD and upload_data.miner_hotkey is not None:
+        #if IS_PROD and upload_data.miner_hotkey is not None:
+        if upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
             datapoints = len(video_ids)
             avg_desc_relevance = sum(description_relevance_scores) / len(description_relevance_scores)
