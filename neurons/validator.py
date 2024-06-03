@@ -26,6 +26,7 @@ import os
 import random
 import json
 import traceback
+import requests
 
 # Bittensor
 import bittensor as bt
@@ -93,7 +94,10 @@ class Validator(BaseValidatorNeuron):
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
-        self.all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
+
+        # load topics from topics URL (CSV) or fallback to local topics file
+        self.load_topics_start = dt.datetime.now()
+        self.all_topics = self.load_topics()
 
         self.imagebind = None
         if not self.config.neuron.decentralization.off:
@@ -131,6 +135,21 @@ class Validator(BaseValidatorNeuron):
         )
 
         bt.logging.debug(f"Started a new wandb run: {name}")
+
+    def load_topics(self):
+        # get topics from CSV URL and load them into our topics list
+        try:
+            response = requests.get(self.config.topics_url)
+            response.raise_for_status()
+            # split the response text into a list of topics and trim any whitespace
+            all_topics = [line.strip() for line in response.text.split("\n")]
+            bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_url}")
+        except Exception as e:
+            bt.logging.error(f"Error loading topics from URL {self.config.topics_url}: {e}")
+            traceback.print_exc()
+            bt.logging.info(f"Using fallback topics from {self.config.topics_path}")
+            all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
+        return all_topics
 
     async def forward(self):
         """
@@ -408,7 +427,7 @@ class Validator(BaseValidatorNeuron):
             
             # first get local novelty scores
             local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
-            bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
+            #bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
             # second get the novelty scores from the validator api if not already too similar
             embeddings_to_check = [
                 (embedding, metadata)
@@ -426,14 +445,14 @@ class Validator(BaseValidatorNeuron):
             if global_novelty_scores is None or len(global_novelty_scores) == 0:
                 bt.logging.error("Issue retrieving global novelty scores, returning None.")
                 return None
-            bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
             
             # calculate true novelty scores between local and global
             true_novelty_scores = [
                 min(local_score, global_score) for local_score, global_score
                 in zip(local_novelty_scores, global_novelty_scores)
             ]
-            bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
+            #bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
@@ -449,8 +468,8 @@ class Validator(BaseValidatorNeuron):
             if len(metadata) == 0:
                 return MIN_SCORE
 
-            # compute our final novelty score
-            novelty_score = self.compute_final_novelty_score(true_novelty_scores)
+            # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
+            #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
             
             # Compute relevance scores
             description_relevance_scores = F.cosine_similarity(
@@ -463,9 +482,8 @@ class Validator(BaseValidatorNeuron):
             # Aggregate scores
             score = (
                 sum(description_relevance_scores) +
-                sum(query_relevance_scores) +
-                novelty_score
-            ) / 3 / videos.num_videos
+                sum(query_relevance_scores)
+            ) / 2 / videos.num_videos
             
             # Set final score, giving minimum if necessary
             score = max(score, MIN_SCORE)
@@ -475,13 +493,12 @@ class Validator(BaseValidatorNeuron):
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
                 description_relevance_scores: {description_relevance_scores},
                 query_relevance_scores: {query_relevance_scores},
-                novelty_score: {novelty_score},
                 score: {score}
             ''')
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = videos.axon.hotkey
-            upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query, novelty_score, score, miner_hotkey)
+            upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query, None, score, miner_hotkey)
             if upload_result:
                 bt.logging.info("Uploading of video metadata successful.")
             else:

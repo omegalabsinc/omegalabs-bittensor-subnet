@@ -265,6 +265,13 @@ def add_validator_args(cls, parser):
     )
 
     parser.add_argument(
+        "--topics_url",
+        type=str,
+        help="URL to fetch topics from.",
+        default="https://docs.google.com/spreadsheets/d/e/2PACX-1vR3jKfd4qkxXt5rTvXTTSsz_RYGkxcxh6-jvB9H0Mljiz-nai7xG-E63qEQ9jQhQabBrIAeJWtgKg5j/pub?gid=0&single=true&output=csv"
+    )
+
+    parser.add_argument(
         "--topics_path",
         type=str,
         help="Path to text file containing a list of random topics to collect data for.",
