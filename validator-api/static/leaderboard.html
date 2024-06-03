@@ -11,7 +11,7 @@
         html, body {
             font-family: Roboto, sans-serif;
             line-height: 1.5;
-            height: 100%; /* Ensure the html and body elements take up the full height of the window */
+            height: 101%; /* Ensure the html and body elements take up the full height of the window */
             margin: 0; /* Reset any default margin */
             padding: 0; /* Reset any default padding */
         }
@@ -21,7 +21,15 @@
             line-height: 1.6;
             font-weight: 400;
             background-color: #0a1128;
-            background-image: url(https://omegatron.ai/static/images/0423e77f5905b1f1bccb.png);
+            background-image: 
+                linear-gradient(
+                    to bottom,
+                    rgba(255, 255, 255, 0) 0%, /* Fully transparent */
+                    rgba(255, 255, 255, 0) calc(100% - 700px), /* Transparent until 200px from the bottom */
+                    #0a1128 calc(100% - 200px),
+                    #0a1128 100% /* Transition to the background color over the last 200px */
+                ),
+                url(https://omegatron.ai/static/images/0423e77f5905b1f1bccb.png);
             background-size: cover;
             background-repeat: no-repeat;
             background-position: center;
@@ -266,6 +274,7 @@
             </tr>
         </table>
     </div>
+    <div>&nbsp;</div>
 
     <script>
         new Vue({
