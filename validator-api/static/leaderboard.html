@@ -78,10 +78,24 @@
             box-shadow: 4px 4px 8px 0 rgba(70, 70, 70, 0.3); /* Drop shadow */
         }
 
+        th.center {
+            text-align: center;
+        }
+
+        .width520 {
+            width: 520px;
+        }
+
+        .width20 {
+            width: 20px;
+        }
+
         /* Style for table headers and cells to inherit the rounded corners */
         th, td {
             /*border: 1px solid #ddd;  Light gray border for cells */
             padding: 8px; /* Padding for cell content */
+            text-align: left;
+            width: 10%;
         }
 
         th {
@@ -251,26 +265,24 @@
         </div>
         <table>
             <tr>
-                <th>Hotkey</th>
+                <th class="center width520">Hotkey</th>
                 <th>Project</th>
                 <th class="sortable" @click="sortBy('datapoints')">Datapoints<span v-if="sortKey === 'datapoints'" class="arrow" :class="{ 'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0 }"></span></th>
                 <th class="sortable" @click="sortBy('avg_desc_relevance')">Avg Desc Relevance<span v-if="sortKey === 'avg_desc_relevance'" class="arrow" :class="{ 'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0 }"></span></th>
                 <th class="sortable" @click="sortBy('avg_query_relevance')">Avg Query Relevance<span v-if="sortKey === 'avg_query_relevance'" class="arrow" :class="{ 'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0 }"></span></th>
-                <th class="sortable" @click="sortBy('avg_novelty')">Avg Novelty<span v-if="sortKey === 'avg_novelty'" class="arrow" :class="{ 'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0 }"></span></th>
                 <th class="sortable" @click="sortBy('avg_score')">Avg Score<span v-if="sortKey === 'avg_score'" class="arrow" :class="{ 'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0 }"></span></th>
                 <th>Last Updated</th>
-                <th><span class="refresh-icon" @click="fetchData">&#x21bb;</span></th>
+                <th class="width20"><span class="refresh-icon" @click="fetchData">&#x21bb;</span></th>
             </tr>
             <tr v-for="miner in filteredMiners" :key="miner.hotkey">
-                <td>{{ miner.hotkey }}</td>
+                <td class="width520">{{ miner.hotkey }}</td>
                 <td>{{ miner.is_bittensor ? 'Bittensor' : 'Commune' }}</td>
                 <td>{{ miner.datapoints }}</td>
                 <td>{{ miner.avg_desc_relevance }}</td>
                 <td>{{ miner.avg_query_relevance }}</td>
-                <td>{{ miner.avg_novelty }}</td>
                 <td>{{ miner.avg_score }}</td>
                 <td>{{ miner.last_updated }}</td>
-                <td></td>
+                <td class="width20"></td>
             </tr>
         </table>
     </div>
