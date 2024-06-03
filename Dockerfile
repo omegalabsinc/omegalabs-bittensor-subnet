@@ -7,7 +7,8 @@ RUN apt-get -y update && apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get -y update && apt-get install -y \
     python3.10 python3.10-distutils python3.10-venv python3.10-dev \
-    git libsndfile1 build-essential ffmpeg && \
+    git libsndfile1 build-essential ffmpeg \
+    pkg-config libmysqlclient-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
@@ -20,8 +21,8 @@ WORKDIR /app/
 
 # Install python requirements
 COPY ./requirements.txt ./requirements.txt
-RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel
-RUN python -m pip install -r requirements.txt --no-cache-dir
+RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel uv
+RUN python -m uv pip install -r requirements.txt --prerelease=allow --no-cache-dir
 
 COPY . .
 RUN python -m pip install -e . --no-cache-dir
