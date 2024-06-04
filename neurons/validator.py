@@ -307,10 +307,10 @@ class Validator(BaseValidatorNeuron):
                     ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
             except video_utils.IPBlockedException:
                 # IP is blocked, cannot download video, check description only
-                print("WARNING: IP is blocked, cannot download video, checking description only")
+                bt.logging.warning("WARNING: IP is blocked, cannot download video, checking description only")
                 return random_metadata, None
             except video_utils.FakeVideoException:
-                print(f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
+                bt.logging.warning(f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
                 return None
             except asyncio.TimeoutError:
                 continue
@@ -329,7 +329,7 @@ class Validator(BaseValidatorNeuron):
             desc_embeddings = self.imagebind.embed_text([random_metadata.description])
             is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
             strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
-            print(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
+            bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
             return is_similar_
 
         # Video downloaded, check all embeddings
@@ -344,7 +344,7 @@ class Validator(BaseValidatorNeuron):
             self.strict_is_similar(embeddings.audio, random_metadata.audio_emb) and
             self.strict_is_similar(embeddings.description, random_metadata.description_emb)
         )
-        print(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
+        bt.logging.debug(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
         return is_similar_
     
     def compute_novelty_score_among_batch(self, emb: Embeddings) -> List[float]:
@@ -388,7 +388,7 @@ class Validator(BaseValidatorNeuron):
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
             if len(metadata) < len(videos.video_metadata):
-                print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+                bt.logging.info(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
             # if randomly tripped, flag our random check to pull a video from miner's submissions
             check_video = CHECK_PROBABILITY > random.random()
@@ -419,7 +419,7 @@ class Validator(BaseValidatorNeuron):
             metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
             embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
             if len(metadata) < len(videos.video_metadata):
-                print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+                bt.logging.info(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
@@ -462,7 +462,7 @@ class Validator(BaseValidatorNeuron):
             # filter out embeddings too similar
             embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
-                print(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
