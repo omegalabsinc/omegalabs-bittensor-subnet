@@ -149,6 +149,7 @@ class Validator(BaseValidatorNeuron):
             traceback.print_exc()
             bt.logging.info(f"Using fallback topics from {self.config.topics_path}")
             all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
+            bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_path}")
         return all_topics
 
     async def forward(self):
