@@ -26,6 +26,7 @@ import os
 import random
 import json
 import traceback
+import requests
 
 # Bittensor
 import bittensor as bt
@@ -87,13 +88,16 @@ class Validator(BaseValidatorNeuron):
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
-        self.topics_endpoint = f"{api_root}/api/topic"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
+
+        # load topics from topics URL (CSV) or fallback to local topics file
+        self.load_topics_start = dt.datetime.now()
+        self.all_topics = self.load_topics()
 
         self.imagebind = None
         if not self.config.neuron.decentralization.off:
@@ -132,6 +136,22 @@ class Validator(BaseValidatorNeuron):
 
         bt.logging.debug(f"Started a new wandb run: {name}")
 
+    def load_topics(self):
+        # get topics from CSV URL and load them into our topics list
+        try:
+            response = requests.get(self.config.topics_url)
+            response.raise_for_status()
+            # split the response text into a list of topics and trim any whitespace
+            all_topics = [line.strip() for line in response.text.split("\n")]
+            bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_url}")
+        except Exception as e:
+            bt.logging.error(f"Error loading topics from URL {self.config.topics_url}: {e}")
+            traceback.print_exc()
+            bt.logging.info(f"Using fallback topics from {self.config.topics_path}")
+            all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
+            bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_path}")
+        return all_topics
+
     async def forward(self):
         """
         Validator forward pass. Consists of:
@@ -156,16 +176,8 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info("No miners available")
             return
 
-        try:
-            async with ClientSession() as session:
-                async with session.get(self.topics_endpoint) as response:
-                    response.raise_for_status()
-                    query = await response.json()
-        except Exception as e:
-            bt.logging.error(f"Error in get_topics: {e}")
-            return
-
         # The dendrite client queries the network.
+        query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
         input_synapse = Videos(query=query, num_videos=self.num_videos)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
@@ -296,10 +308,10 @@ class Validator(BaseValidatorNeuron):
                     ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
             except video_utils.IPBlockedException:
                 # IP is blocked, cannot download video, check description only
-                print("WARNING: IP is blocked, cannot download video, checking description only")
+                bt.logging.warning("WARNING: IP is blocked, cannot download video, checking description only")
                 return random_metadata, None
             except video_utils.FakeVideoException:
-                print(f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
+                bt.logging.warning(f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
                 return None
             except asyncio.TimeoutError:
                 continue
@@ -318,7 +330,7 @@ class Validator(BaseValidatorNeuron):
             desc_embeddings = self.imagebind.embed_text([random_metadata.description])
             is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
             strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
-            print(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
+            bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
             return is_similar_
 
         # Video downloaded, check all embeddings
@@ -333,7 +345,7 @@ class Validator(BaseValidatorNeuron):
             self.strict_is_similar(embeddings.audio, random_metadata.audio_emb) and
             self.strict_is_similar(embeddings.description, random_metadata.description_emb)
         )
-        print(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
+        bt.logging.debug(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
         return is_similar_
     
     def compute_novelty_score_among_batch(self, emb: Embeddings) -> List[float]:
@@ -377,7 +389,7 @@ class Validator(BaseValidatorNeuron):
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
             if len(metadata) < len(videos.video_metadata):
-                print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+                bt.logging.info(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
             # if randomly tripped, flag our random check to pull a video from miner's submissions
             check_video = CHECK_PROBABILITY > random.random()
@@ -408,7 +420,7 @@ class Validator(BaseValidatorNeuron):
             metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
             embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
             if len(metadata) < len(videos.video_metadata):
-                print(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+                bt.logging.info(f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
@@ -416,7 +428,7 @@ class Validator(BaseValidatorNeuron):
             
             # first get local novelty scores
             local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
-            bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
+            #bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
             # second get the novelty scores from the validator api if not already too similar
             embeddings_to_check = [
                 (embedding, metadata)
@@ -434,14 +446,14 @@ class Validator(BaseValidatorNeuron):
             if global_novelty_scores is None or len(global_novelty_scores) == 0:
                 bt.logging.error("Issue retrieving global novelty scores, returning None.")
                 return None
-            bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
             
             # calculate true novelty scores between local and global
             true_novelty_scores = [
                 min(local_score, global_score) for local_score, global_score
                 in zip(local_novelty_scores, global_novelty_scores)
             ]
-            bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
+            #bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
@@ -451,14 +463,14 @@ class Validator(BaseValidatorNeuron):
             # filter out embeddings too similar
             embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
-                print(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
                 return MIN_SCORE
 
-            # compute our final novelty score
-            novelty_score = self.compute_final_novelty_score(true_novelty_scores)
+            # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
+            #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
             
             # Compute relevance scores
             description_relevance_scores = F.cosine_similarity(
@@ -471,9 +483,8 @@ class Validator(BaseValidatorNeuron):
             # Aggregate scores
             score = (
                 sum(description_relevance_scores) +
-                sum(query_relevance_scores) +
-                novelty_score
-            ) / 3 / videos.num_videos
+                sum(query_relevance_scores)
+            ) / 2 / videos.num_videos
             
             # Set final score, giving minimum if necessary
             score = max(score, MIN_SCORE)
@@ -483,13 +494,12 @@ class Validator(BaseValidatorNeuron):
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
                 description_relevance_scores: {description_relevance_scores},
                 query_relevance_scores: {query_relevance_scores},
-                novelty_score: {novelty_score},
                 score: {score}
             ''')
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = videos.axon.hotkey
-            upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query, novelty_score, score, miner_hotkey)
+            upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query, None, score, miner_hotkey)
             if upload_result:
                 bt.logging.info("Uploading of video metadata successful.")
             else:

@@ -216,7 +216,7 @@ def add_validator_args(cls, parser):
         "--neuron.sample_size",
         type=int,
         help="The number of miners to query in a single step.",
-        default=5,
+        default=10,
     )
 
     parser.add_argument(
@@ -264,6 +264,19 @@ def add_validator_args(cls, parser):
         default=False,
     )
 
+    parser.add_argument(
+        "--topics_url",
+        type=str,
+        help="URL to fetch topics from.",
+        default="https://docs.google.com/spreadsheets/d/e/2PACX-1vR3jKfd4qkxXt5rTvXTTSsz_RYGkxcxh6-jvB9H0Mljiz-nai7xG-E63qEQ9jQhQabBrIAeJWtgKg5j/pub?gid=0&single=true&output=csv"
+    )
+
+    parser.add_argument(
+        "--topics_path",
+        type=str,
+        help="Path to text file containing a list of random topics to collect data for.",
+        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "topics.txt")
+    )
 
 def config(cls):
     """

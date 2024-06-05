@@ -201,6 +201,14 @@ class BaseValidatorNeuron(BaseNeuron):
                         self.wandb_run.finish()
                         self.new_wandb_run()
 
+                # Check if we should reload the topics.
+                if (dt.datetime.now() - self.load_topics_start) >= dt.timedelta(
+                    hours=1
+                ):
+                    bt.logging.info("Reloading topics after 1 hour.")
+                    self.all_topics = self.load_topics()
+                    self.load_topics_start = dt.datetime.now()
+
         # If someone intentionally stops the validator, it'll safely terminate operations.
         except KeyboardInterrupt:
             self.axon.stop()

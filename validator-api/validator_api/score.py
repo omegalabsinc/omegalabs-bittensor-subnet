@@ -9,7 +9,15 @@ import torch.nn.functional as F
 
 from omega.protocol import Videos, VideoMetadata
 from omega import video_utils
-from omega.constants import MAX_VIDEO_LENGTH, MIN_VIDEO_LENGTH
+from omega.constants import (
+    MAX_VIDEO_LENGTH, 
+    MIN_VIDEO_LENGTH,
+    DIFFERENCE_THRESHOLD, 
+    SIMILARITY_THRESHOLD, 
+    VIDEO_DOWNLOAD_TIMEOUT, 
+    MIN_SCORE, 
+    FAKE_VIDEO_PUNISHMENT
+)
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 
 from validator_api import config
@@ -17,13 +25,8 @@ from validator_api.dataset_upload import dataset_uploader
 
 
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
-DIFFERENCE_THRESHOLD = 0.05
-SIMILARITY_THRESHOLD = 1 - DIFFERENCE_THRESHOLD
 GPU_SEMAPHORE = asyncio.Semaphore(1)
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
-VIDEO_DOWNLOAD_TIMEOUT = 10
-MIN_SCORE = 0.005
-FAKE_VIDEO_PUNISHMENT = -5.0
 VIDEO_TYPE = "video"
 AUDIO_TYPE = "audio"
 DESCRIPTION_TYPE = "description"
@@ -294,9 +297,8 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     # Aggregate scores
     score = (
         sum(description_relevance_scores) +
-        sum(query_relevance_scores) +
-        novelty_score
-    ) / 3 / videos.num_videos
+        sum(query_relevance_scores)
+    ) / 2 / videos.num_videos
 
     if not is_check_only and len(metadata) > 0:
         video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
@@ -317,7 +319,6 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         "is_unique": [not is_sim for is_sim in is_too_similar],
         "description_relevance_scores": description_relevance_scores,
         "query_relevance_scores": query_relevance_scores,
-        "novelty_score": novelty_score,
         "score": score,
     }
 
