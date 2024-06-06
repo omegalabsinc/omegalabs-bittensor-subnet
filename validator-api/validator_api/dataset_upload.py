@@ -12,10 +12,13 @@ from validator_api import config
 
 
 HF_API = HfApi()
+NUM_BUCKETS = 1000
 
 
-def get_data_path(batch_id: str) -> str:
-    return f"default/train/{batch_id}.parquet"
+def get_data_path(batch_ulid_str: str) -> str:
+    batch_ulid = ulid.from_str(batch_ulid_str)
+    bucket = batch_ulid.int % NUM_BUCKETS
+    return f"default/train/{bucket:03d}/{batch_ulid_str}.parquet"
 
 
 class DatasetUploader:
