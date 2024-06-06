@@ -20,6 +20,7 @@ RUN rm /usr/bin/python3 && \
 WORKDIR /app/
 
 # Install python requirements
+COPY ./requirements.txt ./requirements.txt
 COPY ./requirements_api.txt ./requirements_api.txt
 RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel uv
 RUN python -m uv pip install -r requirements_api.txt --prerelease=allow --no-cache-dir
