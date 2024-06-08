@@ -23,6 +23,9 @@ from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
 
+import os, time
+import boto3
+import google.generativeai as genai
 
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
 GPU_SEMAPHORE = asyncio.Semaphore(1)
@@ -31,6 +34,10 @@ VIDEO_TYPE = "video"
 AUDIO_TYPE = "audio"
 DESCRIPTION_TYPE = "description"
 
+GOOGLE_AI_API_KEY = config.GOOGLE_AI_API_KEY
+genai.configure(api_key=GOOGLE_AI_API_KEY)
+model = genai.GenerativeModel('gemini-1.5-pro')
+s3_client = boto3.client('s3', aws_access_key_id = config.AWS_ACCESS_KEY, aws_secret_access_key = config.AWS_SECRET_KEY, region_name=config.AWS_S3_REGION)
 
 async def query_pinecone(vector: List[float]) -> float:
     response = await run_async(
@@ -330,3 +337,67 @@ async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> floa
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     scores_dict = await _run_video_scoring(videos, imagebind, is_check_only=False)
     return scores_dict["score"]
+
+async def score_video_productivity(
+    focusing_task: str,
+    link: str
+):
+    """
+    ## Params
+    - `focusing_task: string`
+    - `link: string`
+
+    ## Return
+    ```json
+    {
+        'score': float,
+        'analysis': string
+    }
+    ```
+    """
+    try:
+        object_name = link.split('s3.amazonaws.com/clips/')[1]
+        file_name = os.path.basename(object_name)
+        s3_client.download_file(config.AWS_S3_BUCKET_NAME, f"clips/{object_name}", file_name)
+        video_file = genai.upload_file(path=object_name)
+        jsonSchema = {
+            'title': "score video productivity",
+            'type': 'object',
+            'properties': {
+                'score': {
+                    'type': 'float',
+                    'description': "score value of video productivity from 1 to 10"
+                },
+                'analysis': {
+                   'type': 'string',
+                   'description': 'analysis of video productivity'
+                }
+            }
+        }
+        while video_file.state.name == "PROCESSING":
+            print('Uploading video is success. ', video_file.name)
+            time.sleep(60)
+            prompt = f"""
+                Score the productivity of the attached video according to focusing_task as a float value from 1 to 10.
+                focusing_task is {focusing_task}.
+                - Score 0 for watching youtube video screens. 
+                - Follow JSON schema.<JSONSchema>{jsonSchema}</JSONSchema>
+            """
+
+            contents = [
+                video_file,
+                prompt
+            ]
+
+            response = model.generate_content(contents)
+            return response.text
+
+        if video_file.state.name == "FAILED":
+            print('Uploading video is failed.')
+            return None
+    except Exception as e:
+       print(e)
+       return None
+    finally:
+       if os.path.exists(object_name):
+          os.remove(object_name)

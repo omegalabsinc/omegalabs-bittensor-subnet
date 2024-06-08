@@ -39,3 +39,9 @@ DB_CONFIG = {
     'host': os.environ["DBHOST"],
     'database': os.environ["DBNAME"]
 }
+
+GOOGLE_AI_API_KEY = os.environ['GOOGLE_AI_API_KEY']
+AWS_ACCESS_KEY=os.environ['AWS_ACCESS_KEY']
+AWS_SECRET_KEY=os.environ['AWS_SECRET_KEY']
+AWS_S3_REGION=os.environ['AWS_S3_REGION']
+AWS_S3_BUCKET_NAME=os.environ['AWS_S3_BUCKET_NAME']
