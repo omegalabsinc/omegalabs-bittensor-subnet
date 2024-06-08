@@ -23,7 +23,7 @@ from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
 
-import os, time
+import os
 import boto3
 import google.generativeai as genai
 
@@ -358,8 +358,8 @@ async def score_video_productivity(
     try:
         object_name = link.split('s3.amazonaws.com/clips/')[1]
         file_name = os.path.basename(object_name)
-        s3_client.download_file(config.AWS_S3_BUCKET_NAME, f"clips/{object_name}", file_name)
-        video_file = genai.upload_file(path=object_name)
+        await run_async(s3_client.download_file, config.AWS_S3_BUCKET_NAME, f"clips/{object_name}", file_name)
+        video_file = await run_async(genai.upload_file, object_name)
         jsonSchema = {
             'title': "score video productivity",
             'type': 'object',
@@ -376,7 +376,7 @@ async def score_video_productivity(
         }
         while video_file.state.name == "PROCESSING":
             print('Uploading video is success. ', video_file.name)
-            time.sleep(60)
+            await asyncio.sleep(60)
             prompt = f"""
                 Score the productivity of the attached video according to focusing_task as a float value from 1 to 10.
                 focusing_task is {focusing_task}.
@@ -389,7 +389,7 @@ async def score_video_productivity(
                 prompt
             ]
 
-            response = model.generate_content(contents)
+            response = await run_async(model.generate_content, contents)
             return response.text
 
         if video_file.state.name == "FAILED":
