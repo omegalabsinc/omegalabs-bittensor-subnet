@@ -90,7 +90,7 @@ def authenticate_with_bittensor(hotkey, metagraph):
         return False
 
     uid = metagraph.hotkeys.index(hotkey)
-    if not metagraph.validator_permit[uid]:
+    if not metagraph.validator_permit[uid] and NETWORK != "test":
         print("Bittensor validator permit required")
         return False
     
