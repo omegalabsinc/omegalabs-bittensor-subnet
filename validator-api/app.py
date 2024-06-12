@@ -142,6 +142,7 @@ async def main():
 
     @app.on_event("shutdown")
     async def shutdown_event():
+        print("Shutdown event fired, attempting dataset upload of current batch.")
         dataset_uploader.submit()
 
     @app.post("/api/get_pinecone_novelty")
@@ -444,10 +445,20 @@ async def main():
         return FileResponse('validator-api/static/leaderboard.html')
     ################ END LEADERBOARD ################
 
-    await asyncio.gather(
-        resync_metagraph(),
-        asyncio.to_thread(uvicorn.run, app, host="0.0.0.0", port=8001)
-    )
+    async def run_server():
+        config = uvicorn.Config(app=app, host="0.0.0.0", port=8001)
+        server = uvicorn.Server(config)
+        await server.serve()
+    
+    server_task = asyncio.create_task(run_server())
+    try:
+        await asyncio.gather(
+            resync_metagraph(),
+            server_task,
+        )
+    except asyncio.CancelledError:
+        server_task.cancel()
+        await server_task
 
 if __name__ == "__main__":
     asyncio.run(main())
