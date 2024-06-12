@@ -1,6 +1,7 @@
 from io import BytesIO
 from typing import List
 from datetime import datetime
+import random
 
 from datasets import Dataset
 from huggingface_hub import HfApi
@@ -21,10 +22,18 @@ def get_data_path(batch_ulid_str: str) -> str:
     return f"default/train/{bucket:03d}/{batch_ulid_str}.parquet"
 
 
+def get_random_batch_size() -> int:
+    return random.choice([
+        config.UPLOAD_BATCH_SIZE // 2,
+        config.UPLOAD_BATCH_SIZE,
+        config.UPLOAD_BATCH_SIZE * 2,
+    ])
+
+
 class DatasetUploader:
     def __init__(self):
         self.current_batch = []
-        self.desired_batch_size = config.UPLOAD_BATCH_SIZE
+        self.desired_batch_size = get_random_batch_size()
         self.min_batch_size = 32
 
     def add_videos(
@@ -76,6 +85,7 @@ class DatasetUploader:
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
         self.current_batch = self.current_batch[self.desired_batch_size:]
+        self.desired_batch_size = get_random_batch_size()
 
 
 dataset_uploader = DatasetUploader()
