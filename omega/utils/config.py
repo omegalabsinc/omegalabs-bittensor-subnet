@@ -174,6 +174,13 @@ def add_miner_args(cls, parser):
     )
 
     parser.add_argument(
+        "--blacklist.disable_ip_address_verification",
+        action="store_true",
+        help="If set, the source IP address will not be verified against request payload IP",
+        default=False,
+    )
+
+    parser.add_argument(
         "--wandb.project_name",
         type=str,
         default="template-miners",

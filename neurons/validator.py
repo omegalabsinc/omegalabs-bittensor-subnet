@@ -98,6 +98,7 @@ class Validator(BaseValidatorNeuron):
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
+        self.ip_address = bt.utils.networking.get_external_ip()
 
         self.imagebind = None
         if not self.config.neuron.decentralization.off:
@@ -179,7 +180,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=self.num_videos)
+        input_synapse = Videos(query=query, num_videos=self.num_videos, source_ip=self.ip_address)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
