@@ -52,11 +52,13 @@ class Videos(bt.Synapse):
     Attributes:
     - query: the input query for which to find relevant videos
     - num_videos: the number of videos to return
+    - source_ip: validator IP address, to combat relay attacks/theft
     - video_metadata: a list of video metadata objects
     """
 
     query: str
     num_videos: int
+    source_ip: str
     video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
 
     def deserialize(self) -> typing.List[VideoMetadata]:
@@ -72,6 +74,7 @@ class Videos(bt.Synapse):
         json_str = Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
+            source_ip=input_synapse.source_ip,
             video_metadata=self.video_metadata[:input_synapse.num_videos],
-        ).json(include={"query", "num_videos", "video_metadata"})
+        ).json(include={"query", "num_videos", "source_ip", "video_metadata"})
         return json.loads(json_str)

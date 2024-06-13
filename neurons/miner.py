@@ -125,6 +125,14 @@ class Miner(BaseMinerNeuron):
             bt.logging.warning(f"Blacklisting request from {synapse.dendrite.hotkey} [uid={uid}], not enough stake -- {stake}")
             return True, "Stake below minimum"
 
+        # Verify the source IP address matches the actual request IP.
+        ip_mismatch = synapse.source_ip and synapse.dendrite.ip != synapse.source_ip:
+        if ip_mismatch:
+            message = f"IP address mismatch: {synapse.dendrite.ip} vs {synapse.source_ip}"
+            bt.logging.warning(message)
+            if not self.config.disable_ip_address_verification:
+                return True, message
+
         bt.logging.trace(
             f"Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}"
         )
