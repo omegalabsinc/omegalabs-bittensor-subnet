@@ -49,7 +49,7 @@ class MLP(nn.Module):
 # Assuming embeddings is a numpy array of shape (num_samples, embedding_dim)
 # and labels is a numpy array of shape (num_samples,)
 # Load the JSON file
-with open('desc_embeddings_scored.json', 'r') as f:
+with open('desc_embeddings_openai_scored.json', 'r') as f:
     data = json.load(f)
 
 # Extract embeddings and labels
@@ -116,7 +116,7 @@ for epoch in range(num_epochs):
     if val_loss < best_val_loss:
         best_val_loss = val_loss
         print(f'Saving best model in epoch {epoch+1} with validation loss: {best_val_loss}')
-        torch.save(model.state_dict(), 'best_mlp_model.pth')
+        torch.save(model.state_dict(), 'best_mlp_openai_model.pth')
 
 # Save the final model
-torch.save(model.state_dict(), 'final_mlp_model.pth')
+torch.save(model.state_dict(), 'final_mlp_openai_model.pth')
