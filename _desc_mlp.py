@@ -1,23 +1,30 @@
 import torch
 import torch.nn as nn
 
-# Define the MLP model with the same architecture
+# Define the MLP model with more layers and a softmax output
 class MLP(nn.Module):
     def __init__(self, input_dim):
         super(MLP, self).__init__()
         self.fc1 = nn.Linear(input_dim, 128)
         self.fc2 = nn.Linear(128, 64)
-        self.fc3 = nn.Linear(64, 1)
+        self.fc3 = nn.Linear(64, 32)
+        self.fc4 = nn.Linear(32, 16)
+        self.fc5 = nn.Linear(16, 2)
         self.relu = nn.ReLU()
         self.dropout = nn.Dropout(p=0.5)
-        self.sigmoid = nn.Sigmoid()
+        self.softmax = nn.Softmax(dim=1)
 
     def forward(self, x):
         x = self.relu(self.fc1(x))
         x = self.dropout(x)
         x = self.relu(self.fc2(x))
         x = self.dropout(x)
-        x = self.sigmoid(self.fc3(x))
+        x = self.relu(self.fc3(x))
+        x = self.dropout(x)
+        x = self.relu(self.fc4(x))
+        x = self.dropout(x)
+        x = self.fc5(x)
+        x = self.softmax(x)
         return x
 
 # Load the model
@@ -32,9 +39,14 @@ def check_desc_embedding_against_MLP(embedding):
 
     # Make a prediction
     with torch.no_grad():
-        prediction = model(embedding_tensor).squeeze().item()
+        prediction = model(embedding_tensor)
+    
+    # Get the predicted class and its probability
+    predicted_probabilities = prediction.squeeze().numpy()
+    predicted_label = predicted_probabilities.argmax()
+    prediction_probability = predicted_probabilities[predicted_label]
 
     # Interpret the result
-    predicted_label = 1 if prediction >= 0.7 else 0
-    print(f"Prediction probability: {prediction}")
+    print(f"Prediction probabilities: {predicted_probabilities}")
     print(f"Predicted label: {'valid' if predicted_label == 1 else 'random'}")
+    print(f"Prediction probability: {prediction_probability}")
