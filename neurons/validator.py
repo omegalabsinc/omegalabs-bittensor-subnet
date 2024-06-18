@@ -378,6 +378,9 @@ class Validator(BaseValidatorNeuron):
     ) -> torch.FloatTensor:
         
         try:
+            # set the query for the miner's response to the input query originally sent
+            videos.query = input_synapse.query
+
             # return minimum score if no videos were found in video_metadata
             if len(videos.video_metadata) == 0:
                 return MIN_SCORE
