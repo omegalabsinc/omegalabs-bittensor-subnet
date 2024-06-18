@@ -521,7 +521,7 @@ class Validator(BaseValidatorNeuron):
         rewards = await asyncio.gather(*[
             self.check_videos_and_calculate_rewards(
                 input_synapse,
-                response,
+                response.replace_with_input(input_synapse), # replace with input properties from input_synapse
             )
             for response in responses
         ])
