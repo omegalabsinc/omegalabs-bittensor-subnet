@@ -119,4 +119,4 @@ for epoch in range(num_epochs):
         torch.save(model.state_dict(), 'best_mlp_openai_model.pth')
 
 # Save the final model
-torch.save(model.state_dict(), 'final_mlp_openai_model.pth')
+#torch.save(model.state_dict(), 'final_mlp_openai_model.pth')
