@@ -52,6 +52,7 @@ from omega.constants import (
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
+import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
