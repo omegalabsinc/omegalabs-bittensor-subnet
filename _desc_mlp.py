@@ -31,6 +31,7 @@ class MLP(nn.Module):
 input_dim = 1024 # input dimension for embeds is 1024
 model = MLP(input_dim)
 model.load_state_dict(torch.load('best_mlp_model.pth'))
+#model.load_state_dict(torch.load('best_mlp_openai_model.pth'))
 model.eval()
 
 def check_desc_embedding_against_MLP(embedding):

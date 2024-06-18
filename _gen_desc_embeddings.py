@@ -14,9 +14,10 @@ from _desc_mlp import check_desc_embedding_against_MLP
 HF_DATASET = "omegalabsinc/omega-multimodal"
 DATA_FILES_PREFIX = "default/train/"
 MAX_FILES = 3
-MAX_DESCRIPTIONS_TO_TEST = 10000
-#CACHE_FILE = "desc_embeddings_recent.json"
-CACHE_FILE = "desc_embeddings_scored.json"
+MAX_DESCRIPTIONS_TO_TEST = 1000
+CACHE_FILE = "desc_embeddings_recent.json"
+#CACHE_FILE = "desc_embeddings_scored.json"
+#CACHE_FILE = "desc_embeddings_openai_scored.json"
 MIN_AGE = 48 * 60 * 60  # 48 hours
 
 openAIClient = OpenAI()
@@ -132,7 +133,8 @@ def analyze_description(description: str) -> str:
 def generate_openai_desc_embeds(description: str) -> str:
     response = openAIClient.embeddings.create(
         input=description,
-        model="text-embedding-3-small"
+        model="text-embedding-3-small",
+        dimensions=1024
     )
     embedding = response.data[0].embedding
     return embedding
@@ -148,6 +150,7 @@ def main():
         return
     
     # generate OpenAI embeddings for each description and save to local json
+    """
     count = 1
     openai_desc_embeds = []
     for desc_embed in desc_embeds:
@@ -168,8 +171,8 @@ def main():
     # Rewrite the JSON file with the updated data
     with open('desc_embeddings_openai_scored.json', 'w') as f:
         json.dump(openai_desc_embeds, f, indent=4)
-    
     """
+
     # run analysis on each description with MLP model
     count = 1
     for desc_embed in desc_embeds:
@@ -180,7 +183,7 @@ def main():
         #if count == 10:
             #break
         count += 1
-    """
+    
     
     """
     # run analysis on each description by calling ChatGPT4
