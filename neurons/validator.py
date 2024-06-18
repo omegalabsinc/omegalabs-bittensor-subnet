@@ -378,9 +378,6 @@ class Validator(BaseValidatorNeuron):
     ) -> torch.FloatTensor:
         
         try:
-            # set the query for the miner's response to the input query originally sent
-            videos.query = input_synapse.query
-
             # return minimum score if no videos were found in video_metadata
             if len(videos.video_metadata) == 0:
                 return MIN_SCORE
@@ -524,7 +521,7 @@ class Validator(BaseValidatorNeuron):
         rewards = await asyncio.gather(*[
             self.check_videos_and_calculate_rewards(
                 input_synapse,
-                response,
+                response.replace_with_input(input_synapse), # replace with input properties from input_synapse
             )
             for response in responses
         ])

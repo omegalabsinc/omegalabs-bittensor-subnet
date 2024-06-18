@@ -69,9 +69,15 @@ class Videos(bt.Synapse):
         the input_synapse, while taking the non-null output property video_metadata from the
         response (self).
         """
-        json_str = Videos(
+        json_str = self.replace_with_input(input_synapse).json(include={"query", "num_videos", "video_metadata"})
+        return json.loads(json_str)
+    
+    def replace_with_input(self, input_synapse: "Videos") -> None:
+        """
+        Replaces the query and num_videos of current synapse with the given input synapse.
+        """
+        return Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
-            video_metadata=self.video_metadata[:input_synapse.num_videos],
-        ).json(include={"query", "num_videos", "video_metadata"})
-        return json.loads(json_str)
+            video_metadata=self.video_metadata[:input_synapse.num_videos]
+        )
