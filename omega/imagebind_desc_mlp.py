@@ -31,20 +31,27 @@ class ImagebindMLP(nn.Module):
 
 # Load the model
 input_dim = 1024 # input dimension for embeds is 1024
-model = ImagebindMLP(input_dim)
-model.load_state_dict(torch.load(MODEL_PATH))
+device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+model = ImagebindMLP(input_dim).to(device)
+model.load_state_dict(torch.load(MODEL_PATH, map_location=device))
 model.eval()
 
-def check_desc_embedding_against_MLP(embedding):
-    # Convert the embedding to a tensor
-    embedding_tensor = torch.tensor(embedding, dtype=torch.float32).unsqueeze(0)  # Add batch dimension
+def is_desc_embedding_valid(embedding):
+    # Ensure the embedding is on the correct device and has the correct shape
+    if not isinstance(embedding, torch.Tensor):
+        # Convert the embedding to a tensor
+        embedding_tensor = torch.tensor(embedding, dtype=torch.float32).unsqueeze(0).to(device)
+        #raise ValueError("Embedding should be a torch.Tensor")
+    else:
+        embedding_tensor = embedding.clone().detach().unsqueeze(0).to(device)  # Add batch dimension
 
     # Make a prediction
     with torch.no_grad():
         prediction = model(embedding_tensor)
     
     # Get the predicted class and its probability
-    predicted_probabilities = prediction.squeeze().numpy()
+    predicted_probabilities = prediction.squeeze().cpu().numpy()  # Move back to CPU for numpy operations
     predicted_label = predicted_probabilities.argmax()
     #prediction_probability = predicted_probabilities[predicted_label]
 
@@ -52,5 +59,10 @@ def check_desc_embedding_against_MLP(embedding):
     #print(f"Prediction probabilities: {predicted_probabilities}")
     #print(f"Predicted label: {'valid' if predicted_label == 1 else 'random'}")
     #print(f"Prediction probability: {prediction_probability}")
+    #print(f"predicted_label: {predicted_label}")
 
-    return predicted_label
+    # if valid, return true
+    if predicted_label == 1:
+        return True
+    else:
+        return False

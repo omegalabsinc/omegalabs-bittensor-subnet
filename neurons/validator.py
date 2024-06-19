@@ -48,7 +48,8 @@ from omega.constants import (
     SIMILARITY_THRESHOLD, 
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
-    FAKE_VIDEO_PUNISHMENT
+    FAKE_VIDEO_PUNISHMENT,
+    RANDOM_DESCRIPTION_PENALTY
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
@@ -481,10 +482,25 @@ class Validator(BaseValidatorNeuron):
                 embeddings.video, query_emb
             ).tolist()
 
+            # Compute if there are penalties for random descriptions
+            are_descriptions_valid = [imagebind_desc_mlp.is_desc_embedding_valid(embedding) for embedding in embeddings.description]
+            description_penalties = []
+            # Apply penalties and store the penalized scores
+            for desc_score, desc_valid in zip(description_relevance_scores, are_descriptions_valid):
+                if not desc_valid:
+                    penalized_score = (
+                        (desc_score) -
+                        (desc_score * (1 - RANDOM_DESCRIPTION_PENALTY))
+                    ) * -1
+                    description_penalties.append(penalized_score)
+                else:
+                    description_penalties.append(0)
+
             # Aggregate scores
             score = (
                 sum(description_relevance_scores) +
-                sum(query_relevance_scores)
+                sum(query_relevance_scores) +
+                sum(description_penalties)
             ) / 2 / videos.num_videos
             
             # Set final score, giving minimum if necessary
@@ -495,6 +511,7 @@ class Validator(BaseValidatorNeuron):
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
                 description_relevance_scores: {description_relevance_scores},
                 query_relevance_scores: {query_relevance_scores},
+                description_penalties: {description_penalties},
                 score: {score}
             ''')
 
