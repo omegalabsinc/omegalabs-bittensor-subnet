@@ -488,10 +488,7 @@ class Validator(BaseValidatorNeuron):
             # Apply penalties and store the penalized scores
             for desc_score, desc_valid in zip(description_relevance_scores, are_descriptions_valid):
                 if not desc_valid:
-                    penalized_score = (
-                        (desc_score) -
-                        (desc_score * (1 - RANDOM_DESCRIPTION_PENALTY))
-                    ) * -1
+                    penalized_score = (desc_score * RANDOM_DESCRIPTION_PENALTY) * -1
                     description_penalties.append(penalized_score)
                 else:
                     description_penalties.append(0)
