@@ -66,3 +66,4 @@ def is_desc_embedding_valid(embedding):
         return True
     else:
         return False
+    
