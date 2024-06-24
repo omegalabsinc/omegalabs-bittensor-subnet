@@ -1,0 +1,446 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="static/favicon.ico" />
+    <title>OMEGA Metadata Dashboard</title>
+    <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <style>
+        /* Apply base font styles */
+        html, body {
+            font-family: Roboto, sans-serif;
+            line-height: 1.5;
+            height: 101%; /* Ensure the html and body elements take up the full height of the window */
+            margin: 0; /* Reset any default margin */
+            padding: 0; /* Reset any default padding */
+        }
+
+        body {
+            font-size: 16px;
+            line-height: 1.6;
+            font-weight: 400;
+            background-color: #0a1128;
+            background-image: 
+                linear-gradient(
+                    to bottom,
+                    rgba(255, 255, 255, 0) 0%, /* Fully transparent */
+                    rgba(255, 255, 255, 0) calc(100% - 700px), /* Transparent until 200px from the bottom */
+                    #0a1128 calc(100% - 200px),
+                    #0a1128 100% /* Transition to the background color over the last 200px */
+                ),
+                url(https://omegatron.ai/static/images/0423e77f5905b1f1bccb.png);
+            background-size: cover;
+            background-repeat: no-repeat;
+            background-position: center;
+            color: #ffffff; /* Light text color for better readability */
+        }
+        /*
+        body::before {
+            position: absolute;
+            content: "";
+            width: 100%;
+            height: 100%;
+            top: 0;
+            left: 0;
+            background-image: linear-gradient(to bottom, #0a1128 0%, rgba(10, 17, 40, 0.8078431373) 30%, rgba(10, 17, 40, 0.5607843137) 60%, rgba(10, 17, 40, 0.1450980392) 95%) !important;
+            z-index: 1;
+        }*/
+        .logo {
+            display: block; /* Use block to apply margin auto for centering */
+            width: 75px; /* Set the width of the logo container */
+            height: 75px; /* Set the height of the logo container */
+            margin: 0 auto; /* Center the logo horizontally */
+            margin-top: 2rem; /* Add space above the logo */
+        }
+
+        .logo svg {
+            width: 100%; /* Make the SVG fill the container */
+            height: 100%; /* Make the SVG fill the container */
+        }
+
+        h1 {
+            text-align: center;
+            font-size: 2.5rem;
+            margin-bottom: 3rem;
+            margin-top: 0;
+            text-shadow: 3px 3px 4px rgba(0, 0, 0, 0.75);
+        }
+
+        /* Table styles */
+        table {
+            width: 90%;
+            margin: 0 auto; /* Center table horizontally */
+            border-collapse: collapse;
+            text-indent: 0;
+            color: #ffffff; /* Ensure table text is light-colored */
+            border-radius: 10px; /* Rounded corners */
+            box-shadow: 4px 4px 8px 0 rgba(70, 70, 70, 0.3); /* Drop shadow */
+        }
+
+        th.center {
+            text-align: center;
+        }
+
+        .width520 {
+            width: 520px;
+        }
+
+        .width20 {
+            width: 20px;
+        }
+
+        /* Style for table headers and cells to inherit the rounded corners */
+        th, td {
+            /*border: 1px solid #ddd;  Light gray border for cells */
+            padding: 8px; /* Padding for cell content */
+            text-align: left;
+            width: 10%;
+        }
+
+        td {
+            cursor: pointer;
+        }
+
+        th {
+            background-color: #272727; /* Dark background for headers */
+            color: #ffffff; /* Light text color for headers */
+            font-weight: bold; /* Bold font weight for better readability */
+        }
+
+        /* Style for the first and last cells in each row to inherit the rounded corners */
+        th:first-child {
+            border-top-left-radius: 10px; /* Top-left rounded corner */
+        }
+
+        th:last-child {
+            border-top-right-radius: 10px; /* Top-right rounded corner */
+        }
+
+        /* Style for the last row to inherit the rounded corners */
+        tr:last-child td:first-child {
+            border-bottom-left-radius: 10px; /* Bottom-left rounded corner */
+        }
+
+        tr:last-child td:last-child {
+            border-bottom-right-radius: 10px; /* Bottom-right rounded corner */
+        }
+
+        /* Body styles */
+        tbody tr:nth-child(odd) {
+            background-color: #162035; /* Dark background for odd rows */
+        }
+
+        tbody tr:nth-child(even) {
+            background-color: #1f2a48; /* Slightly different dark background for even rows */
+        }
+
+        /* Footer styles */
+        tfoot {
+            font-weight: bold;
+            background-color: #1f2a48; /* Consistent background for footer */
+        }
+
+        .refresh-icon {
+            cursor: pointer;
+        }
+
+        .sortable {
+            cursor: pointer;
+        }
+
+        .arrow {
+            display: inline-block;
+            margin-left: 5px;
+        }
+
+        .arrow-up::before {
+            content: '▲';
+        }
+
+        .arrow-down::before {
+            content: '▼';
+        }
+
+        input[type="text"] {
+            width: 30%; /* Match the table width or adjust as needed */
+            padding: 10px; /* Larger padding for a taller input field */
+            margin-bottom: 20px; /* Space between the input field and the table */
+            font-size: 16px; /* Larger font size for better readability */
+            border: 1px solid #ccc; /* Subtle border color */
+            border-radius: 5px; /* Slightly rounded corners */
+            box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1); /* Inner shadow for depth */
+            display: block; /* Ensure it's a block-level element */
+            margin-left: auto; /* Combined with margin-right: auto, centers the input */
+            margin-right: auto;
+        }
+
+        .input-social-container {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+        }
+
+        .social-icons {
+            position: absolute;
+            right: 5%;
+            display: flex;
+            align-items: center;
+        }
+
+        .social-icons button {
+            background: none;
+            border: none;
+            cursor: pointer;
+        }
+
+        .social-icon {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            width: 50px; /* Adjust size as needed */
+            height: 50px; /* Adjust size as needed */
+            border-radius: 50%; /* Make it circular */
+            border: 1px solid #ccc; /* Light gray border */
+            margin-left: 15px; /* Space between icons */
+            overflow: hidden; /* Ensure the content fits the circular shape */
+            margin-bottom: 2em;
+        }
+
+        .social-icon img,
+        .social-icon svg {
+            width: 100%;
+            height: 100%;
+            display: block;
+            object-fit: cover; /* Ensure the image covers the area */
+        }
+
+        .youtube-embed {
+            width: 100%;
+            height: 315px;
+        }
+
+        .pagination {
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            margin-top: 20px; /* Adjust the margin as needed */
+            padding-top: 10px; /* Adjust the padding as needed */
+        }
+
+        .pagination button {
+            background-color: #068AC7;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            margin: 0 5px;
+            cursor: pointer;
+            border-radius: 5px;
+            font-size: 16px;
+        }
+
+        .pagination button:disabled {
+            background-color: #cccccc;
+            cursor: not-allowed;
+        }
+
+        .pagination span {
+            font-size: 16px;
+            margin: 0 10px;
+        }
+
+        /* Responsive styles for smaller screens */
+        @media (max-width: 768px) {
+            body {
+                font-size: 0.9em; /* Smaller font size on mobile */
+            }
+
+            h1 {
+                font-size: 1.5rem; /* Adjust heading size for mobile */
+            }
+
+            .logo {
+                width: 30%; /* Increase width percentage for smaller screens */
+            }
+
+            input[type="text"] {
+                width: 80%; /* Increase width for mobile */
+                padding: 8px; /* Adjust padding */
+                font-size: 1em; /* Adjust font size */
+            }
+
+            table {
+                width: 100%; /* Full width on mobile */
+            }
+        }
+    </style>
+</head>
+<body>
+    <div id="app">
+        <div class="logo">
+            <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 75 75">
+                <!-- Define the drop shadow filter -->
+                <defs>
+                    <filter id="text-shadow" x="-20%" y="-20%" width="140%" height="140%">
+                        <feGaussianBlur in="SourceAlpha" stdDeviation="2" result="blur"/>
+                        <feOffset in="blur" dx="2" dy="2" result="offsetBlur"/>
+                        <feMerge>
+                            <feMergeNode in="offsetBlur"/>
+                            <feMergeNode in="SourceGraphic"/>
+                        </feMerge>
+                    </filter>
+                </defs>
+                <text x="50%" y="70%" dominant-baseline="middle" text-anchor="middle" font-family="Roboto" font-size="100" fill="#068AC7" filter="url(#text-shadow)">Ω</text>
+            </svg>
+        </div>
+        <h1>OMEGA Metadata Dashboard</h1>
+        <div class="input-social-container">
+            <!--<input type="text" v-model="filterKey" placeholder="Filter by hotkey...">-->
+            <br /><br />
+            <div class="social-icons">
+                <a href="https://twitter.com/omegalabsai" target="_blank" class="social-icon"><button class="" type="button"><span class=""><img src="https://omegatron.ai/static/images/16b3234e15bf0aece98c.png"></span></button></a>
+                <a href="https://github.com/omegalabsinc" target="_blank" class="social-icon"><button class="" type="button"><span class=""><svg xmlns="http://www.w3.org/2000/svg" width="24" height="24" fill="none"><path fill="#fff" d="M12 2.247a10 10 0 0 0-3.162 19.487c.5.088.687-.212.687-.475 0-.237-.012-1.025-.012-1.862-2.513.462-3.163-.613-3.363-1.175a3.64 3.64 0 0 0-1.025-1.413c-.35-.187-.85-.65-.012-.662a2 2 0 0 1 1.537 1.025 2.137 2.137 0 0 0 2.913.825c.043-.509.27-.984.637-1.338-2.225-.25-4.55-1.112-4.55-4.937a3.9 3.9 0 0 1 1.025-2.688 3.6 3.6 0 0 1 .1-2.65s.837-.262 2.75 1.025a9.43 9.43 0 0 1 5 0c1.912-1.3 2.75-1.025 2.75-1.025.37.838.406 1.786.1 2.65a3.87 3.87 0 0 1 1.025 2.688c0 3.837-2.337 4.687-4.562 4.937a2.37 2.37 0 0 1 .675 1.85c0 1.338-.013 2.413-.013 2.75 0 .263.188.575.688.475A10.005 10.005 0 0 0 12 2.247"></path></svg></span></button></a>
+            </div>
+        </div>
+        <table>
+            <thead>
+                <tr>
+                    <th class="sortable" @click="sortBy('video_id')">Video ID<span v-if="sortKey === 'video_id'" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy('youtube_id')">YouTube ID<span v-if="sortKey === 'youtube_id'" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy('start_time')">Start<span v-if="sortKey === 'start_time'" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy('end_time')">End<span v-if="sortKey === 'end_time'" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable width520" @click="sortBy('description')">Description<span v-if="sortKey === 'description'" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy(5)">Desc Rel<span v-if="sortKey === 5" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy(6)">Query Rel<span v-if="sortKey === 6" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy('query')">Query<span v-if="sortKey === 'query'" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="sortable" @click="sortBy(8)">Submitted<span v-if="sortKey === 8" class="arrow" :class="{'arrow-up': sortOrder > 0, 'arrow-down': sortOrder < 0}"></span></th>
+                    <th class="width20"><span class="refresh-icon" @click="fetchData">&#x21bb;</span></th>
+                </tr>
+            </thead>
+            <tbody>
+                <template v-for="(video, index) in filteredVideos" :key="video.video_id">
+                    <tr>
+                        <td @click="toggleRow(index)">{{ video[0] }}</td>
+                        <td @click="toggleRow(index)">{{ video[1] }}</td>
+                        <td @click="toggleRow(index)">{{ video[2] }}</td>
+                        <td @click="toggleRow(index)">{{ video[3] }}</td>
+                        <td class="width520" @click="toggleRow(index)">{{ video[4] }}</td>
+                        <td @click="toggleRow(index)">{{ video[5] }}</td>
+                        <td @click="toggleRow(index)">{{ video[6] }}</td>
+                        <td @click="toggleRow(index)">{{ video[7] }}</td>
+                        <td @click="toggleRow(index)">{{ video[8] }}</td>
+                        <td class="width20"></td>
+                    </tr>
+                    <tr v-if="expandedRow === index" :key="'expanded-' + video.video_id">
+                        <td colspan="10">
+                            <iframe class="youtube-embed" :src="getYoutubeEmbedUrl(video[1], video[2], video[3])" frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+                        </td>
+                    </tr>
+                </template>
+            </tbody>
+        </table>
+        <div class="pagination">
+            <button @click="prevPage" :disabled="currentPage === 1">Previous</button>
+            <span>Page {{ currentPage }} of {{ totalPages }}</span>
+            <button @click="nextPage" :disabled="currentPage === totalPages">Next</button>
+        </div>
+    </div>
+    <div>&nbsp;</div>
+
+    <script>
+        new Vue({
+            el: '#app',
+            data: {
+                videos: [],
+                filterKey: '',
+                sortKey: 'submitted_at',
+                sortOrder: "desc",
+                expandedRow: null,
+                currentPage: 1,
+                itemsPerPage: 1000,
+                totalItems: 0
+            },
+            computed: {
+                filteredVideos() {
+                    //return this.videos;
+                    let sortedVideos = [...this.videos].sort((a, b) => {
+                        let modifier = this.sortOrder;
+                        let aValue = a[this.sortKey];
+                        let bValue = b[this.sortKey];
+
+                        // Convert to lowercase if sorting by string
+                        if (typeof aValue === 'string') {
+                            aValue = aValue.toLowerCase();
+                            bValue = bValue.toLowerCase();
+                        }
+
+                        if (aValue < bValue) return -1 * modifier;
+                        if (aValue > bValue) return 1 * modifier;
+                        return 0;
+                    });
+
+                    return sortedVideos.filter(video => {
+                        return video[0].toLowerCase().includes(this.filterKey.toLowerCase());
+                    });
+                },
+                totalPages() {
+                    return Math.ceil(this.totalItems / this.itemsPerPage);
+                }
+            },
+            methods: {
+                fetchData() {
+                    axios.get('/dashboard/get-video-metadata', {
+                        params: {
+                            sort_by: this.sortKey,
+                            sort_order: this.sortOrder,
+                            page: this.currentPage,
+                            items_per_page: this.itemsPerPage
+                        }
+                    })
+                    .then(response => {
+                        this.videos = response.data.data;
+                        this.totalItems = response.data.total_items;
+                    })
+                    .catch(error => {
+                        console.error('There was an error fetching the video metadata:', error);
+                    });
+                },
+                sortBy(key) {
+                    if (this.sortKey === key) {
+                        this.sortOrder *= "";
+                    } else {
+                        this.sortKey = key;
+                        this.sortOrder = "desc";
+                    }
+                },
+                toggleRow(index) {
+                    if (this.expandedRow === index) {
+                        this.expandedRow = null;
+                    } else {
+                        this.expandedRow = index;
+                    }
+                },
+                getYoutubeEmbedUrl(youtubeId, startTime, endTime) {
+                    return `https://www.youtube.com/embed/${youtubeId}?start=${startTime}&end=${endTime}&autoplay=1`;
+                },
+                prevPage() {
+                    if (this.currentPage > 1) {
+                        this.currentPage--;
+                        this.fetchData();
+                    }
+                },
+                nextPage() {
+                    if (this.currentPage < this.totalPages) {
+                        this.currentPage++;
+                        this.fetchData();
+                    }
+                }
+            },
+            mounted() {
+                this.fetchData();
+            }
+        });
+    </script>
+</body>
+</html>
