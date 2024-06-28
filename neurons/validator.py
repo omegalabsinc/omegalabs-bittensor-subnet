@@ -22,11 +22,14 @@ import asyncio
 from typing import List, Tuple, Optional, BinaryIO
 from pydantic import ValidationError
 import datetime as dt
-import os
 import random
 import json
 import traceback
 import requests
+
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 # Bittensor
 import bittensor as bt
@@ -86,7 +89,8 @@ class Validator(BaseValidatorNeuron):
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
 
         api_root = (
-            "https://dev-validator.api.omega-labs.ai"
+            # "https://dev-validator.api.omega-labs.ai"
+            "http://127.0.0.1:8001"
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
@@ -172,7 +176,8 @@ class Validator(BaseValidatorNeuron):
             self (:obj:`bittensor.neuron.Neuron`): The neuron object which contains all the necessary state for the validator.
 
         """
-        miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        # miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        miner_uids = [80]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
@@ -190,12 +195,15 @@ class Validator(BaseValidatorNeuron):
             deserialize=False,
             timeout=self.client_timeout_seconds,
         )
-
+        
         working_miner_uids = []
         finished_responses = []
 
         for response in responses:
             if response.video_metadata is None or not response.axon or not response.axon.hotkey:
+                continue
+            
+            if response.focus_metadata is None or not response.axon or not response.axon.hotkey:
                 continue
 
             uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
@@ -653,6 +661,11 @@ class Validator(BaseValidatorNeuron):
         keypair = self.dendrite.keypair
         hotkey = keypair.ss58_address
         signature = f"0x{keypair.sign(hotkey).hex()}"
+        
+        if response.axon.hotkey != response.focus_metadata[0].miner_hotkey:
+            bt.logging.warning(f"Not a valid miner hotkey.")
+            return None
+        
         try:
             async with ClientSession() as session:
                 async with session.post(
