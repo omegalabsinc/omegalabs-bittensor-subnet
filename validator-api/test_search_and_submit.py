@@ -1,4 +1,4 @@
-from omega.miner_utils import search_and_embed_videos, ImageBind, video_utils
+from omega.miner_utils import search_and_embed_youtube_videos, ImageBind, video_utils
 from omega.protocol import Videos
 from validator_api.dataset_upload import dataset_uploader
 from validator_api.score import score_and_upload_videos
@@ -9,7 +9,7 @@ imagebind = ImageBind()
 start = time.time()
 query = "minecraft gameplay footage"
 num_videos = 1
-video_metadata_list = search_and_embed_videos(query, num_videos, imagebind)
+video_metadata_list = search_and_embed_youtube_videos(query, num_videos, imagebind)
 print(f"Search and embed took {time.time() - start} seconds")
 
 videos = Videos(

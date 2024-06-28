@@ -1,6 +1,6 @@
 import asyncio
 import functools
-from typing import List, BinaryIO
+from typing import List, BinaryIO, Optional
 
 from imagebind import data
 from imagebind.models import imagebind_model
@@ -19,9 +19,9 @@ class Embeddings(BaseModel):
     class Config:
         arbitrary_types_allowed = True
     
-    video: torch.Tensor
-    audio: torch.Tensor
-    description: torch.Tensor
+    video: Optional[torch.Tensor]
+    audio: Optional[torch.Tensor]
+    description: Optional[torch.Tensor]
 
 
 def load_and_transform_text(text, device):
@@ -72,6 +72,16 @@ class ImageBind:
             description=embeddings[ModalityType.TEXT]
         )
 
+    @torch.no_grad()
+    def embed_only_video(self, video_files: List[BinaryIO]) -> Embeddings:
+        video_filepaths = [video_file.name for video_file in video_files]
+        embeddings = self.imagebind({
+            ModalityType.VISION: data.load_and_transform_video_data(video_filepaths, self.device)
+        })
+        return Embeddings(
+            video=embeddings[ModalityType.VISION],
+        )
+   
     @torch.no_grad()
     def embed_text(self, texts: List[str]) -> torch.Tensor:
         return self.imagebind({

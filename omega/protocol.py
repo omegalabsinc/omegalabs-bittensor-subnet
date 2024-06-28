@@ -51,9 +51,19 @@ class FocusVideoMetadata(BaseModel):
     """
     video_id: str
     video_link: str
+    focus_task: str
     score: float
     creator: str
     miner_hotkey: str
+    video_emb: typing.List[float]
+
+    def __repr_args__(self):
+        parent_args = super().__repr_args__()
+        exclude_args = ['video_emb']
+        return (
+            [(a, v) for a, v in parent_args if a not in exclude_args] +
+            [(a, ["..."]) for a in exclude_args]
+        )
 
 
 class Videos(bt.Synapse):

@@ -35,7 +35,7 @@ import omega
 
 from omega.base.miner import BaseMinerNeuron
 from omega.imagebind_wrapper import ImageBind
-from omega.miner_utils import search_and_embed_videos
+from omega.miner_utils import search_and_embed_youtube_videos, embed_focus_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
 from omega.constants import VALIDATOR_TIMEOUT
@@ -73,7 +73,7 @@ class Miner(BaseMinerNeuron):
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         
         start = time.time()
-        synapse.video_metadata = search_and_embed_videos(
+        synapse.video_metadata = search_and_embed_youtube_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
         time_elapsed = time.time() - start
@@ -87,19 +87,14 @@ class Miner(BaseMinerNeuron):
         response = requests.post(url=f'{os.getenv("BACKEND_API_URL")}/market/purchased_list',
                                  data=json.dumps(self.wallet.hotkey.ss58_address))
 
-        if response.status_code == 200 and len(response.json()) > 0:
-            data = response.json()[0]
-            bt.logging.info(f"Purchased FocusVideo list: {data}")
-            
-            synapse.focus_metadata = [
-                FocusVideoMetadata(
-                    video_id=data['id'],
-                    video_link=data['link'],
-                    score=data['score'],
-                    creator=data['creator'],
-                    miner_hotkey=data['miner_hotkey']
-                )
-            ]
+        video_data = response.json()
+        if response.status_code == 200:
+            bt.logging.warning(f'{len(video_data)} - {video_data}')
+            if len(video_data) > 0:
+                bt.logging.info(f"Purchased FocusVideo list: {video_data}")
+                synapse.focus_metadata = embed_focus_videos(synapse.query, video_data, self.imagebind)
+            else:
+                bt.logging.info(f"Failed to retrieve focus video list: No videos found.")
         else:
             bt.logging.info(f"Failed to retrieve market list: {response.status_code} - {response.reason}")
 
@@ -218,13 +213,13 @@ class Miner(BaseMinerNeuron):
             'video_id': video_id,
             'miner_hotkey': self.wallet.hotkey.ss58_address
         }))
-        with response.json() as res_data:
-            if response.status_code == 200 and res_data['status'] == 'success':
-                bt.logging.info(f'Purchased new vidoe: <{res_data["address"]}>')
-                return res_data['address']
-            else:
-                bt.logging.warning(f'Purchasing failed. {response.status_code} - {response.reason}')
-                return None
+        res_data = response.json()
+        if response.status_code == 200 and res_data['status'] == 'success':
+            bt.logging.info(f'Purchased new vidoe: <{res_data["address"]}>')
+            return res_data['address']
+        else:
+            bt.logging.warning(f'Purchasing failed. {response.status_code} - {response.reason}')
+            return None
 
 
 # This is the main function, which runs the miner.

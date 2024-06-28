@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import bittensor as bt
 
-from omega.protocol import VideoMetadata
+from omega.protocol import VideoMetadata, FocusVideoMetadata
 from omega.imagebind_wrapper import ImageBind
 from omega.constants import MAX_VIDEO_LENGTH, FIVE_MINUTES
 from omega import video_utils
@@ -43,7 +43,7 @@ def get_relevant_timestamps(query: str, yt: video_utils.YoutubeDL, video_path: s
     return start_time, end_time
 
 
-def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -> List[VideoMetadata]:
+def search_and_embed_youtube_videos(query: str, num_videos: int, imagebind: ImageBind) -> List[VideoMetadata]:
     """
     Search YouTube for videos matching the given query and return a list of VideoMetadata objects.
 
@@ -61,7 +61,7 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
         # take the first N that we need
         for result in results:
             start = time.time()
-            download_path = video_utils.download_video(
+            download_path = video_utils.download_youtube_video(
                 result.video_id,
                 start=0,
                 end=min(result.length, FIVE_MINUTES)  # download the first 5 minutes at most
@@ -74,6 +74,7 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
                     start, end = get_relevant_timestamps(query, result, download_path)
                     description = get_description(result, download_path)
                     clip_path = video_utils.clip_video(download_path.name, start, end)
+                    bt.logging.info(f"Clip video path: {clip_path}")
                     embeddings = imagebind.embed([description], [clip_path])
                     video_metas.append(VideoMetadata(
                         video_id=result.video_id,
@@ -96,3 +97,33 @@ def search_and_embed_videos(query: str, num_videos: int, imagebind: ImageBind) -
         bt.logging.error(f"Error searching for videos: {e}")
 
     return video_metas
+
+
+def embed_focus_videos(query: str, video_data: List, imagebind: ImageBind) -> List[FocusVideoMetadata]:
+    
+    focus_metas: List[FocusVideoMetadata] = []
+    # for video_id, video_link in zip(video_ids, video_links):
+    for video_info in video_data:
+        start = time.time()
+        download_path = video_utils.download_focus_video(
+            video_info['id'],
+            video_info['link']
+        )
+        if download_path:
+            try:
+                length = video_utils.get_video_duration(download_path.name)  # correct the length
+                bt.logging.info(f"Downloaded focus video {video_info['id']} ({min(length, FIVE_MINUTES)}) in {time.time() - start} seconds")
+                embeddings = imagebind.embed_only_video([download_path])
+                focus_metas.append(FocusVideoMetadata(
+                    video_id=video_info['id'],
+                    video_link=video_info['link'],
+                    score=video_info['score'],
+                    creator=video_info['creator'],
+                    miner_hotkey=video_info['miner_hotkey'],
+                    focus_task=video_info['focus_task'],
+                    video_emb=embeddings.video[0].tolist(),
+                ))
+            finally:
+                download_path.close()
+
+    return focus_metas
