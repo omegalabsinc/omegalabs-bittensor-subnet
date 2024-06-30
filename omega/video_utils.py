@@ -94,15 +94,17 @@ class FakeVideoException(Exception):
         super().__init__(message)
 
 
-def is_valid_id(youtube_id: str) -> bool:
+def is_valid_youtube_id(youtube_id: str) -> bool:
     return youtube_id is not None and len(youtube_id) == 11
 
+def is_valid_focus_id(focus_id: str) -> bool:
+    return focus_id is not None and len(focus_id) == 36
 
-def download_video(
+def download_youtube_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None, proxy: Optional[str]=None
 ) -> Optional[BinaryIO]:
-    if not is_valid_id(video_id):
-        raise FakeVideoException(f"Invalid video ID: {video_id}")
+    if not is_valid_youtube_id(video_id):
+        raise FakeVideoException(f"Invalid Youtube video ID: {video_id}")
 
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
@@ -128,7 +130,7 @@ def download_video(
 
         # Check if the file is empty (download failed)
         if os.stat(temp_fileobj.name).st_size == 0:
-            print(f"Error downloading video: {temp_fileobj.name} is empty")
+            print(f"Error downloading Youtube video: {temp_fileobj.name} is empty")
             temp_fileobj.close()
             return None
 
@@ -142,6 +144,43 @@ def download_video(
             raise IPBlockedException(e)
         if any(fake_vid_msg in str(e) for fake_vid_msg in ["Video unavailable", "is not a valid URL", "Incomplete YouTube ID"]):
             raise FakeVideoException(e)
+        print(f"Error downloading video: {e}")
+        return None
+
+def download_focus_video(
+    video_id: str,
+    video_link: str,
+    proxy: Optional[str] = None
+) -> Optional[BinaryIO]:
+    if not is_valid_focus_id(video_id):
+        raise FakeVideoException(f"Invalid focus video ID: {video_id}")
+
+    temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
+    ydl_opts = {
+        "format": "worst",  # Download the worst quality
+        "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
+        "overwrites": True,
+        "quiet": True,
+        "noprogress": True,
+        "match_filter": skip_live,
+    }
+
+    if proxy is not None:
+        ydl_opts["proxy"] = proxy
+        
+    try:
+        with YoutubeDL(ydl_opts) as ydl:
+            ydl.download([video_link])
+
+        # Check if the file is empty (download failed)
+        if os.stat(temp_fileobj.name).st_size == 0:
+            print(f"Error downloading Youtube video: {temp_fileobj.name} is empty")
+            temp_fileobj.close()
+            return None
+
+        return temp_fileobj
+    except Exception as e:
+        temp_fileobj.close()
         print(f"Error downloading video: {e}")
         return None
 

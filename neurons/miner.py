@@ -17,18 +17,30 @@
 # DEALINGS IN THE SOFTWARE.
 
 import time
+import json
 import typing
+import requests
 import bittensor as bt
+from dotenv import load_dotenv
+
+load_dotenv()
+
+import sys
+import os
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
+
 
 # Bittensor Miner Template:
 import omega
 
 from omega.base.miner import BaseMinerNeuron
 from omega.imagebind_wrapper import ImageBind
-from omega.miner_utils import search_and_embed_videos
+from omega.miner_utils import search_and_embed_youtube_videos, embed_focus_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
 from omega.constants import VALIDATOR_TIMEOUT
+
+from omega.protocol import FocusVideoMetadata
 
 
 class Miner(BaseMinerNeuron):
@@ -56,16 +68,36 @@ class Miner(BaseMinerNeuron):
     async def forward(
         self, synapse: omega.protocol.Videos
     ) -> omega.protocol.Videos:
+        
+        # Scrape Youtube videos
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
+        
         start = time.time()
-        synapse.video_metadata = search_and_embed_videos(
+        synapse.video_metadata = search_and_embed_youtube_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
         time_elapsed = time.time() - start
+        
         if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:
             bt.logging.info(f"–––––– SCRAPING SUCCEEDED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
         else:
             bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
+
+        # Retrieve marketplace video list
+        response = requests.post(url=f'{os.getenv("BACKEND_API_URL")}/market/purchased_list',
+                                 data=json.dumps(self.wallet.hotkey.ss58_address))
+
+        video_data = response.json()
+        if response.status_code == 200:
+            bt.logging.warning(f'{len(video_data)} - {video_data}')
+            if len(video_data) > 0:
+                bt.logging.info(f"Purchased FocusVideo list: {video_data}")
+                synapse.focus_metadata = embed_focus_videos(synapse.query, video_data, self.imagebind)
+            else:
+                bt.logging.info(f"Failed to retrieve focus video list: No videos found.")
+        else:
+            bt.logging.info(f"Failed to retrieve market list: {response.status_code} - {response.reason}")
+
         return synapse
 
     async def blacklist(
@@ -167,6 +199,27 @@ class Miner(BaseMinerNeuron):
         that says `save_state() not implemented`.
         """
         pass
+    
+    
+    def get_video_list(self):
+        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/get_list")
+        if response.status_code == 200:
+            return response.json()
+        else:
+            bt.logging.warning(f"Fetching available video list failed: {response.status_code} - {response.reason}")
+    
+    def purchase_focus_video(self, video_id: str):
+        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/purchase", data=json.dumps({
+            'video_id': video_id,
+            'miner_hotkey': self.wallet.hotkey.ss58_address
+        }))
+        res_data = response.json()
+        if response.status_code == 200 and res_data['status'] == 'success':
+            bt.logging.info(f'Purchased new vidoe: <{res_data["address"]}>')
+            return res_data['address']
+        else:
+            bt.logging.warning(f'Purchasing failed. {response.status_code} - {response.reason}')
+            return None
 
 
 # This is the main function, which runs the miner.

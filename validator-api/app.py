@@ -1,5 +1,7 @@
 import asyncio
+import requests
 import os
+import json
 from datetime import datetime
 import time
 from typing import Annotated, List, Optional
@@ -11,6 +13,8 @@ from tempfile import TemporaryDirectory
 import huggingface_hub
 from datasets import load_dataset
 import ulid
+import sys
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from traceback import print_exception
 
@@ -36,7 +40,7 @@ from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
-    TOPICS_LIST, PROXY_LIST, IS_PROD
+    TOPICS_LIST, PROXY_LIST, IS_PROD, BACKEND_API_URL
 )
 from validator_api.dataset_upload import dataset_uploader
 
@@ -365,11 +369,38 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail="Validator permit required",
             )
-
+            
+        # Check focus video metadata's validity
+        focus_score = 0
+        check_response = requests.post(url=f'{BACKEND_API_URL}/market/check_video_metadata', data=json.dumps({
+            'video_id': videos.focus_metadata[0].video_id,
+            'video_link': videos.focus_metadata[0].video_link,
+            'creator': videos.focus_metadata[0].creator,
+            'miner_hotkey': videos.focus_metadata[0].miner_hotkey
+        }))
+        
+        if check_response.status_code == 200:
+            json_res = check_response.json()
+            if json_res['success'] == True:
+                focus_score = float(json_res['score'])
+            else:
+                print(f"Checking video metadata failed: {json_res['message']}")
+                
+        else: focus_score = 0
+            
+        print(f"Focus Videos' Reward points are: {focus_score}")
+        
+        # Normalize focus score
+        focus_score = focus_score / 10
+        
         start_time = time.time()
-        computed_score = await score.score_and_upload_videos(videos, imagebind)
-        print(f"Returning score={computed_score} for validator={uid} in {time.time() - start_time:.2f}s")
-        return computed_score
+        youtube_score = await score.score_and_upload_videos(videos, imagebind)
+        
+        total_score = (youtube_score * 8 + focus_score * 2) / 10
+
+        print(f"Returning score={total_score} for validator={uid} in {time.time() - start_time:.2f}s")
+
+        return total_score
 
     if not IS_PROD:
         @app.get("/api/count_unique")
@@ -499,7 +530,7 @@ async def main():
     
     @app.get("/leaderboard")
     def leaderboard():
-        return FileResponse('validator-api/static/leaderboard.html')
+        return FileResponse('./validator-api/static/leaderboard.html')
     ################ END LEADERBOARD ################
 
     ################ START DASHBOARD ################

@@ -7,7 +7,7 @@ from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
 
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega import video_utils
 from omega.constants import (
     MAX_VIDEO_LENGTH, 
@@ -150,9 +150,12 @@ async def upload_video_metadata(
 def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
     """Filter the embeddings based on whether they are too similar to the query."""
     is_too_similar = torch.tensor(is_too_similar)
-    embeddings.video = embeddings.video[~is_too_similar]
-    embeddings.audio = embeddings.audio[~is_too_similar]
-    embeddings.description = embeddings.description[~is_too_similar]
+    if embeddings.video is not None:
+        embeddings.video = embeddings.video[~is_too_similar]
+    if embeddings.audio is not None:
+        embeddings.audio = embeddings.audio[~is_too_similar]
+    if embeddings.description is not None:
+        embeddings.description = embeddings.description[~is_too_similar]
     return embeddings
 
 
@@ -194,7 +197,7 @@ async def get_random_video(metadata: List[VideoMetadata], check_video: bool) -> 
         try:
             async with DOWNLOAD_SEMAPHORE:
                 random_video = await asyncio.wait_for(run_async(
-                    video_utils.download_video,
+                    video_utils.download_youtube_video,
                     random_metadata.video_id,
                     random_metadata.start_time,
                     random_metadata.end_time,
@@ -256,7 +259,7 @@ async def get_num_unique_videos(videos: Videos) -> int:
 
 
 async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only: bool) -> float:
-    if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
+    if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
         return {"score": FAKE_VIDEO_PUNISHMENT}
 
     metadata = metadata_check(videos.video_metadata)[:videos.num_videos]
