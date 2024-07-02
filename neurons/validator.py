@@ -506,6 +506,7 @@ class Validator(BaseValidatorNeuron):
         input_synapse: Videos,
         videos: Videos,
     ) -> float:
+        bt.logging.info(f"input synapse {input_synapse}, videos {videos}")
         youtube_rewards: float = asyncio.run(self.check_videos_and_calculate_rewards_youtube(input_synapse=input_synapse, videos=videos))
         focus_rewards: float = asyncio.run(self.check_videos_and_calculate_rewards_focus(input_synapse=input_synapse, videos=videos))
         bt.logging.info(f"Youtube Rewards: {youtube_rewards}, Focus Rewards: {focus_rewards}")
@@ -713,6 +714,10 @@ class Validator(BaseValidatorNeuron):
         if len(metadata) == 0:
             return MIN_SCORE
         
+        miner_hotkey = videos.axon.hotkey
+        
+        bt.logging.debug(f"{videos.axon} {input_synapse} input data")
+        
         # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
         #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
         total_score = 0
@@ -732,16 +737,16 @@ class Validator(BaseValidatorNeuron):
             ''')
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
-            miner_hotkey = videos.axon.hotkey
-            # upload_result = await self.upload_focusvideo_metadata(metadata, score, videos.query, miner_hotkey)
-            # if upload_result:
-            #     bt.logging.info("Uploading of video metadata successful.")
-            # else:
-            #     bt.logging.error("Issue uploading video metadata.")
             
+            upload_result = await self.upload_focusvideo_metadata(metadata, score, videos.query, miner_hotkey)
+            if upload_result:
+                bt.logging.info("Uploading of video metadata successful.")
+            else:
+                bt.logging.error("Issue uploading video metadata.")
+            bt.logging.debug(f"miner hotkey {miner_hotkey}")
             # Consumes ALL videos after given reward
             for focus_meta in videos.focus_metadata:
-                asyncio.run(self.consume_video(focus_meta.video_id))
+                asyncio.run(self.consume_video(video_id=focus_meta.video_id, miner_hotkey=miner_hotkey))
 
         total_score /= MAX_FOCUS_SCORE
         return total_score
@@ -960,9 +965,15 @@ class Validator(BaseValidatorNeuron):
         ])
         return rewards
 
-    async def consume_video(self, video_id: str):
-        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/consume", data=json.dumps(video_id))
+    async def consume_video(self, video_id: str, miner_hotkey: str):
+        data = {
+            'video_id': video_id,
+            'miner_hotkey': miner_hotkey
+        }
+        bt.logging.debug(data)
+        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/consume", json=data)
         res_data = response.json()
+        bt.logging.debug(res_data)
         if response.status_code == 200 and res_data['success'] == True:
             return True
         else:

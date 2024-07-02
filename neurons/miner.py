@@ -20,6 +20,7 @@ import time
 import json
 import typing
 import requests
+import asyncio
 import bittensor as bt
 from dotenv import load_dotenv
 
@@ -42,6 +43,8 @@ from omega.constants import VALIDATOR_TIMEOUT
 
 from omega.protocol import FocusVideoMetadata
 
+
+BACKEND_API_URL = os.getenv("BACKEND_API_URL")
 
 class Miner(BaseMinerNeuron):
     """
@@ -84,7 +87,7 @@ class Miner(BaseMinerNeuron):
             bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
 
         # Retrieve marketplace video list
-        response = requests.post(url=f'{os.getenv("BACKEND_API_URL")}/market/purchased_list',
+        response = requests.post(url=f'{BACKEND_API_URL}/market/purchased_list',
                                  data=json.dumps(self.wallet.hotkey.ss58_address))
 
         video_data = response.json()
@@ -93,6 +96,7 @@ class Miner(BaseMinerNeuron):
             if len(video_data) > 0:
                 bt.logging.info(f"Purchased FocusVideo list: {video_data}")
                 synapse.focus_metadata = embed_focus_videos(synapse.query, video_data, self.imagebind)
+                bt.logging.info(f"focus metadata {synapse.focus_metadata}")
             else:
                 bt.logging.info(f"Failed to retrieve focus video list: No videos found.")
         else:
@@ -202,14 +206,14 @@ class Miner(BaseMinerNeuron):
     
     
     def get_video_list(self):
-        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/get_list")
+        response = requests.post(f"{BACKEND_API_URL}/market/get_list")
         if response.status_code == 200:
             return response.json()
         else:
             bt.logging.warning(f"Fetching available video list failed: {response.status_code} - {response.reason}")
     
     def purchase_focus_video(self, video_id: str):
-        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/purchase", data=json.dumps({
+        response = requests.post(f"{BACKEND_API_URL}/market/purchase", data=json.dumps({
             'video_id': video_id,
             'miner_hotkey': self.wallet.hotkey.ss58_address
         }))
@@ -220,11 +224,35 @@ class Miner(BaseMinerNeuron):
         else:
             bt.logging.warning(f'Purchasing failed. {response.status_code} - {response.reason}')
             return None
-
+    async def check_consume_and_commit(self):
+        try:
+            miner_hotkey = self.wallet.hotkey.ss58_address
+            bt.logging.info(miner_hotkey)
+            response = requests.post(url=f'{BACKEND_API_URL}/market/consumed_list',
+                                    data=json.dumps(self.wallet.hotkey.ss58_address))
+            sub = bt.subtensor(config = self.config)
+            commitStr = sub.get_commitment(self.config.netuid, self.uid)
+            newIpfsUrlResponse = requests.post(url=f'{BACKEND_API_URL}/ipfs_url/get',
+                                    data=json.dumps(self.wallet.hotkey.ss58_address))
+            newIpfsUrl = newIpfsUrlResponse.json().get('url')                    
+            if not commitStr == newIpfsUrl:
+                sub.commit(wallet=self.wallet, netuid=self.config.netuid, data=newIpfsUrl)
+                bt.logging.info("commited new url==========")
+        except Exception as e:
+            bt.logging.error(e)
+        bt.logging.info(f"response------------{response.json()}")
+        bt.logging.info(f"get commitment------------{commitStr}")
+        bt.logging.info(f"ipfs-----------------{newIpfsUrl}")
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
     with Miner() as miner:
+        last_action_time = time.time()
         while True:
             bt.logging.info("Miner running...", time.time())
             time.sleep(5)
+            current_time = time.time()
+            if current_time - last_action_time >= 30:
+                asyncio.run(miner.check_consume_and_commit())
+                last_action_time = current_time
+            

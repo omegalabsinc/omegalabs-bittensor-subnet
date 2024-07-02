@@ -114,13 +114,14 @@ def embed_focus_videos(query: str, video_data: List, imagebind: ImageBind) -> Li
                 length = video_utils.get_video_duration(download_path.name)  # correct the length
                 bt.logging.info(f"Downloaded focus video {video_info['id']} ({min(length, FIVE_MINUTES)}) in {time.time() - start} seconds")
                 embeddings = imagebind.embed_only_video([download_path])
+                bt.logging.info(f"embeddings {embeddings}")
                 focus_metas.append(FocusVideoMetadata(
                     video_id=video_info['id'],
                     video_link=video_info['link'],
                     score=video_info['score'],
                     creator=video_info['creator'],
                     miner_hotkey=video_info['miner_hotkey'],
-                    focus_task=video_info['focus_task'],
+                    focus_task=video_info['task_id'],
                     video_emb=embeddings.video[0].tolist(),
                 ))
             finally:

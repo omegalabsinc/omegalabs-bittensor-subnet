@@ -103,6 +103,6 @@ class Videos(bt.Synapse):
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
             video_metadata=self.video_metadata[:input_synapse.num_videos],
-            focus_metadata=self.focus_metadata
-        ).json(include={"query", "num_videos", "video_metadata", "focus_metadata"})
-        return json.loads(json_str)
+            focus_metadata=self.focus_metadata,
+            axon=self.axon
+        )
