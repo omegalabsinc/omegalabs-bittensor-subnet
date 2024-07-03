@@ -17,8 +17,6 @@
 # DEALINGS IN THE SOFTWARE.
 
 
-import json
-import time
 from aiohttp import ClientSession, BasicAuth
 import asyncio
 from typing import List, Tuple, Optional, BinaryIO, Union
