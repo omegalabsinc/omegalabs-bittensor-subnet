@@ -226,10 +226,6 @@ class Miner(BaseMinerNeuron):
             return None
     async def check_consume_and_commit(self):
         try:
-            miner_hotkey = self.wallet.hotkey.ss58_address
-            bt.logging.info(miner_hotkey)
-            response = requests.post(url=f'{BACKEND_API_URL}/market/consumed_list',
-                                    data=json.dumps(self.wallet.hotkey.ss58_address))
             sub = bt.subtensor(config = self.config)
             commitStr = sub.get_commitment(self.config.netuid, self.uid)
             newIpfsUrlResponse = requests.post(url=f'{BACKEND_API_URL}/ipfs_url/get',
@@ -237,12 +233,9 @@ class Miner(BaseMinerNeuron):
             newIpfsUrl = newIpfsUrlResponse.json().get('url')                    
             if not commitStr == newIpfsUrl:
                 sub.commit(wallet=self.wallet, netuid=self.config.netuid, data=newIpfsUrl)
-                bt.logging.info("commited new url==========")
+                bt.logging.info(f"commited new url {newIpfsUrl}")
         except Exception as e:
             bt.logging.error(e)
-        bt.logging.info(f"response------------{response.json()}")
-        bt.logging.info(f"get commitment------------{commitStr}")
-        bt.logging.info(f"ipfs-----------------{newIpfsUrl}")
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
