@@ -51,11 +51,13 @@ class FocusVideoMetadata(BaseModel):
     """
     video_id: str
     video_link: str
-    focus_task: str
+    focus_task_id: str
+    focus_task_str: str
     score: float
     creator: str
     miner_hotkey: str
     video_emb: typing.List[float]
+    description_emb: typing.List[float]
 
     def __repr_args__(self):
         parent_args = super().__repr_args__()
@@ -78,6 +80,7 @@ class Videos(bt.Synapse):
 
     query: str
     num_videos: int
+    num_focus_videos: int
     video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
     focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = None
 
@@ -102,6 +105,7 @@ class Videos(bt.Synapse):
         return Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
+            num_focus_videos=input_synapse.num_focus_videos,
             video_metadata=self.video_metadata[:input_synapse.num_videos],
             focus_metadata=self.focus_metadata,
             axon=self.axon

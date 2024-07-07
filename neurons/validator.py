@@ -75,7 +75,7 @@ GOOGLE_AI_API_KEY = os.getenv('GOOGLE_AI_API_KEY')
 NO_RESPONSE_MINIMUM = 0.005
 GPU_SEMAPHORE = asyncio.Semaphore(1)
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
-
+BACKEND_URL = os.getenv('BACKEND_API_URL')
 class Validator(BaseValidatorNeuron):
     """
     Your validator neuron class. You should use this class to define your validator's behavior. In particular, you should replace the forward function with your own logic.
@@ -109,12 +109,15 @@ class Validator(BaseValidatorNeuron):
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
+        self.upload_focus_metadata_endpoint = f"{api_root}/api/upload_focus_metadata"
         self.num_videos = 8
+        self.num_focus_videos = 4
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
+        # self.all_focus_tasks = self.load_focus_tasks()
 
         self.imagebind = None
         if not self.config.neuron.decentralization.off:
@@ -131,22 +134,6 @@ class Validator(BaseValidatorNeuron):
             
         bt.logging.info("Initializing Gemini API and AWS S3.")
         self.init_gemini_s3()
-
-    # def connect_db(self):
-    #     try:
-    #         db_config = {
-    #             'user': os.getenv("DBUSER"),
-    #             'password': os.getenv("DBPASS"),
-    #             'host': os.getenv("DBHOST"),
-    #             'database': os.getenv("DBNAME")
-    #         }
-    #         connection_pool = mysql.connector.pooling.MySQLConnectionPool(
-    #             pool_name="validator_pool",
-    #             pool_size=5,
-    #             **db_config)
-    #         return connection_pool
-    #     except mysql.connector.Error as err:
-    #         print("Error in connect_to_db while creating MySQL database connection:", err)
     
     def init_gemini_s3(self):
         genai.configure(api_key=GOOGLE_AI_API_KEY)
@@ -199,6 +186,22 @@ class Validator(BaseValidatorNeuron):
             all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
             bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_path}")
         return all_topics
+    
+    # def load_focus_tasks(self):
+    #     # get topics from CSV URL and load them into our topics list
+    #     try:
+    #         response = requests.get(f"{BACKEND_URL}/task")
+    #         response.raise_for_status()
+    #         # split the response text into a list of topics and trim any whitespace
+    #         all_topics = [line.strip() for line in response.text.split("\n")]
+    #         bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_url}")
+    #     except Exception as e:
+    #         bt.logging.error(f"Error loading topics from URL {self.config.topics_url}: {e}")
+    #         traceback.print_exc()
+    #         bt.logging.info(f"Using fallback topics from {self.config.topics_path}")
+    #         all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
+    #         bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_path}")
+    #     return all_topics
 
     async def forward(self):
         """
@@ -219,7 +222,7 @@ class Validator(BaseValidatorNeuron):
 
         """
         # miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
-        miner_uids = [80]
+        miner_uids = [80] # for test
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
@@ -228,7 +231,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=self.num_videos)
+        input_synapse = Videos(query=query, num_videos=self.num_videos, num_focus_videos=self.num_focus_videos)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
@@ -242,10 +245,7 @@ class Validator(BaseValidatorNeuron):
         finished_responses = []
 
         for response in responses:
-            if response.video_metadata is None or not response.axon or not response.axon.hotkey:
-                continue
-            
-            if response.focus_metadata is None or not response.axon or not response.axon.hotkey:
+            if (response.video_metadata is None and response.focus_metadata is None) or not response.axon or not response.axon.hotkey:
                 continue
 
             uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
@@ -459,18 +459,23 @@ class Validator(BaseValidatorNeuron):
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
-            # desc_embeddings = self.imagebind.embed_text([random_metadata.description])
-            # is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
-            # strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
-            # bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
-            bt.logging.warning(f"Downloading random video failed unexpectedly. Return similarity as 0.")
-            return 0
+            desc_embeddings = self.imagebind.embed_text([random_metadata.focus_task_str])
+            is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
+            strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
+            bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
+            return is_similar_
 
         # Video downloaded, check all embeddings
-        embeddings = self.imagebind.embed_only_video([random_video])
+        embeddings = self.imagebind.embed_video_and_text([random_video], [random_metadata.focus_task_str])
 
-        is_similar_ = self.is_similar(embeddings.video, random_metadata.video_emb)
-        strict_is_similar_ = self.strict_is_similar(embeddings.video, random_metadata.video_emb)
+        is_similar_ = (
+            self.is_similar(embeddings.video, random_metadata.video_emb) and 
+            self.is_similar(embeddings.description, random_metadata.description_emb)
+        )
+        strict_is_similar_ = (
+            self.strict_is_similar(embeddings.video, random_metadata.video_emb) and 
+            self.strict_is_similar(embeddings.description, random_metadata.description_emb)
+        )
 
         bt.logging.debug(f"Focus Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
         return is_similar_
@@ -669,74 +674,101 @@ class Validator(BaseValidatorNeuron):
         input_synapse: Videos,
         videos: Videos
     ) -> float:
+        try:
         # return minimum score if no videos were found in video_metadata
-        if len(videos.focus_metadata) == 0:
-            return MIN_SCORE
+            if len(videos.focus_metadata) == 0:
+                return MIN_SCORE
 
-        # check video_ids for fake videos
-        if any(not video_utils.is_valid_focus_id(video.video_id) for video in videos.focus_metadata):
-            bt.logging.warning(f"Fake focus video found. Penalizing the miner. {[video.video_id for video in videos.focus_metadata]}")
-            return FAKE_VIDEO_PUNISHMENT
-
-        metadata = videos.focus_metadata
-        check_video = True
-        
-        # pull a random video and/or description only
-        random_meta_and_vid = await self.get_random_focus_video(metadata, check_video)
-        if random_meta_and_vid is None:
-            bt.logging.warning(f"Fetching random focus video failed.")
-            return FAKE_VIDEO_PUNISHMENT
-
-        # execute the random check on metadata and video
-        async with GPU_SEMAPHORE:
-            passed_check = await self.random_focus_check(random_meta_and_vid)
-            # punish miner if not passing
-            if not passed_check:
+            # check video_ids for fake videos
+            if any(not video_utils.is_valid_focus_id(video.video_id) for video in videos.focus_metadata):
+                bt.logging.warning(f"Fake focus video found. Penalizing the miner. {[video.video_id for video in videos.focus_metadata]}")
                 return FAKE_VIDEO_PUNISHMENT
-            # create query embeddings for relevance scoring
-            query_emb = await self.imagebind.embed_text_async([videos.query])
 
-        # generate embeddings
-        embeddings = Embeddings(
-            video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device)
-        )
-
-        # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
-        metadata_is_similar = await self.deduplicate_videos(embeddings)
-        metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
-        embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
-        if len(metadata) < len(videos.focus_metadata):
-            bt.logging.info(f"Deduplicated {len(videos.focus_metadata)} videos down to {len(metadata)} videos")
-
-        # return minimum score if no unique videos were found
-        if len(metadata) == 0:
-            return MIN_SCORE
-        
-        miner_hotkey = videos.axon.hotkey
-        
-        bt.logging.debug(f"{videos.axon} {input_synapse} input data")
-        
-        # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
-        #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
-        total_score = 0
-        # Aggregate scores
-        for focus_meta in metadata:
-            score = asyncio.run(self.score_focus_video(focus_meta.focus_task, focus_meta.video_link))
-        
-            print(f"Gemini score: {score}")
+            metadata = videos.focus_metadata[:input_synapse.num_focus_videos]
             
-            # Set final score, giving minimum if necessary
-            score = max(float(score), MIN_SCORE)
-            total_score += score
+            check_video = True # for test
+            
+            # if randomly tripped, flag our random check to pull a video from miner's submissions
+            #check_video = CHECK_PROBABILITY > random.random()
+            
+            # pull a random video and/or description only
+            random_meta_and_vid = await self.get_random_focus_video(metadata, check_video)
+            if random_meta_and_vid is None:
+                bt.logging.warning(f"Fetching random focus video failed.")
+                return FAKE_VIDEO_PUNISHMENT
 
+            # execute the random check on metadata and video
+            async with GPU_SEMAPHORE:
+                passed_check = await self.random_focus_check(random_meta_and_vid)
+                # punish miner if not passing
+                if not passed_check:
+                    return FAKE_VIDEO_PUNISHMENT
+                # create query embeddings for relevance scoring
+                # query_emb = await self.imagebind.embed_text_async([videos.query])
+
+            # generate embeddings
+            embeddings = Embeddings(
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+            )
+
+            # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+            metadata_is_similar = await self.deduplicate_videos(embeddings)
+            metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
+            if len(metadata) < len(videos.focus_metadata):
+                bt.logging.info(f"Deduplicated {len(videos.focus_metadata)} videos down to {len(metadata)} videos")
+
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            # # Compute relevance scores
+            # description_relevance_scores = F.cosine_similarity(
+            #     embeddings.video, embeddings.description
+            # ).tolist()
+                
+            # # Compute if there are penalties for random descriptions
+            # are_descriptions_valid = [imagebind_desc_mlp.is_desc_embedding_valid(embedding) for embedding in embeddings.description]
+            # description_penalties = []
+            # # Apply penalties and store the penalized scores
+            # for desc_score, desc_valid in zip(description_relevance_scores, are_descriptions_valid):
+            #     if not desc_valid:
+            #         penalized_score = (desc_score * RANDOM_DESCRIPTION_PENALTY) * -1
+            #         description_penalties.append(penalized_score)
+            #     else:
+            #         description_penalties.append(0)
+            
+            # # Aggregate scores
+            # score = (
+            #     sum(description_relevance_scores) +
+            #     sum(description_penalties)
+            # ) / 2 / videos.num_focus_videos        
+            
+            miner_hotkey = videos.axon.hotkey
+            
+            bt.logging.debug(f"{videos.axon} {input_synapse} input data")
+            
+            total_score = 0
+            # Aggregate scores
+            for focus_meta in metadata:
+                score = asyncio.run(self.score_focus_video(focus_meta.focus_task_str, focus_meta.video_link))
+            
+                print(f"Gemini score: {score}")
+                
+                # Set final score, giving minimum if necessary
+                score = max(float(score), MIN_SCORE)
+                total_score += score
+                
+            total_score /= 2 * videos.num_focus_videos
             # Log all our scores
             bt.logging.info(f'''
-                Focus video reward score: {score} : <{focus_meta.video_id}>
+                Focus video reward score: {total_score} : <{focus_meta.video_id}>
             ''')
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
-            
-            upload_result = await self.upload_focusvideo_metadata(metadata, score, videos.query, miner_hotkey)
+                
+            upload_result = await self.upload_focusvideo_metadata(metadata, total_score, miner_hotkey)
             if upload_result:
                 bt.logging.info("Uploading of video metadata successful.")
             else:
@@ -746,59 +778,46 @@ class Validator(BaseValidatorNeuron):
             for focus_meta in videos.focus_metadata:
                 asyncio.run(self.consume_video(video_id=focus_meta.video_id, miner_hotkey=miner_hotkey))
 
-        total_score /= MAX_FOCUS_SCORE
-        return total_score
+            return total_score
+        except Exception as e:
+            bt.logging.error(f"Error in check_videos_and_calculate_rewards: {e}")
+            return None
     
     async def upload_focusvideo_metadata(
         self,
         metadata: List[FocusVideoMetadata],
         score: float,
-        query: str,
+        # query: str,
         miner_hotkey: str,
     ):
-        return False
-        # Saving VIDEO metadata & score to the chain.
-        # try: 
-        #     start_time = time.time()
-        #     connection_pool = self.connect_db()
-        #     connection = connection_pool.get_connection()
-            
-        #     table_name = "miner_leaderboard_focus"
-        #     cursor = connection.cursor()
-            
-        #     for video_metadata in metadata:
-        #         sql_query = f"""
-        #         INSERT INTO {table_name} (
-        #             video_id,
-        #             video_link,
-        #             score,
-        #             creator,
-        #             query,
-        #             miner_hotkey,
-        #             submitted_at
-        #         ) VALUES (
-        #             %s, %s, %s, %s, %s, %s, NOW()
-        #         )
-        #         """
-                
-        #         cursor.execute(sql_query, (
-        #             video_metadata.video_id,
-        #             video_metadata.video_link,
-        #             score,
-        #             video_metadata.creator,
-        #             query,
-        #             miner_hotkey
-        #         ))
-        #         connection.commit()
-        #     print(f"Upserted focus leaderboard data for {miner_hotkey} in {time.time() - start_time:.2f}s")
-        # except mysql.connector.IntegrityError as err:
-        #     bt.logging.error(f"Error upserting focus video metadata: {err}")
-        # finally:
-        #     if connection:
-        #         connection.close()
-        #     if cursor:
-        #         cursor.close()
+        """
+        Upload focus video metadata using validator api
+        """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
+        try:
+            async with ClientSession() as session:
+                # Serialize the list of VideoMetadata
+                serialized_metadata = [item.dict() for item in metadata]
+                # Construct the JSON payload
+                payload = {
+                    "metadata": serialized_metadata,
+                    "total_score": score,
+                    "miner_hotkey": miner_hotkey
+                }
 
+                async with session.post(
+                    self.upload_focus_metadata_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+            return True
+        except Exception as e:
+            bt.logging.debug(f"Error trying upload_focus_metadata_endpoint: {e}")
+            return False
     # Get all the reward results by iteratively calling your reward() function.
     async def handle_checks_and_rewards(
         self,
@@ -969,7 +988,7 @@ class Validator(BaseValidatorNeuron):
             'miner_hotkey': miner_hotkey
         }
         bt.logging.debug(data)
-        response = requests.post(f"{os.getenv('BACKEND_API_URL')}/market/consume", json=data)
+        response = requests.post(f"{BACKEND_URL}/market/consume", json=data)
         res_data = response.json()
         bt.logging.debug(res_data)
         if response.status_code == 200 and res_data['success'] == True:

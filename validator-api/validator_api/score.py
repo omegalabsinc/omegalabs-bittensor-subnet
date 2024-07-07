@@ -122,6 +122,34 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
         print(f"Failed to upload to Pinecone: {e}")
     return video_ids
 
+def upload_focus_to_pinecone(embeddings: Embeddings, metadata: List[FocusVideoMetadata]) -> None:
+    video_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
+    try:
+        PINECONE_INDEX.upsert(
+            vectors=sum([
+                [
+                    {
+                        "id": f"{modality_type[:3]}{video_uuid}",
+                        "values": emb.tolist(),
+                        "metadata": {
+                            "focus_id": video.video_id,
+                            "modality_type": modality_type,
+                        }
+                    }
+                    for emb, modality_type
+                    in zip(
+                        [embedding_vid, embedding_des],
+                        [VIDEO_TYPE, DESCRIPTION_TYPE]
+                    )
+                ]
+                for video_uuid, video, embedding_vid, embedding_des 
+                in zip(video_ids, metadata, embeddings.video, embeddings.description)
+            ], []),
+        )
+    except Exception as e:
+        print(f"Failed to upload to Pinecone: {e}")
+    return video_ids
+
 async def upload_video_metadata(
     metadata: List[VideoMetadata], 
     description_relevance_scores: List[float], 
@@ -144,6 +172,26 @@ async def upload_video_metadata(
         description_relevance_scores,
         query_relevance_scores,
         query,
+    )
+    return video_ids
+
+async def upload_focus_metadata(
+    metadata: List[FocusVideoMetadata], 
+    imagebind: ImageBind
+) -> None:
+    # generate embeddings from our metadata
+    embeddings = Embeddings(
+        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
+        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
+    )
+    print(f"before uploading to pinecone {metadata}")
+    # upload embeddings and metadata to pinecone
+    video_ids = await run_async(upload_focus_to_pinecone, embeddings, metadata)
+    print(f"uploaded to pinecone {video_ids}")
+    # Schedule upload to HuggingFace
+    dataset_uploader.add_focus_videos(
+        metadata,
+        video_ids,
     )
     return video_ids
 

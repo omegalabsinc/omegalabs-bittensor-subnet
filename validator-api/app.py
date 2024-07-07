@@ -13,8 +13,6 @@ from tempfile import TemporaryDirectory
 import huggingface_hub
 from datasets import load_dataset
 import ulid
-import sys
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
 from traceback import print_exception
 
@@ -32,7 +30,7 @@ from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
@@ -127,6 +125,11 @@ class VideoMetadataUpload(BaseModel):
     novelty_score: Optional[float] = None
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
+    
+class FocusMetadataUpload(BaseModel):
+    metadata: List[FocusVideoMetadata]
+    total_score: Optional[float] = None
+    miner_hotkey: Optional[str] = None
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -143,7 +146,6 @@ def check_commune_validator_hotkey(hotkey: str, modules_keys):
     if hotkey not in modules_keys.values():
         print("Commune validator key not found")
         return False
-    
     return True
 
 def authenticate_with_bittensor(hotkey, metagraph):
@@ -281,6 +283,102 @@ async def main():
             avg_desc_relevance = sum(description_relevance_scores) / len(description_relevance_scores)
             avg_query_relevance = sum(query_relevance_scores) / len(query_relevance_scores)
             novelty_score = upload_data.novelty_score
+            total_score = upload_data.total_score
+            miner_hotkey = upload_data.miner_hotkey
+            
+            try:
+                start_time = time.time()
+                connection = connect_to_db()
+
+                leaderboard_table_name = "miner_leaderboard"
+                if not IS_PROD:
+                    leaderboard_table_name += "_test"
+                query = f"""
+                INSERT INTO {leaderboard_table_name} (
+                    hotkey,
+                    is_bittensor,
+                    is_commune,
+                    datapoints,
+                    avg_desc_relevance,
+                    avg_query_relevance,
+                    avg_novelty,
+                    avg_score,
+                    last_updated
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                ) ON DUPLICATE KEY UPDATE
+                    datapoints = datapoints + VALUES(datapoints),
+                    avg_desc_relevance = ((avg_desc_relevance * (datapoints - VALUES(datapoints))) + (VALUES(avg_desc_relevance) * VALUES(datapoints))) / datapoints,
+                    avg_query_relevance = ((avg_query_relevance * (datapoints - VALUES(datapoints))) + (VALUES(avg_query_relevance) * VALUES(datapoints))) / datapoints,
+                    avg_novelty = ((avg_novelty * (datapoints - VALUES(datapoints))) + (VALUES(avg_novelty) * VALUES(datapoints))) / datapoints,
+                    avg_score = ((avg_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_score) * VALUES(datapoints))) / datapoints,
+                    last_updated = NOW();
+                """
+                cursor = connection.cursor()
+                cursor.execute(query, (
+                    miner_hotkey,
+                    is_bittensor,
+                    is_commune,
+                    datapoints,
+                    avg_desc_relevance,
+                    avg_query_relevance,
+                    novelty_score,
+                    total_score
+                ))
+                connection.commit()
+                print(f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+                
+            except mysql.connector.Error as err:
+                raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+            finally:
+                if connection:
+                    connection.close()
+        else:
+            print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
+        
+        return True
+    
+    @app.post("/api/upload_focus_metadata")
+    async def upload_focus_metadata(
+        upload_data: FocusMetadataUpload,
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> bool:
+        print(f"uploaded: {upload_data}")
+        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Valid hotkey required.",
+            )
+        
+        uid = None
+        is_bittensor = 0
+        is_commune = 0
+        if ENABLE_COMMUNE and hotkey in commune_keys.values():
+            # get uid of commune validator
+            for key_uid, key_hotkey in commune_keys.items():
+                if key_hotkey == hotkey:
+                    uid = key_uid
+                    break
+            validator_chain = "commune"
+            is_commune = 1
+        elif uid is None and hotkey in metagraph.hotkeys:
+            # get uid of bittensor validator
+            uid = metagraph.hotkeys.index(hotkey)
+            validator_chain = "bittensor"
+            is_bittensor = 1
+
+        metadata = upload_data.metadata
+
+        start_time = time.time()
+        video_ids = await score.upload_focus_metadata(metadata, imagebind)
+        print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        
+        if upload_data.miner_hotkey is not None:
+            # Calculate and upsert leaderboard data
+            datapoints = len(video_ids)
+            avg_desc_relevance = 0
+            avg_query_relevance = 0
+            novelty_score = 0
             total_score = upload_data.total_score
             miner_hotkey = upload_data.miner_hotkey
             

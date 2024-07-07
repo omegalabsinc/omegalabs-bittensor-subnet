@@ -90,12 +90,13 @@ class Miner(BaseMinerNeuron):
         response = requests.post(url=f'{BACKEND_API_URL}/market/purchased_list',
                                  data=json.dumps(self.wallet.hotkey.ss58_address))
 
+        synapse.focus_metadata = []
         video_data = response.json()
         if response.status_code == 200:
             bt.logging.warning(f'{len(video_data)} - {video_data}')
             if len(video_data) > 0:
-                bt.logging.info(f"Purchased FocusVideo list: {video_data}")
-                synapse.focus_metadata = embed_focus_videos(synapse.query, video_data, self.imagebind)
+                bt.logging.info(f"Purchased FocusVideo list: {video_data} sending: {video_data[:synapse.num_focus_videos]}")
+                synapse.focus_metadata = embed_focus_videos(synapse.query, video_data[:synapse.num_focus_videos], self.imagebind)
                 bt.logging.info(f"focus metadata {synapse.focus_metadata}")
             else:
                 bt.logging.info(f"Failed to retrieve focus video list: No videos found.")

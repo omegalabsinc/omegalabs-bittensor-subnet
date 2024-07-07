@@ -81,6 +81,18 @@ class ImageBind:
         return Embeddings(
             video=embeddings[ModalityType.VISION],
         )
+        
+    @torch.no_grad()
+    def embed_video_and_text(self, video_files: List[BinaryIO], descriptions: List[str]) -> Embeddings:
+        video_filepaths = [video_file.name for video_file in video_files]
+        embeddings = self.imagebind({
+            ModalityType.VISION: data.load_and_transform_video_data(video_filepaths, self.device),
+            ModalityType.TEXT: load_and_transform_text(descriptions, self.device)
+        })
+        return Embeddings(
+            video=embeddings[ModalityType.VISION],
+            description=embeddings[ModalityType.TEXT]
+        )
    
     @torch.no_grad()
     def embed_text(self, texts: List[str]) -> torch.Tensor:
