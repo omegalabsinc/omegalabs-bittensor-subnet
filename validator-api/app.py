@@ -4,7 +4,13 @@ from datetime import datetime
 import time
 from typing import Annotated, List, Optional
 import random
+import json
 from pydantic import BaseModel
+
+from tempfile import TemporaryDirectory
+import huggingface_hub
+from datasets import load_dataset
+import ulid
 
 from traceback import print_exception
 
@@ -34,6 +40,13 @@ from validator_api.config import (
 )
 from validator_api.dataset_upload import dataset_uploader
 
+### Constants for OMEGA Metadata Dashboard ###
+HF_DATASET = "omegalabsinc/omega-multimodal"
+DATA_FILES_PREFIX = "default/train/"
+MAX_FILES = 3
+CACHE_FILE = "desc_embeddings_recent.json"
+MIN_AGE = 60 * 60 * 48  # 2 days in seconds
+
 import mysql.connector
 
 def connect_to_db():
@@ -48,6 +61,50 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 security = HTTPBasic()
 imagebind = ImageBind()
+
+### Utility functions for OMEGA Metadata Dashboard ###
+def get_timestamp_from_filename(filename: str):
+    return ulid.from_str(os.path.splitext(filename.split("/")[-1])[0]).timestamp().timestamp
+
+def pull_and_cache_dataset() -> List[str]:
+    # Get the list of files in the dataset repository
+    omega_ds_files = huggingface_hub.repo_info(repo_id=HF_DATASET, repo_type="dataset").siblings
+    
+    # Filter files that match the DATA_FILES_PREFIX
+    recent_files = [
+        f.rfilename
+        for f in omega_ds_files if
+        f.rfilename.startswith(DATA_FILES_PREFIX) and 
+        time.time() - get_timestamp_from_filename(f.rfilename) < MIN_AGE
+    ][:MAX_FILES]
+    
+    # Randomly sample up to MAX_FILES from the matching files
+    sampled_files = random.sample(recent_files, min(MAX_FILES, len(recent_files)))
+    
+    # Load the dataset using the sampled files
+    video_metadata = []
+    with TemporaryDirectory() as temp_dir:
+        omega_dataset = load_dataset(HF_DATASET, data_files=sampled_files, cache_dir=temp_dir)["train"]
+        for i, entry in enumerate(omega_dataset):
+            metadata = []
+            if "description" in entry and "description_embed" in entry:
+                metadata.append(entry["video_id"])
+                metadata.append(entry["youtube_id"])
+                metadata.append(entry["start_time"])
+                metadata.append(entry["end_time"])
+                metadata.append(entry["description"])
+                metadata.append(entry["description_relevance_score"])
+                metadata.append(entry["query_relevance_score"])
+                metadata.append(entry["query"])
+                metadata.append(entry["submitted_at"])
+                video_metadata.append(metadata)
+    
+    # Cache the descriptions to a local file
+    with open(CACHE_FILE, "w") as f:
+        json.dump(video_metadata, f)
+    
+    return True
+### End Utility functions for OMEGA Metadata Dashboard ###
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     if api_key_header in API_KEYS:
@@ -445,6 +502,89 @@ async def main():
         return FileResponse('validator-api/static/leaderboard.html')
     ################ END LEADERBOARD ################
 
+    ################ START DASHBOARD ################
+    async def resync_dataset():
+        while True:
+            """Resyncs the dataset by updating our JSON data source from the huggingface dataset."""
+            print("resync_dataset()")
+
+            max_attempts = 3
+            attempt = 0
+
+            while attempt < max_attempts:
+                try:
+                    pull_and_cache_dataset()
+                    break  # Exit the loop if the function succeeds
+
+                # In case of unforeseen errors, the api will log the error and continue operations.
+                except Exception as err:
+                    attempt += 1
+                    print(f"Error during dataset sync (Attempt {attempt}/{max_attempts}):", str(err))
+                    #print_exception(type(err), err, err.__traceback__)
+
+                    if attempt >= max_attempts:
+                        print("Max attempts reached. Skipping this sync cycle.")
+                        break
+
+            # Sleep in seconds
+            await asyncio.sleep(1800) # 30 minutes
+
+    @app.get("/dashboard/get-video-metadata")
+    async def get_video_metadata(
+        sort_by: Optional[str] = "submitted_at",
+        sort_order: Optional[str] = "desc",
+        page: Optional[int] = 1,
+        items_per_page: Optional[int] = 50
+    ):
+        if os.path.exists(CACHE_FILE):
+            with open(CACHE_FILE, "r") as f:
+                descriptions = json.load(f)
+            
+            # Define a mapping from sort_by parameter to the index in the metadata list
+            sort_index_mapping = {
+                "video_id": 0,
+                "youtube_id": 1,
+                "start_time": 2,
+                "end_time": 3,
+                "description": 4,
+                "description_relevance_score": 5,
+                "query_relevance_score": 6,
+                "query": 7,
+                "submitted_at": 8
+            }
+            
+            if sort_by and sort_by in sort_index_mapping:
+                index = sort_index_mapping[sort_by]
+                reverse = sort_order == "desc"
+                descriptions.sort(key=lambda x: x[index], reverse=reverse)
+            
+            # Pagination logic
+            total_items = len(descriptions)
+            start = (page - 1) * items_per_page
+            end = start + items_per_page
+            paginated_descriptions = descriptions[start:end]
+
+            for video in paginated_descriptions:
+                video[0] = ".." + str(video[0])[:6]
+                video[5] = round(video[5], 4)  # Round description_relevance_score
+                video[6] = round(video[6], 4)  # Round query_relevance_score
+                date_time = datetime.fromtimestamp(video[8])
+                video[8] = date_time.strftime('%Y-%m-%d %H:%M:%S')  # Format submitted_at
+            
+            return {
+                "total_items": total_items,
+                "page": page,
+                "items_per_page": items_per_page,
+                "data": paginated_descriptions
+            }
+        else:
+            return {"error": "Cache file not found"}
+    
+    @app.get("/dashboard")
+    def dashboard():
+        return FileResponse('validator-api/static/dashboard.html')
+    ################ END DASHBOARD ################
+
     async def run_server():
         config = uvicorn.Config(app=app, host="0.0.0.0", port=8001)
         server = uvicorn.Server(config)
@@ -454,6 +594,7 @@ async def main():
     try:
         await asyncio.gather(
             resync_metagraph(),
+            resync_dataset(),
             server_task,
         )
     except asyncio.CancelledError:
