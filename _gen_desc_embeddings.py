@@ -9,12 +9,13 @@ from datasets import load_dataset
 from tempfile import TemporaryDirectory
 import openai
 from openai import OpenAI
-from _desc_mlp import check_desc_embedding_against_MLP
+#from _desc_mlp import check_desc_embedding_against_MLP
+from omega.imagebind_desc_mlp import is_desc_embedding_valid
 
 HF_DATASET = "omegalabsinc/omega-multimodal"
 DATA_FILES_PREFIX = "default/train/"
 MAX_FILES = 3
-MAX_DESCRIPTIONS_TO_TEST = 1000
+MAX_DESCRIPTIONS_TO_TEST = 10000
 CACHE_FILE = "desc_embeddings_recent.json"
 #CACHE_FILE = "desc_embeddings_scored.json"
 #CACHE_FILE = "desc_embeddings_openai_scored.json"
@@ -95,26 +96,51 @@ def load_cached_descriptions() -> List[str]:
         with open(CACHE_FILE, "r") as f:
             descriptions = json.load(f)
             # Ensure we don't try to sample more than the available descriptions
+            print("total descriptions on file:", len(descriptions))
             num_to_sample = min(MAX_DESCRIPTIONS_TO_TEST, len(descriptions))
             return random.sample(descriptions, num_to_sample)
     return []
         
 def analyze_description(description: str) -> str:
     examples = """
+    Description: "a close up of a video game with a tank and some vehicles in the snow and buildings in the background and a sky a close up of a screen shot of some characters in the game, with different colors and textures on them, including blue"
+    Analysis: 5
+
+    Description: "complaints learn approximately professional hire announced temporarily list thumbnail title video image"
+    Analysis: 1
+
+    Description: "Improving Student Motivation to Encourage Self-Regulated Learners"
+    Analysis: 3
+
+    Description: "Victoria 3 Dev Diary #57&58 - The Journey So Far & Interest Revisions Ð¾ *) screenshot !@ thumbnail ;-) ê³ ~" < so ft ver to $. factual coming .# dra "[ the"
+    Analysis: 2
+
     Description: "A beautiful sunset over the mountains."
-    Analysis: VALID
+    Analysis: 4
 
-    Description: "programming generate example video image description"
-    Analysis: RANDOM
+    Description: "accommodations indoor rica post resort view outdoor photos inspiring pics added internal childrens another name jungle adventure exterior travel"
+    Analysis: 1
 
-    Description: "Learn how to investigate the effect of varying temperature on rate of photosynthesis"
-    Analysis: VALID
+    Description: "cartoon of a man holding a pen and writing on a piece of paper with the words 'i am sorry, you are not going to get paid' drawing of a tall building with trees and clouds in the background, with a ruler on top of it, next to a tree"
+    Analysis: 5
+
+    Description: "Commonly Mispronounced English Daily English Words | How To Pronounce Correctly? Nysha #shorts a woman is talking about subscribing to youtube"
+    Analysis: 4
 
     Description: "live string video image core social videos"
-    Analysis: RANDOM
+    Analysis: 1
+
+    Description: "Recent Trends on Renewable enery, Smart grid and Electric Vehicle Technology"
+    Analysis: 3
+
+    Description: "Understanding Jungian Archetypesarchives archi archival thoven archers"
+    Analysis: 2
+
+    Description: "6 Innovations That Will Change HVAC Forever | #hvac #hvaclife #heatingservices #coolingsystemchanger improves heating newest innovators"
+    Analysis: 4
     """
 
-    prompt = f"I need your assistance determining if descriptions of videos are valid or not. In some cases, people put arbitrary (but high scoring) words together that seem random, and in other cases the descriptions are accurate. Here are some examples:\n{examples}\n Based on that, determine if the following is valid or random, and return a single token \"VALID\" or \"RANDOM\" based on your analysis: {description}"
+    prompt = f"I need your assistance determining the quality of video descriptions. In some cases, people put arbitrary (but high scoring) words together that seem random, and in other cases the descriptions are coherent and accurate. Here are some examples:\n{examples}\n Based on that, determine a score where 5 is the best valid description and 1 is a terrible/random description. If a description reads poorly it should be rated a 1 or 2. Return a single integer token between 1 and 5 based on your analysis: {description}"
     
     response = openAIClient.chat.completions.create(
         model="gpt-4-turbo-preview",
@@ -149,8 +175,8 @@ def main():
         print("No matching files found.")
         return
     
-    # generate OpenAI embeddings for each description and save to local json
     """
+    # generate OpenAI embeddings for each description and save to local json
     count = 1
     openai_desc_embeds = []
     for desc_embed in desc_embeds:
@@ -172,37 +198,73 @@ def main():
     with open('desc_embeddings_openai_scored.json', 'w') as f:
         json.dump(openai_desc_embeds, f, indent=4)
     """
-
+    
     # run analysis on each description with MLP model
     count = 1
+    one_count = 0
+    two_count = 0
+    three_count = 0
+    four_count = 0
+    five_count = 0
     for desc_embed in desc_embeds:
         print(f"Description: {desc_embed[0]}")
-        result = check_desc_embedding_against_MLP(desc_embed[1])
+        #result = check_desc_embedding_against_MLP(desc_embed[1])
+        result = is_desc_embedding_valid(desc_embed[1])
+        if result == 1:
+            one_count += 1
+        elif result == 2:
+            two_count += 1
+        elif result == 3:
+            three_count += 1
+        elif result == 4:
+            four_count += 1
+        elif result == 5:
+            five_count += 1
         print("")
 
         #if count == 10:
             #break
         count += 1
-    
+
+    print(f"Total scored 1: {one_count}")
+    print(f"Total scored 2: {two_count}")
+    print(f"Total scored 3: {three_count}")
+    print(f"Total scored 4: {four_count}")
+    print(f"Total scored 5: {five_count}")
     
     """
     # run analysis on each description by calling ChatGPT4
     count = 1
+    one_count = 0
+    two_count = 0
+    three_count = 0
+    four_count = 0
+    five_count = 0
     for desc_embed in desc_embeds:
         result = analyze_description(desc_embed[0])
         print(f"Description: {desc_embed[0]}\nAnalysis: {result}\n")
-        if result == "VALID":
-            label = 1
-        elif result == "RANDOM":
-            label = 0
-        else:
-            label = 1
+        if result == "1":
+            one_count += 1
+        elif result == "2":
+            two_count += 1
+        elif result == "3":
+            three_count += 1
+        elif result == "4":
+            four_count += 1
+        elif result == "5":
+            five_count += 1
         
-        desc_embed.append(label)
+        desc_embed.append(result)
 
         #if count == 10:
             #break
         count += 1
+
+    print(f"Total scored 1: {one_count}")
+    print(f"Total scored 2: {two_count}")
+    print(f"Total scored 3: {three_count}")
+    print(f"Total scored 4: {four_count}")
+    print(f"Total scored 5: {five_count}")
 
     # Rewrite the JSON file with the updated data
     with open('desc_embeddings_scored.json', 'w') as f:
