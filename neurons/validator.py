@@ -775,8 +775,7 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.error("Issue uploading video metadata.")
             bt.logging.debug(f"miner hotkey {miner_hotkey}")
             # Consumes ALL videos after given reward
-            for focus_meta in videos.focus_metadata:
-                asyncio.run(self.consume_video(video_id=focus_meta.video_id, miner_hotkey=miner_hotkey))
+            asyncio.run(self.consume_video(video_ids=[focus_meta.video_id for focus_meta in videos.focus_metadata], miner_hotkey=miner_hotkey))
 
             return total_score
         except Exception as e:
@@ -982,9 +981,9 @@ class Validator(BaseValidatorNeuron):
         ])
         return rewards
 
-    async def consume_video(self, video_id: str, miner_hotkey: str):
+    async def consume_video(self, video_ids: List[str], miner_hotkey: str):
         data = {
-            'video_id': video_id,
+            'video_ids': video_ids,
             'miner_hotkey': miner_hotkey
         }
         bt.logging.debug(data)
@@ -994,7 +993,7 @@ class Validator(BaseValidatorNeuron):
         if response.status_code == 200 and res_data['success'] == True:
             return True
         else:
-            bt.logging.warning(f"Consuming failed. {video_id} - {res_data['message']}")
+            bt.logging.warning(f"Consuming failed. {video_ids} - {res_data['message']}")
             return False
         
     async def score_focus_video(self, focusing_task: str, clip_link: str) -> float:
