@@ -483,21 +483,29 @@ class Validator(BaseValidatorNeuron):
             ).tolist()
 
             # Compute if there are penalties for random descriptions
-            are_descriptions_valid = [imagebind_desc_mlp.is_desc_embedding_valid(embedding) for embedding in embeddings.description]
-            description_penalties = []
+            description_mlp_results = [imagebind_desc_mlp.get_desc_embedding_score(embedding) for embedding in embeddings.description]
+            description_mlp_scores = []
             # Apply penalties and store the penalized scores
-            for desc_score, desc_valid in zip(description_relevance_scores, are_descriptions_valid):
-                if not desc_valid:
-                    penalized_score = (desc_score * RANDOM_DESCRIPTION_PENALTY) * -1
-                    description_penalties.append(penalized_score)
+            for desc_score, desc_mlp_score in zip(description_relevance_scores, description_mlp_results):
+                if desc_mlp_score == 4 or desc_mlp_score == 5:
+                    # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
+                    rewarded_score = (desc_mlp_score * 0.1) * desc_score
+                    description_mlp_scores.append(rewarded_score)
+                elif desc_mlp_score == 2:
+                    # score of 2 is "poor", penalize with 50% description relevance score penalty
+                    description_mlp_scores.append(desc_score * -0.5)
+                elif desc_mlp_score == 1:
+                    # score of 1 is "bad", penalize full description relevance score penalty
+                    description_mlp_scores.append(desc_score * -1)
                 else:
-                    description_penalties.append(0)
+                    # score of 3 is "OK", no reward or penalty
+                    description_mlp_scores.append(0)
 
             # Aggregate scores
             score = (
                 sum(description_relevance_scores) +
                 sum(query_relevance_scores) +
-                sum(description_penalties)
+                sum(description_mlp_scores)
             ) / 2 / videos.num_videos
             
             # Set final score, giving minimum if necessary
