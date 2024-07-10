@@ -56,7 +56,9 @@ from omega.constants import (
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
-    RANDOM_DESCRIPTION_PENALTY
+    RANDOM_DESCRIPTION_PENALTY,
+    YOUTUBE_REWARDS_PERCENT,
+    FOCUS_REWARDS_PERCENT
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
@@ -70,7 +72,8 @@ import boto3
 import google.generativeai as genai
 
 GOOGLE_AI_API_KEY = os.getenv('GOOGLE_AI_API_KEY')
-
+YOUTUBE_REWARDS_PERCENT = os.getenv("YOUTUBE_REWARDS_PERCENT")
+FOCUS_REWARDS_PERCENT = os.getenv("FOCUS_REWARDS_PERCENT")
 
 NO_RESPONSE_MINIMUM = 0.005
 GPU_SEMAPHORE = asyncio.Semaphore(1)
@@ -512,8 +515,17 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info(f"input synapse {input_synapse}, videos {videos}")
         youtube_rewards: float = asyncio.run(self.check_videos_and_calculate_rewards_youtube(input_synapse=input_synapse, videos=videos))
         focus_rewards: float = asyncio.run(self.check_videos_and_calculate_rewards_focus(input_synapse=input_synapse, videos=videos))
+        
+        if not youtube_rewards: 
+            total_rewards: float = focus_rewards
+        if not focus_rewards: 
+            total_rewards: float = youtube_rewards
+        if youtube_rewards and focus_rewards:
+            total_rewards: float = youtube_rewards * YOUTUBE_REWARDS_PERCENT + focus_rewards * FOCUS_REWARDS_PERCENT
+        if not youtube_rewards and not focus_rewards:
+            total_rewards = MIN_SCORE
+            
         bt.logging.info(f"Youtube Rewards: {youtube_rewards}, Focus Rewards: {focus_rewards}")
-        total_rewards: float = (youtube_rewards * 8.0 + focus_rewards * 2.0) / 10.0
         bt.logging.info(f"Total Rewards: {total_rewards}")
         return torch.tensor(total_rewards, dtype=float)
     
@@ -760,7 +772,7 @@ class Validator(BaseValidatorNeuron):
                 score = max(float(score), MIN_SCORE)
                 total_score += score
                 
-            total_score /= 2 * videos.num_focus_videos
+            # total_score /= 2 * videos.num_focus_videos
             # Log all our scores
             bt.logging.info(f'''
                 Focus video reward score: {total_score} : <{focus_meta.video_id}>
