@@ -32,13 +32,14 @@ from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega.imagebind_wrapper import ImageBind
+from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 from validator_api import score
 from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
-    TOPICS_LIST, PROXY_LIST, IS_PROD, BACKEND_API_URL
+    TOPICS_LIST, PROXY_LIST, IS_PROD, FOCUS_BACKEND_API_URL
 )
 from validator_api.dataset_upload import dataset_uploader
 
@@ -439,7 +440,6 @@ async def main():
         hotkey: Annotated[str, Depends(get_hotkey)]
     ) -> str:
         
-        #hotkey = random.choice(COMMUNE_SN17_KEYS) # for testing purposes
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -454,51 +454,59 @@ async def main():
         videos: Videos,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> float:
-        if hotkey not in metagraph.hotkeys:
+        if not authenticate_with_bittensor(hotkey, metagraph):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail="Valid hotkey required",
+                detail=f"Valid hotkey required.",
             )
-
         uid = metagraph.hotkeys.index(hotkey)
-
-        if not metagraph.validator_permit[uid]:
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail="Validator permit required",
-            )
-            
-        # Check focus video metadata's validity
-        focus_score = 0
-        check_response = requests.post(url=f'{BACKEND_API_URL}/market/check_video_metadata', data=json.dumps({
-            'video_id': videos.focus_metadata[0].video_id,
-            'video_link': videos.focus_metadata[0].video_link,
-            'creator': videos.focus_metadata[0].creator,
-            'miner_hotkey': videos.focus_metadata[0].miner_hotkey
-        }))
-        
-        if check_response.status_code == 200:
-            json_res = check_response.json()
-            if json_res['success'] == True:
-                focus_score = float(json_res['score'])
-            else:
-                print(f"Checking video metadata failed: {json_res['message']}")
-                
-        else: focus_score = 0
-            
-        print(f"Focus Videos' Reward points are: {focus_score}")
-        
-        # Normalize focus score
-        focus_score = focus_score / 10
         
         start_time = time.time()
-        youtube_score = await score.score_and_upload_videos(videos, imagebind)
+            
+        # handle focus video metadata
+        focus_rewards = None
+        if len(videos.focus_metadata) > 0:
+            focus_rewards = 0
+            check_response = requests.post(url=f'{FOCUS_BACKEND_API_URL}/market/check_video_metadata', data=json.dumps({
+                'video_id': videos.focus_metadata[0].video_id,
+                'video_link': videos.focus_metadata[0].video_link,
+                'creator': videos.focus_metadata[0].creator,
+                'miner_hotkey': videos.focus_metadata[0].miner_hotkey
+            }))
+            
+            if check_response.status_code == 200:
+                json_res = check_response.json()
+                if json_res['success'] == True:
+                    focus_rewards = float(json_res['score'])
+                else:
+                    print(f"Checking video metadata failed: {json_res['message']}")
+            else: 
+                focus_rewards = 0
+                
+            print(f"Focus Videos Reward points are: {focus_rewards}")
+            # Normalize focus score
+            focus_rewards = focus_rewards / 10
         
-        total_score = (youtube_score * 8 + focus_score * 2) / 10
+        # handle youtube video metadata
+        youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
 
-        print(f"Returning score={total_score} for validator={uid} in {time.time() - start_time:.2f}s")
+        if youtube_rewards is None and focus_rewards is None:
+            print("YouTube and Focus rewards are empty, returning None")
+            return None
+        
+        if youtube_rewards is None: 
+            total_rewards: float = focus_rewards
+        elif focus_rewards is None: 
+            total_rewards: float = youtube_rewards
+        
+        if youtube_rewards is not None and focus_rewards is not None:
+            total_rewards: float = youtube_rewards * YOUTUBE_REWARDS_PERCENT + focus_rewards * FOCUS_REWARDS_PERCENT
+            
+        print(f"Youtube Rewards: {youtube_rewards}, Focus Rewards: {focus_rewards}")
+        print(f"Total Rewards: {total_rewards}")
+        print(f"Returning score={total_rewards} for validator={uid} in {time.time() - start_time:.2f}s")
 
-        return total_score
+        return total_rewards
 
     if not IS_PROD:
         @app.get("/api/count_unique")

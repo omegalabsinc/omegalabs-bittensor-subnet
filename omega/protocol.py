@@ -95,7 +95,7 @@ class Videos(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_videos", "video_metadata"})
+            include={"query", "num_videos", "num_focus_videos", "video_metadata", "focus_metadata"})
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Videos") -> "Videos":
