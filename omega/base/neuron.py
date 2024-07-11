@@ -17,6 +17,7 @@
 
 import copy
 import typing
+import datetime as dt
 
 import bittensor as bt
 
@@ -108,6 +109,9 @@ class BaseNeuron(ABC):
         )
         self.step = 0
 
+        self.last_sync_check = dt.datetime.now()
+        self.sync_check_interval = 300  # 5 minutes
+
     @abstractmethod
     async def forward(self, synapse: bt.Synapse) -> bt.Synapse:
         ...
@@ -131,6 +135,9 @@ class BaseNeuron(ABC):
 
         # Always save state.
         self.save_state()
+
+        # Update the last sync check time.
+        self.last_sync_check = dt.datetime.now()
 
     def check_registered(self):
         # --- Check for registration.

@@ -227,6 +227,9 @@ class Miner(BaseMinerNeuron):
             return None
     
     async def check_consume_and_commit(self):
+        if not self.config.neuron.focus_videos:
+            return
+        
         try:
             sub = bt.subtensor(config = self.config)
             commitStr = sub.get_commitment(self.config.netuid, self.uid)
@@ -246,6 +249,7 @@ if __name__ == "__main__":
         while True:
             bt.logging.info("Miner running...", time.time())
             time.sleep(5)
+            
             current_time = time.time()
             if current_time - last_action_time >= 30:
                 asyncio.run(miner.check_consume_and_commit())

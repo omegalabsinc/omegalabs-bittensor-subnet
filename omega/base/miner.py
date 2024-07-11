@@ -20,6 +20,7 @@ import asyncio
 import threading
 import argparse
 import traceback
+import datetime as dt
 
 import bittensor as bt
 
@@ -112,9 +113,9 @@ class BaseMinerNeuron(BaseNeuron):
         try:
             while not self.should_exit:
                 while (
-                    self.block - self.metagraph.last_update[self.uid]
-                    < self.config.neuron.epoch_length
-                ):
+                    dt.datetime.now() - self.last_sync_check
+                ).total_seconds() < self.sync_check_interval:
+                    
                     # Wait before checking again.
                     time.sleep(1)
 
