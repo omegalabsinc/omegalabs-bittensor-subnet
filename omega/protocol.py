@@ -20,7 +20,7 @@ import typing
 import json
 
 import bittensor as bt
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 
 class VideoMetadata(BaseModel):
@@ -80,9 +80,9 @@ class Videos(bt.Synapse):
 
     query: str
     num_videos: int
-    num_focus_videos: int
-    video_metadata: typing.Optional[typing.List[VideoMetadata]] = Field(default=None)
-    focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = Field(default=None)
+    num_focus_videos: typing.Optional[int] = None
+    video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
+    focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = None
 
     def deserialize(self) -> typing.List[VideoMetadata]:
         assert self.video_metadata is not None
