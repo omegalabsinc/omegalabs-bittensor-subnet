@@ -465,7 +465,7 @@ async def main():
             
         # handle focus video metadata
         focus_rewards = None
-        if len(videos.focus_metadata) > 0:
+        if videos.focus_metadata is not None and len(videos.focus_metadata) > 0:
             focus_rewards = 0
             check_response = requests.post(url=f'{FOCUS_BACKEND_API_URL}/market/check_video_metadata', data=json.dumps({
                 'video_id': videos.focus_metadata[0].video_id,

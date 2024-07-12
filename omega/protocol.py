@@ -20,7 +20,7 @@ import typing
 import json
 
 import bittensor as bt
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class VideoMetadata(BaseModel):
@@ -81,8 +81,8 @@ class Videos(bt.Synapse):
     query: str
     num_videos: int
     num_focus_videos: int
-    video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
-    focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = None
+    video_metadata: typing.Optional[typing.List[VideoMetadata]] = Field(default=None)
+    focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = Field(default=None)
 
     def deserialize(self) -> typing.List[VideoMetadata]:
         assert self.video_metadata is not None
@@ -95,7 +95,7 @@ class Videos(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_videos", "num_focus_videos", "video_metadata", "focus_metadata"})
+            include={"query", "num_videos", "num_focus_videos", "video_metadata"})
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Videos") -> "Videos":
