@@ -70,7 +70,6 @@ import omega.imagebind_desc_mlp as imagebind_desc_mlp
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
 
-import mysql.connector
 import boto3
 import google.generativeai as genai
 
