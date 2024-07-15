@@ -29,13 +29,6 @@ import datetime as dt
 import random
 import traceback
 import requests
-from dotenv import load_dotenv
-
-import sys
-import os
-sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
-
-load_dotenv()
 
 # Bittensor
 import bittensor as bt
@@ -73,10 +66,10 @@ from omega.base.validator import BaseValidatorNeuron
 import boto3
 import google.generativeai as genai
 
-GOOGLE_AI_API_KEY = os.getenv('GOOGLE_AI_API_KEY')
-AWS_ACCESS_KEY = os.getenv('AWS_ACCESS_KEY')
-AWS_SECRET_KEY = os.getenv('AWS_SECRET_KEY')
-AWS_S3_REGION = os.getenv('AWS_S3_REGION')
+GOOGLE_AI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY", None)
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY", None)
+AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY", None)
+AWS_S3_REGION = os.environ.get("AWS_S3_REGION", None)
 
 NO_RESPONSE_MINIMUM = 0.005
 GPU_SEMAPHORE = asyncio.Semaphore(1)
