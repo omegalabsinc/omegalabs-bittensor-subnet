@@ -45,6 +45,29 @@ class VideoMetadata(BaseModel):
         )
 
 
+class FocusVideoMetadata(BaseModel):
+    """
+    A model class representing FocusVideo metadata.
+    """
+    video_id: str
+    video_link: str
+    focus_task_id: str
+    focus_task_str: str
+    score: float
+    creator: str
+    miner_hotkey: str
+    video_emb: typing.List[float]
+    description_emb: typing.List[float]
+
+    def __repr_args__(self):
+        parent_args = super().__repr_args__()
+        exclude_args = ['video_emb']
+        return (
+            [(a, v) for a, v in parent_args if a not in exclude_args] +
+            [(a, ["..."]) for a in exclude_args]
+        )
+
+
 class Videos(bt.Synapse):
     """
     A synapse class representing a video scraping request and response.
@@ -57,7 +80,9 @@ class Videos(bt.Synapse):
 
     query: str
     num_videos: int
+    num_focus_videos: typing.Optional[int] = None
     video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
+    focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = None
 
     def deserialize(self) -> typing.List[VideoMetadata]:
         assert self.video_metadata is not None
@@ -69,9 +94,10 @@ class Videos(bt.Synapse):
         the input_synapse, while taking the non-null output property video_metadata from the
         response (self).
         """
-        json_str = self.replace_with_input(input_synapse).json(include={"query", "num_videos", "video_metadata"})
+        json_str = self.replace_with_input(input_synapse).json(
+            include={"query", "num_videos", "num_focus_videos", "video_metadata", "focus_metadata"})
         return json.loads(json_str)
-    
+
     def replace_with_input(self, input_synapse: "Videos") -> "Videos":
         """
         Replaces the query and num_videos of current synapse with the given input synapse.
@@ -79,5 +105,8 @@ class Videos(bt.Synapse):
         return Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
-            video_metadata=self.video_metadata[:input_synapse.num_videos]
+            num_focus_videos=input_synapse.num_focus_videos,
+            video_metadata=self.video_metadata[:input_synapse.num_videos],
+            focus_metadata=self.focus_metadata,
+            axon=self.axon
         )

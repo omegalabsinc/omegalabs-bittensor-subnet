@@ -17,6 +17,7 @@
 
 import copy
 import typing
+import datetime as dt
 
 import bittensor as bt
 
@@ -64,9 +65,9 @@ class BaseNeuron(ABC):
         self.config = self.config()
         self.config.merge(base_config)
         self.check_config(self.config)
-
-        # Set up logging with the provided configuration and directory.
-        bt.logging(config=self.config, logging_dir=self.config.full_path)
+        
+        # Set up logging with the provided configuration.
+        bt.logging.set_config(config=self.config.logging)
 
         # If a gpu is required, set the device to cuda:N (e.g. cuda:0)
         self.device = self.config.neuron.device
@@ -108,6 +109,9 @@ class BaseNeuron(ABC):
         )
         self.step = 0
 
+        self.last_sync_check = dt.datetime.now()
+        self.sync_check_interval = 300  # 5 minutes
+
     @abstractmethod
     async def forward(self, synapse: bt.Synapse) -> bt.Synapse:
         ...
@@ -131,6 +135,9 @@ class BaseNeuron(ABC):
 
         # Always save state.
         self.save_state()
+
+        # Update the last sync check time.
+        self.last_sync_check = dt.datetime.now()
 
     def check_registered(self):
         # --- Check for registration.

@@ -7,7 +7,7 @@ from datasets import Dataset
 from huggingface_hub import HfApi
 import ulid
 
-from omega.protocol import VideoMetadata
+from omega.protocol import VideoMetadata, FocusVideoMetadata
 
 from validator_api import config
 
@@ -60,6 +60,33 @@ class DatasetUploader:
             }
             for vid_uuid, video, desc_score, query_score
             in zip(video_ids, metadata, description_relevance_scores, query_relevance_scores)
+        ])
+        print(f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}")
+        if len(self.current_batch) >= self.desired_batch_size:
+            self.submit()
+            
+    def add_focus_videos(
+        self, metadata: List[FocusVideoMetadata], video_ids: List[str],
+    ) -> None:
+        curr_time = datetime.now()
+        self.current_batch.extend([
+            {
+                "video_id": vid_uuid,
+                "focus_id": video.video_id,
+                "description": video.focus_task_str,
+                "views": 0,
+                "start_time": 0,
+                "end_time": 0,
+                "video_embed": video.video_emb,
+                "audio_embed": None,
+                "description_embed": None,
+                "description_relevance_score": 0,
+                "query_relevance_score": 0,
+                "query": "",
+                "submitted_at": int(curr_time.timestamp()),
+            }
+            for vid_uuid, video
+            in zip(video_ids, metadata)
         ])
         print(f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}")
         if len(self.current_batch) >= self.desired_batch_size:
