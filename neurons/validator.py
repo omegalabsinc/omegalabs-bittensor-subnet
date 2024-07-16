@@ -658,7 +658,7 @@ class Validator(BaseValidatorNeuron):
             return score
 
         except Exception as e:
-            bt.logging.error(f"Error in check_videos_and_calculate_rewards: {e}")
+            bt.logging.error(f"Error in check_videos_and_calculate_rewards_youtube: {e}")
             return None
     
     async def check_videos_and_calculate_rewards_focus(
@@ -668,7 +668,7 @@ class Validator(BaseValidatorNeuron):
     ) -> Optional[float]:
         try:
             # return if no videos were found in video_metadata
-            if len(videos.focus_metadata) == 0:
+            if videos.focus_metadata is None or len(videos.focus_metadata) == 0:
                 return None
 
             # check video_ids for fake videos
@@ -745,7 +745,7 @@ class Validator(BaseValidatorNeuron):
 
             return total_score
         except Exception as e:
-            bt.logging.error(f"Error in check_videos_and_calculate_rewards: {e}")
+            bt.logging.error(f"Error in check_videos_and_calculate_rewards_focus: {e}")
             return None
     
     async def upload_focusvideo_metadata(
