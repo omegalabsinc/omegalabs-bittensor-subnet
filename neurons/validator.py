@@ -16,15 +16,17 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import os
+# Set USE_TORCH=1 environment variable to use torch instead of numpy
+os.environ["USE_TORCH"] = "1"
 
 from aiohttp import ClientSession, BasicAuth
 import asyncio
-from typing import List, Tuple, Optional, BinaryIO
+from typing import List, Tuple, Optional, BinaryIO, Union
+from fastapi import HTTPException
 from pydantic import ValidationError
 import datetime as dt
-import os
 import random
-import json
 import traceback
 import requests
 
@@ -37,8 +39,9 @@ import wandb
 
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega.constants import (
+    MAX_FOCUS_SCORE,
     VALIDATOR_TIMEOUT, 
     VALIDATOR_TIMEOUT_MARGIN, 
     MAX_VIDEO_LENGTH, 
@@ -49,7 +52,9 @@ from omega.constants import (
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
-    RANDOM_DESCRIPTION_PENALTY
+    RANDOM_DESCRIPTION_PENALTY,
+    YOUTUBE_REWARDS_PERCENT,
+    FOCUS_REWARDS_PERCENT
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
@@ -57,6 +62,14 @@ import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
+
+import boto3
+import google.generativeai as genai
+
+GOOGLE_AI_API_KEY = os.environ.get("GOOGLE_AI_API_KEY", None)
+AWS_ACCESS_KEY = os.environ.get("AWS_ACCESS_KEY", None)
+AWS_SECRET_KEY = os.environ.get("AWS_SECRET_KEY", None)
+AWS_S3_REGION = os.environ.get("AWS_S3_REGION", None)
 
 NO_RESPONSE_MINIMUM = 0.005
 GPU_SEMAPHORE = asyncio.Semaphore(1)
@@ -85,6 +98,12 @@ class Validator(BaseValidatorNeuron):
         else:
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
 
+        self.focus_videos_api = (
+            "https://dev-focus-api.omegatron.ai/"
+            if self.config.subtensor.network == "test" else
+            "https://focus-api.omegatron.ai/"
+        )
+
         api_root = (
             "https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
@@ -94,7 +113,9 @@ class Validator(BaseValidatorNeuron):
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
+        self.upload_focus_metadata_endpoint = f"{api_root}/api/upload_focus_metadata"
         self.num_videos = 8
+        self.num_focus_videos = 4
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
         # load topics from topics URL (CSV) or fallback to local topics file
@@ -113,6 +134,22 @@ class Validator(BaseValidatorNeuron):
         else:
             bt.logging.warning("Running with --decentralization.off. It is strongly recommended to run with decentralization enabled.")
             self.decentralization = False
+            
+        if self.config.neuron.focus_videos:
+            bt.logging.info("Initializing Gemini API and AWS S3.")
+            self.init_gemini_s3()
+    
+    def init_gemini_s3(self):
+        genai.configure(api_key=GOOGLE_AI_API_KEY)
+
+        self.model = genai.GenerativeModel('gemini-1.5-pro')
+
+        self.s3_client = boto3.client(
+            's3',
+            aws_access_key_id=AWS_ACCESS_KEY,
+            aws_secret_access_key=AWS_SECRET_KEY,
+            region_name=AWS_S3_REGION
+        )
 
     def new_wandb_run(self):
         # Shoutout SN13 for the wandb snippet!
@@ -181,7 +218,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=self.num_videos)
+        input_synapse = Videos(query=query, num_videos=self.num_videos, num_focus_videos=self.num_focus_videos)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
@@ -190,12 +227,12 @@ class Validator(BaseValidatorNeuron):
             deserialize=False,
             timeout=self.client_timeout_seconds,
         )
-
+        
         working_miner_uids = []
         finished_responses = []
 
         for response in responses:
-            if response.video_metadata is None or not response.axon or not response.axon.hotkey:
+            if (response.video_metadata is None and response.focus_metadata is None) or not response.axon or not response.axon.hotkey:
                 continue
 
             uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
@@ -257,9 +294,12 @@ class Validator(BaseValidatorNeuron):
     def filter_embeddings(self, embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
         """Filter the embeddings based on whether they are too similar to the query."""
         is_too_similar = torch.tensor(is_too_similar)
-        embeddings.video = embeddings.video[~is_too_similar]
-        embeddings.audio = embeddings.audio[~is_too_similar]
-        embeddings.description = embeddings.description[~is_too_similar]
+        if embeddings.video is not None:
+            embeddings.video = embeddings.video[~is_too_similar]
+        if embeddings.audio is not None:
+            embeddings.audio = embeddings.audio[~is_too_similar]
+        if embeddings.description is not None:
+            embeddings.description = embeddings.description[~is_too_similar]
         return embeddings
 
     async def deduplicate_videos(self, embeddings: Embeddings) -> Videos:
@@ -284,8 +324,12 @@ class Validator(BaseValidatorNeuron):
     def strict_is_similar(self, emb_1: torch.Tensor, emb_2: List[float]) -> bool:
         return torch.allclose(emb_1, torch.tensor(emb_2, device=emb_1.device), atol=1e-4)
     
-    async def get_random_video(self, metadata: List[VideoMetadata], check_video: bool) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
-        if not check_video:
+    async def get_random_youtube_video(
+        self,
+        metadata: List[VideoMetadata],
+        check_video: bool
+    ) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
+        if not check_video and len(metadata) > 0:
             random_metadata = random.choice(metadata)
             return random_metadata, None
 
@@ -302,11 +346,11 @@ class Validator(BaseValidatorNeuron):
             try:
                 async with DOWNLOAD_SEMAPHORE:
                     random_video = await asyncio.wait_for(run_async(
-                        video_utils.download_video,
+                        video_utils.download_youtube_video,
                         random_metadata.video_id,
                         random_metadata.start_time,
                         random_metadata.end_time,
-                        proxy=proxy_url
+                        # proxy=proxy_url
                     ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
             except video_utils.IPBlockedException:
                 # IP is blocked, cannot download video, check description only
@@ -325,7 +369,49 @@ class Validator(BaseValidatorNeuron):
 
         return random_metadata, random_video
     
-    async def random_check(self, random_meta_and_vid: List[VideoMetadata]) -> bool:
+    async def get_random_focus_video(
+        self,
+        metadata: List[FocusVideoMetadata],
+        check_video: bool
+    ) -> Optional[Tuple[FocusVideoMetadata, Optional[BinaryIO]]]:
+        random_metadata: FocusVideoMetadata = None
+        bt.logging.debug(f"Focus video metadata length: {len(metadata)}")
+        if not check_video and len(metadata) > 0:
+            random_metadata = random.choice(metadata)
+            return random_metadata, None
+
+        random_video = None
+        metadata_copy = [v for v in metadata]  # list shallow copy
+        while random_video is None and len(metadata_copy) > 0:
+            idx = random.randint(0, len(metadata_copy) - 1)
+            random_metadata = metadata_copy.pop(idx)
+            try:
+                async with DOWNLOAD_SEMAPHORE:
+                    random_video = await asyncio.wait_for(run_async(
+                        video_utils.download_focus_video,
+                        random_metadata.video_id,
+                        random_metadata.video_link,
+                    ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
+            except video_utils.IPBlockedException:
+                # IP is blocked, cannot download video, check description only
+                bt.logging.warning("WARNING: IP is blocked, cannot download video, checking description only")
+                return random_metadata, None
+            except video_utils.FakeVideoException:
+                bt.logging.warning(f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
+                return None
+            except asyncio.TimeoutError:
+                continue
+
+        # IP is not blocked, video is not fake, but video download failed for some reason. We don't
+        # know why it failed so we won't punish the miner, but we will check the description only.
+        if random_video is None:
+            bt.logging.warning(f"Downloading focus video failed unexpectedly.")
+            return random_metadata, None
+
+        return random_metadata, random_video
+
+
+    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata]) -> bool:
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
@@ -349,6 +435,32 @@ class Validator(BaseValidatorNeuron):
         )
         bt.logging.debug(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
         return is_similar_
+
+    async def random_focus_check(self, random_meta_and_vid: List[FocusVideoMetadata]) -> bool:
+        random_metadata, random_video = random_meta_and_vid
+
+        if random_video is None:
+            desc_embeddings = self.imagebind.embed_text([random_metadata.focus_task_str])
+            is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
+            strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
+            bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
+            return is_similar_
+
+        # Video downloaded, check all embeddings
+        embeddings = self.imagebind.embed_video_and_text([random_video], [random_metadata.focus_task_str])
+
+        is_similar_ = (
+            self.is_similar(embeddings.video, random_metadata.video_emb) and 
+            self.is_similar(embeddings.description, random_metadata.description_emb)
+        )
+        strict_is_similar_ = (
+            self.strict_is_similar(embeddings.video, random_metadata.video_emb) and 
+            self.strict_is_similar(embeddings.description, random_metadata.description_emb)
+        )
+
+        bt.logging.debug(f"Focus Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
+        return is_similar_
+
     
     def compute_novelty_score_among_batch(self, emb: Embeddings) -> List[float]:
         video_tensor = emb.video
@@ -377,15 +489,38 @@ class Validator(BaseValidatorNeuron):
         self,
         input_synapse: Videos,
         videos: Videos,
-    ) -> torch.FloatTensor:
+    ) -> Optional[float]:
+        youtube_rewards: Optional[float] = asyncio.run(self.check_videos_and_calculate_rewards_youtube(input_synapse=input_synapse, videos=videos))
+        focus_rewards: Optional[float] = asyncio.run(self.check_videos_and_calculate_rewards_focus(input_synapse=input_synapse, videos=videos))
+
+        if youtube_rewards is None and focus_rewards is None:
+            bt.logging.info("YouTube and Focus rewards are empty, returning None")
+            return None
         
+        if youtube_rewards is None: 
+            total_rewards: float = focus_rewards
+        elif focus_rewards is None: 
+            total_rewards: float = youtube_rewards
+        
+        if youtube_rewards is not None and focus_rewards is not None:
+            total_rewards: float = youtube_rewards * YOUTUBE_REWARDS_PERCENT + focus_rewards * FOCUS_REWARDS_PERCENT
+            
+        bt.logging.info(f"Youtube Rewards: {youtube_rewards}, Focus Rewards: {focus_rewards}")
+        bt.logging.info(f"Total Rewards: {total_rewards}")
+        return torch.tensor(total_rewards, dtype=float)
+    
+    async def check_videos_and_calculate_rewards_youtube(
+        self,
+        input_synapse: Videos,
+        videos: Videos
+    ) -> Optional[float]:
         try:
             # return minimum score if no videos were found in video_metadata
             if len(videos.video_metadata) == 0:
                 return MIN_SCORE
 
             # check video_ids for fake videos
-            if any(not video_utils.is_valid_id(video.video_id) for video in videos.video_metadata):
+            if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
 
             # check and filter duplicate metadata
@@ -397,13 +532,13 @@ class Validator(BaseValidatorNeuron):
             check_video = CHECK_PROBABILITY > random.random()
             
             # pull a random video and/or description only
-            random_meta_and_vid = await self.get_random_video(metadata, check_video)
+            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_video)
             if random_meta_and_vid is None:
                 return FAKE_VIDEO_PUNISHMENT
 
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
-                passed_check = await self.random_check(random_meta_and_vid)
+                passed_check = await self.random_youtube_check(random_meta_and_vid)
                 # punish miner if not passing
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
@@ -531,9 +666,132 @@ class Validator(BaseValidatorNeuron):
             return score
 
         except Exception as e:
-            bt.logging.error(f"Error in check_videos_and_calculate_rewards: {e}")
+            bt.logging.error(f"Error in check_videos_and_calculate_rewards_youtube: {e}")
             return None
+    
+    async def check_videos_and_calculate_rewards_focus(
+        self,
+        input_synapse: Videos,
+        videos: Videos
+    ) -> Optional[float]:
+        try:
+            # return if no videos were found in video_metadata
+            if videos.focus_metadata is None or len(videos.focus_metadata) == 0:
+                return None
 
+            # check video_ids for fake videos
+            if any(not video_utils.is_valid_focus_id(video.video_id) for video in videos.focus_metadata):
+                bt.logging.warning(f"Fake focus video found. Penalizing the miner. {[video.video_id for video in videos.focus_metadata]}")
+                return FAKE_VIDEO_PUNISHMENT
+
+            metadata = videos.focus_metadata[:input_synapse.num_focus_videos]
+            
+            # if randomly tripped, flag our random check to pull a video from miner's submissions
+            check_video = CHECK_PROBABILITY > random.random()
+            
+            # pull a random video and/or description only
+            random_meta_and_vid = await self.get_random_focus_video(metadata, check_video)
+            if random_meta_and_vid is None:
+                bt.logging.warning(f"Fetching random focus video failed.")
+                return FAKE_VIDEO_PUNISHMENT
+
+            # execute the random check on metadata and video
+            async with GPU_SEMAPHORE:
+                passed_check = await self.random_focus_check(random_meta_and_vid)
+                # punish miner if not passing
+                if not passed_check:
+                    return FAKE_VIDEO_PUNISHMENT
+                # create query embeddings for relevance scoring
+                # query_emb = await self.imagebind.embed_text_async([videos.query])
+
+            # generate embeddings
+            embeddings = Embeddings(
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+            )
+
+            # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+            metadata_is_similar = await self.deduplicate_videos(embeddings)
+            metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
+            if len(metadata) < len(videos.focus_metadata):
+                bt.logging.info(f"Deduplicated {len(videos.focus_metadata)} videos down to {len(metadata)} videos")
+
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            miner_hotkey = videos.axon.hotkey
+            bt.logging.debug(f"{videos.axon} {input_synapse} input data")
+            
+            total_score = 0
+            # Aggregate scores
+            for focus_meta in metadata:
+                score = asyncio.run(self.score_focus_video(focus_meta.focus_task_str, focus_meta.video_link))
+            
+                print(f"Gemini score: {score}")
+                
+                # Set final score, giving minimum if necessary
+                score = max(float(score), MIN_SCORE)
+                total_score += score
+                
+            # total_score /= 2 * videos.num_focus_videos
+            # Log all our scores
+            bt.logging.info(f'''
+                Focus video reward score: {total_score} : <{focus_meta.video_id}>
+            ''')
+
+            # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
+            upload_result = await self.upload_focusvideo_metadata(metadata, total_score, miner_hotkey)
+            if upload_result:
+                bt.logging.info("Uploading of video metadata successful.")
+            else:
+                bt.logging.error("Issue uploading video metadata.")
+            bt.logging.debug(f"miner hotkey {miner_hotkey}")
+            # Consumes ALL videos after given reward
+            asyncio.run(self.consume_video(video_ids=[focus_meta.video_id for focus_meta in videos.focus_metadata], miner_hotkey=miner_hotkey))
+
+            return total_score
+        except Exception as e:
+            bt.logging.error(f"Error in check_videos_and_calculate_rewards_focus: {e}")
+            return None
+    
+    async def upload_focusvideo_metadata(
+        self,
+        metadata: List[FocusVideoMetadata],
+        score: float,
+        # query: str,
+        miner_hotkey: str,
+    ):
+        """
+        Upload focus video metadata using validator api
+        """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
+        try:
+            async with ClientSession() as session:
+                # Serialize the list of VideoMetadata
+                serialized_metadata = [item.dict() for item in metadata]
+                # Construct the JSON payload
+                payload = {
+                    "metadata": serialized_metadata,
+                    "total_score": score,
+                    "miner_hotkey": miner_hotkey
+                }
+
+                async with session.post(
+                    self.upload_focus_metadata_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+            return True
+        except Exception as e:
+            bt.logging.debug(f"Error trying upload_focus_metadata_endpoint: {e}")
+            return False
+    
     # Get all the reward results by iteratively calling your reward() function.
     async def handle_checks_and_rewards(
         self,
@@ -549,7 +807,6 @@ class Validator(BaseValidatorNeuron):
             for response in responses
         ])
         return rewards
-        
     
     async def upload_video_metadata(
         self, 
@@ -661,6 +918,11 @@ class Validator(BaseValidatorNeuron):
         keypair = self.dendrite.keypair
         hotkey = keypair.ss58_address
         signature = f"0x{keypair.sign(hotkey).hex()}"
+        
+        if len(response.focus_metadata) > 0 and response.axon.hotkey != response.focus_metadata[0].miner_hotkey:
+            bt.logging.warning(f"Synapse response hotkey does not match focus metadata miner hotkey.")
+            return None
+        
         try:
             async with ClientSession() as session:
                 async with session.post(
@@ -692,6 +954,62 @@ class Validator(BaseValidatorNeuron):
             for response in responses
         ])
         return rewards
+
+    async def consume_video(self, video_ids: List[str], miner_hotkey: str):
+        data = {
+            'video_ids': video_ids,
+            'miner_hotkey': miner_hotkey
+        }
+        bt.logging.debug(data)
+        response = requests.post(f"{self.focus_videos_api}/market/consume", json=data)
+        res_data = response.json()
+        bt.logging.debug(res_data)
+        if response.status_code == 200 and res_data['success'] == True:
+            return True
+        else:
+            bt.logging.warning(f"Consuming failed. {video_ids} - {res_data['message']}")
+            return False
+        
+    async def score_focus_video(self, focusing_task: str, clip_link: str) -> Optional[float]:
+        """
+        """
+        try:
+            object_name = clip_link.split('s3.amazonaws.com/clips/')[1]
+            file_name = os.path.basename(object_name)
+            
+            print(f"Downloading {clip_link} to {file_name}")
+            await run_async(self.s3_client.download_file, os.getenv('AWS_S3_BUCKET_NAME'), f"clips/{object_name}", file_name)
+            video_file = await run_async(genai.upload_file, object_name)
+
+            while video_file.state.name == "PROCESSING":
+                print(f'Video downloaded successfully. {video_file.name}')
+                await asyncio.sleep(30)
+                prompt = f"""
+                    Score the productivity of the attached video according to focusing_task as a float value from 0 to 1.
+                    focusing_task is "{focusing_task}".
+                    - Score 0 for watching youtube video screens. 
+                    - Response should be only the video score value
+                """
+
+                contents = [
+                    video_file,
+                    prompt
+                ]
+
+                response = await run_async(self.model.generate_content, contents)
+                return response.text
+
+            if video_file.state.name == "FAILED":
+                print('Uploading video is failed.')
+                return MIN_SCORE
+            
+        except Exception as e:
+            print(e)
+            return MIN_SCORE
+        
+        finally:
+            if os.path.exists(object_name):
+                os.remove(object_name)
 
 
 # The main function parses the configuration and runs the validator.

@@ -2,7 +2,6 @@ import os
 import json
 from typing import List
 
-
 def parse_proxies(proxy_list: List[str]) -> List[str]:
     transformed_proxies = []
     for proxy in proxy_list:
@@ -39,3 +38,5 @@ DB_CONFIG = {
     'host': os.environ["DBHOST"],
     'database': os.environ["DBNAME"]
 }
+
+FOCUS_BACKEND_API_URL = os.environ["FOCUS_BACKEND_API_URL"]
