@@ -57,9 +57,9 @@ def get_desc_embedding_score(embedding):
     predicted_label += 1  # Convert back to 1-5 scale
 
     # Interpret the result
-    print(f"Prediction probabilities: {predicted_probabilities}")
-    print(f"Predicted label: {predicted_label}")
-    print(f"Prediction probability: {prediction_probability}")
+    #print(f"Prediction probabilities: {predicted_probabilities}")
+    #print(f"Predicted label: {predicted_label}")
+    #print(f"Prediction probability: {prediction_probability}")
 
     # Return the predicted label
     return predicted_label
