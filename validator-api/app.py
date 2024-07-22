@@ -169,6 +169,13 @@ def authenticate_with_commune(hotkey, commune_keys):
         return False
     return True
 
+def update_commune_keys(commune_client, commune_keys):
+    try:
+        return commune_client.query_map_key(COMMUNE_NETUID)
+    except Exception as err:
+        print("Error during commune keys update", str(err))
+        return commune_keys
+
 async def main():
     app = FastAPI()
     # Mount the static directory to serve static files
@@ -181,7 +188,7 @@ async def main():
     commune_keys = None
     if ENABLE_COMMUNE:
         commune_client = CommuneClient(get_node_url(use_testnet=True if COMMUNE_NETWORK == "test" else False))
-        commune_keys = commune_client.query_map_key(COMMUNE_NETUID)
+        commune_keys = update_commune_keys(commune_client, commune_keys)
 
     async def resync_metagraph():
         while True:
@@ -194,7 +201,7 @@ async def main():
 
                 # Sync latest commune keys
                 if ENABLE_COMMUNE:
-                    commune_keys = commune_client.query_map_key(COMMUNE_NETUID)
+                    commune_keys = update_commune_keys(commune_client, commune_keys)
                     print("commune keys synced")
             
             # In case of unforeseen errors, the api will log the error and continue operations.
