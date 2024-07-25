@@ -52,7 +52,8 @@ from omega.constants import (
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
-    RANDOM_DESCRIPTION_PENALTY,
+    QUERY_RELEVANCE_SCALING_FACTOR,
+    DESCRIPTION_RELEVANCE_SCALING_FACTOR,
     YOUTUBE_REWARDS_PERCENT,
     FOCUS_REWARDS_PERCENT
 )
@@ -668,9 +669,8 @@ class Validator(BaseValidatorNeuron):
 
             # Aggregate scores
             score = (
-                sum(description_relevance_scores) +
-                sum(query_relevance_scores) +
-                sum(description_mlp_scores)
+                ((sum(description_relevance_scores) + sum(description_mlp_scores)) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
+                (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
             ) / 2 / videos.num_videos
             
             # Set final score, giving minimum if necessary

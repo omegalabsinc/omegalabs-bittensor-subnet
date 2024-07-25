@@ -17,7 +17,8 @@ from omega.constants import (
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
-    RANDOM_DESCRIPTION_PENALTY
+    QUERY_RELEVANCE_SCALING_FACTOR,
+    DESCRIPTION_RELEVANCE_SCALING_FACTOR
 )
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
@@ -394,9 +395,8 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
 
     # Aggregate scores
     score = (
-        sum(description_relevance_scores) +
-        sum(query_relevance_scores) +
-        sum(description_mlp_scores)
+        ((sum(description_relevance_scores) + sum(description_mlp_scores)) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
+        (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
     ) / 2 / videos.num_videos
 
     if not is_check_only and len(metadata) > 0:
