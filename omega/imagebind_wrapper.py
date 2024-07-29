@@ -1,3 +1,4 @@
+import os
 import asyncio
 import functools
 from typing import List, BinaryIO, Optional
@@ -10,9 +11,11 @@ from pydantic import BaseModel
 import torch
 
 from omega import video_utils
+import omega.models.ib_lora.lora as LoRA
 
 
 BPE_PATH = "./omega/bpe/bpe_simple_vocab_16e6.txt.gz"
+LORA_PATH = "./omega/models/ib_lora/checkpoint"
 
 
 class Embeddings(BaseModel):
@@ -45,38 +48,91 @@ class ImageBind:
         self.imagebind.eval()
         self.imagebind.to(self.device)
 
-    def get_inputs(self, descriptions: List[str], video_files: List[BinaryIO]) -> dict:
-        audio_files = [video_utils.copy_audio(video_file.name) for video_file in video_files]
-        audio_filepaths = [audio_file.name for audio_file in audio_files]
-        video_filepaths = [video_file.name for video_file in video_files]
+        # Load the adapter, fine-tuned on gemini flash/pro annotated videos of varying lengths.
+        self.imagebind.modality_trunks.update(
+            LoRA.apply_lora_modality_trunks(
+                self.imagebind.modality_trunks,
+                rank=16,
+                modality_names=[ModalityType.TEXT, ModalityType.VISION, ModalityType.AUDIO]
+            )
+        )
+        LoRA.load_lora_modality_trunks(
+            self.imagebind.modality_trunks,
+            checkpoint_dir=LORA_PATH,
+            postfix="_last"
+        )
+        self.imagebind.modality_postprocessors.load_state_dict(
+            torch.load(
+                os.path.join(LORA_PATH, "imagebind-postprocessors_last.pth"),
+                map_location=self.device,
+            ),
+            strict=False
+        )
+        self.imagebind.modality_heads.load_state_dict(
+            torch.load(
+                os.path.join(LORA_PATH, "imagebind-heads_last.pth"),
+                map_location=self.device,
+            ),
+            strict=False
+        )
+
+    def get_inputs(self, description: str, video_file: BinaryIO) -> dict:
+        audio_file = video_utils.copy_audio(video_file.name)
         try:
-            video_data = data.load_and_transform_video_data(video_filepaths, self.device)
-            audio_data = data.load_and_transform_audio_data(audio_filepaths, self.device)
+            duration = video_utils.get_video_duration(video_file.name)
+            video_data = data.load_and_transform_video_data(
+                [video_file.name],
+                self.device,
+                clip_duration=2,
+                clips_per_video=duration // 2
+            )
+            audio_data = data.load_and_transform_audio_data(
+                [audio_file.name],
+                self.device,
+                clip_duration=2,
+                clips_per_video=duration // 2
+            )
             inputs = {
-                ModalityType.TEXT: load_and_transform_text(descriptions, self.device),
+                ModalityType.TEXT: load_and_transform_text([description], self.device),
                 ModalityType.VISION: video_data,
                 ModalityType.AUDIO: audio_data,
             }
             return inputs
         finally:
-            for audio_file in audio_files:
-                audio_file.close()
+            audio_file.close()
 
     @torch.no_grad()
     def embed(self, descriptions: List[str], video_files: List[BinaryIO]) -> Embeddings:
-        inputs = self.get_inputs(descriptions, video_files)
-        embeddings = self.imagebind(inputs)
-        return Embeddings(
-            video=embeddings[ModalityType.VISION],
-            audio=embeddings[ModalityType.AUDIO],
-            description=embeddings[ModalityType.TEXT]
-        )
+        return_value = None
+        for idx in range(len(descriptions)):
+            inputs = self.get_inputs(descriptions[idx], video_files[idx])
+            embeddings = self.imagebind(inputs)
+            if not return_value:
+                return_value = Embeddings(
+                    video=embeddings[ModalityType.VISION],
+                    audio=embeddings[ModalityType.AUDIO],
+                    description=embeddings[ModalityType.TEXT]
+                )
+            else:
+                return_value.video = torch.cat((return_value.video, embeddings[ModalityType.VISION]))
+                return_value.audio = torch.cat((return_value.audio, embeddings[ModalityType.AUDIO]))
+                return_value.description = torch.cat((return_value.description, embeddings[ModalityType.TEXT]))
+        return return_value
 
     @torch.no_grad()
     def embed_only_video(self, video_files: List[BinaryIO]) -> Embeddings:
         video_filepaths = [video_file.name for video_file in video_files]
+        durations = [video_utils.get_video_duration(f.name) for f in video_files]
         embeddings = self.imagebind({
-            ModalityType.VISION: data.load_and_transform_video_data(video_filepaths, self.device)
+            ModalityType.VISION: [
+                data.load_and_transform_video_data(
+                    [video_filepaths[idx]],
+                    self.device,
+                    clip_duration=2,
+                    clips_per_video=durations[idx] // 2
+                )[0]
+                for idx in range(len(video_filepaths))
+            ]
         })
         return Embeddings(
             video=embeddings[ModalityType.VISION],
@@ -85,8 +141,17 @@ class ImageBind:
     @torch.no_grad()
     def embed_video_and_text(self, video_files: List[BinaryIO], descriptions: List[str]) -> Embeddings:
         video_filepaths = [video_file.name for video_file in video_files]
+        durations = [video_utils.get_video_duration(f.name) for f in video_files]
         embeddings = self.imagebind({
-            ModalityType.VISION: data.load_and_transform_video_data(video_filepaths, self.device),
+            ModalityType.VISION: [
+                data.load_and_transform_video_data(
+                    [video_filepaths[idx]],
+                    self.device,
+                    clip_duration=2,
+                    clips_per_video=durations[idx] // 2
+                )[0]
+                for idx in range(len(video_filepaths))
+            ],
             ModalityType.TEXT: load_and_transform_text(descriptions, self.device)
         })
         return Embeddings(
