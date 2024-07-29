@@ -41,7 +41,6 @@ import wandb
 from omega.utils.uids import get_random_uids
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega.constants import (
-    MAX_FOCUS_SCORE,
     VALIDATOR_TIMEOUT, 
     VALIDATOR_TIMEOUT_MARGIN, 
     MAX_VIDEO_LENGTH, 
