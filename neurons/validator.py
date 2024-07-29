@@ -41,7 +41,6 @@ import wandb
 from omega.utils.uids import get_random_uids
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega.constants import (
-    MAX_FOCUS_SCORE,
     VALIDATOR_TIMEOUT, 
     VALIDATOR_TIMEOUT_MARGIN, 
     MAX_VIDEO_LENGTH, 
@@ -52,7 +51,8 @@ from omega.constants import (
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
-    RANDOM_DESCRIPTION_PENALTY,
+    QUERY_RELEVANCE_SCALING_FACTOR,
+    DESCRIPTION_RELEVANCE_SCALING_FACTOR,
     YOUTUBE_REWARDS_PERCENT,
     FOCUS_REWARDS_PERCENT
 )
@@ -300,6 +300,18 @@ class Validator(BaseValidatorNeuron):
             embeddings.audio = embeddings.audio[~is_too_similar]
         if embeddings.description is not None:
             embeddings.description = embeddings.description[~is_too_similar]
+        return embeddings
+    
+    def filter_embeddings_by_mlp_results(self, embeddings: Embeddings, description_mlp_results: List[int]) -> Embeddings:
+        """Filter the embeddings based on the description MLP results."""
+        valid_indices = [i for i, result in enumerate(description_mlp_results) if result > 1]
+        valid_indices = torch.tensor(valid_indices, dtype=torch.long)
+        if embeddings.video is not None:
+            embeddings.video = embeddings.video[valid_indices]
+        if embeddings.audio is not None:
+            embeddings.audio = embeddings.audio[valid_indices]
+        if embeddings.description is not None:
+            embeddings.description = embeddings.description[valid_indices]
         return embeddings
 
     async def deduplicate_videos(self, embeddings: Embeddings) -> Videos:
@@ -606,6 +618,23 @@ class Validator(BaseValidatorNeuron):
             if len(metadata) == 0:
                 return MIN_SCORE
 
+            pre_filter_metadata_length = len(metadata)
+            # Compute description scores using the imagebind_desc_mlp model
+            description_mlp_results = [imagebind_desc_mlp.get_desc_embedding_score(embedding) for embedding in embeddings.description]
+            bt.logging.debug(f"description_mlp_results: {description_mlp_results}")
+            # filter out metadata that have description scores of 1
+            metadata = [metadata for metadata, desc_mlp_result in zip(metadata, description_mlp_results) if desc_mlp_result > 1]
+            # filter out embeddings that have description scores of 1
+            embeddings = self.filter_embeddings_by_mlp_results(embeddings, description_mlp_results)
+            # filter out description scores that are 1
+            filtered_description_mlp_results = [desc_mlp_result for desc_mlp_result in description_mlp_results if desc_mlp_result > 1]
+            if len(metadata) < pre_filter_metadata_length:
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that had poor descriptions.")
+
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+
             # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
             #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
             
@@ -617,22 +646,30 @@ class Validator(BaseValidatorNeuron):
                 embeddings.video, query_emb
             ).tolist()
 
-            # Compute if there are penalties for random descriptions
-            are_descriptions_valid = [imagebind_desc_mlp.is_desc_embedding_valid(embedding) for embedding in embeddings.description]
-            description_penalties = []
+            description_mlp_scores = []
             # Apply penalties and store the penalized scores
-            for desc_score, desc_valid in zip(description_relevance_scores, are_descriptions_valid):
-                if not desc_valid:
-                    penalized_score = (desc_score * RANDOM_DESCRIPTION_PENALTY) * -1
-                    description_penalties.append(penalized_score)
+            for desc_score, desc_mlp_score in zip(description_relevance_scores, filtered_description_mlp_results):
+                if desc_mlp_score == 4 or desc_mlp_score == 5:
+                    # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
+                    bt.logging.info("Good description detected, thank you honest miner.")
+                    rewarded_score = (desc_mlp_score * 0.1) * desc_score
+                    description_mlp_scores.append(rewarded_score)
+                elif desc_mlp_score == 2:
+                    # score of 2 is "poor", penalize with 50% description relevance score penalty
+                    bt.logging.info("Poor description detected, please do better.")
+                    description_mlp_scores.append(desc_score * -0.5)
+                elif desc_mlp_score == 1:
+                    # score of 1 is "bad", penalize full description relevance score penalty
+                    bt.logging.info("Bad description detected, omitting submission.")
                 else:
-                    description_penalties.append(0)
+                    # score of 3 is "OK", no reward or penalty
+                    bt.logging.info("This description is OK, but please improve.")
+                    description_mlp_scores.append(0)
 
             # Aggregate scores
             score = (
-                sum(description_relevance_scores) +
-                sum(query_relevance_scores) +
-                sum(description_penalties)
+                ((sum(description_relevance_scores) + sum(description_mlp_scores)) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
+                (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
             ) / 2 / videos.num_videos
             
             # Set final score, giving minimum if necessary
@@ -643,7 +680,7 @@ class Validator(BaseValidatorNeuron):
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
                 description_relevance_scores: {description_relevance_scores},
                 query_relevance_scores: {query_relevance_scores},
-                description_penalties: {description_penalties},
+                description_mlp_scores: {description_mlp_scores},
                 score: {score}
             ''')
 

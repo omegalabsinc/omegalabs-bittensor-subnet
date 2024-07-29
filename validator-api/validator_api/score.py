@@ -17,7 +17,8 @@ from omega.constants import (
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
-    RANDOM_DESCRIPTION_PENALTY
+    QUERY_RELEVANCE_SCALING_FACTOR,
+    DESCRIPTION_RELEVANCE_SCALING_FACTOR
 )
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
@@ -206,6 +207,17 @@ def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Emb
         embeddings.description = embeddings.description[~is_too_similar]
     return embeddings
 
+def filter_embeddings_by_mlp_results(embeddings: Embeddings, description_mlp_results: List[int]) -> Embeddings:
+    """Filter the embeddings based on the description MLP results."""
+    valid_indices = [i for i, result in enumerate(description_mlp_results) if result > 1]
+    valid_indices = torch.tensor(valid_indices, dtype=torch.long)
+    if embeddings.video is not None:
+        embeddings.video = embeddings.video[valid_indices]
+    if embeddings.audio is not None:
+        embeddings.audio = embeddings.audio[valid_indices]
+    if embeddings.description is not None:
+        embeddings.description = embeddings.description[valid_indices]
+    return embeddings
 
 def is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
     return F.cosine_similarity(
@@ -339,6 +351,19 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
     print(f"Deduplicated {original_length} videos down to {len(metadata)} videos")
 
+    original_length = len(metadata)
+    # Compute description scores using the imagebind_desc_mlp model
+    description_mlp_results = [imagebind_desc_mlp.get_desc_embedding_score(embedding) for embedding in embeddings.description]
+    print(f"description_mlp_results: {description_mlp_results}")
+    # filter out metadata that have description scores of 1
+    metadata = [metadata for metadata, desc_mlp_result in zip(metadata, description_mlp_results) if desc_mlp_result > 1]
+    # filter out embeddings that have description scores of 1
+    embeddings = filter_embeddings_by_mlp_results(embeddings, description_mlp_results)
+    # filter out description scores that are 1
+    filtered_description_mlp_results = [desc_mlp_result for desc_mlp_result in description_mlp_results if desc_mlp_result > 1]
+    if len(metadata) < original_length:
+        print(f"Filtering {original_length} videos down to {len(metadata)} videos that had poor descriptions.")
+
     # Compute relevance scores
     description_relevance_scores = F.cosine_similarity(
         embeddings.video, embeddings.description
@@ -347,23 +372,31 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         embeddings.video, query_emb
     ).tolist()
 
-    # Compute if there are penalties for random descriptions
-    are_descriptions_valid = [imagebind_desc_mlp.is_desc_embedding_valid(embedding) for embedding in embeddings.description]
-    description_penalties = []
+    description_mlp_scores = []
     # Apply penalties and store the penalized scores
-    for desc_score, desc_valid in zip(description_relevance_scores, are_descriptions_valid):
-        if not desc_valid:
-            penalized_score = (desc_score * RANDOM_DESCRIPTION_PENALTY) * -1
-            description_penalties.append(penalized_score)
+    for desc_score, desc_mlp_score in zip(description_relevance_scores, filtered_description_mlp_results):
+        if desc_mlp_score == 4 or desc_mlp_score == 5:
+            # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
+            print("Good description detected, thank you honest miner.")
+            rewarded_score = (desc_mlp_score * 0.1) * desc_score
+            description_mlp_scores.append(rewarded_score)
+        elif desc_mlp_score == 2:
+            # score of 2 is "poor", penalize with 50% description relevance score penalty
+            print("Poor description detected, please do better.")
+            description_mlp_scores.append(desc_score * -0.5)
+        elif desc_mlp_score == 1:
+            # score of 1 is "bad", penalize full description relevance score penalty
+            print("Bad description detected, omitting submission.")
         else:
-            description_penalties.append(0)
-    print("Calculated description penalties: ", description_penalties)
+            # score of 3 is "OK", no reward or penalty
+            print("This description is OK, but please improve.")
+            description_mlp_scores.append(0)
+    print(f"description_mlp_scores: {description_mlp_scores}")
 
     # Aggregate scores
     score = (
-        sum(description_relevance_scores) +
-        sum(query_relevance_scores) +
-        sum(description_penalties)
+        ((sum(description_relevance_scores) + sum(description_mlp_scores)) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
+        (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
     ) / 2 / videos.num_videos
 
     if not is_check_only and len(metadata) > 0:
