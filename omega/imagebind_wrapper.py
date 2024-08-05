@@ -14,9 +14,9 @@ from omega import video_utils
 import omega.models.ib_lora.lora as LoRA
 
 
-BPE_PATH = "./omega/bpe/bpe_simple_vocab_16e6.txt.gz"
-LORA_PATH = "./omega/models/ib_lora/checkpoint"
-
+BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
+LORA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ib_lora", "checkpoint")
+MAX_CLIPS_PER_VIDEO = 15
 
 class Embeddings(BaseModel):
     class Config:
@@ -45,8 +45,6 @@ class ImageBind:
     def __init__(self):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.imagebind = imagebind_model.imagebind_huge(pretrained=True)
-        self.imagebind.eval()
-        self.imagebind.to(self.device)
 
         # Load the adapter, fine-tuned on gemini flash/pro annotated videos of varying lengths.
         self.imagebind.modality_trunks.update(
@@ -75,6 +73,8 @@ class ImageBind:
             ),
             strict=False
         )
+        self.imagebind.eval()
+        self.imagebind.to(self.device)
 
     def get_inputs(self, description: str, video_file: BinaryIO) -> dict:
         audio_file = video_utils.copy_audio(video_file.name)
@@ -84,13 +84,13 @@ class ImageBind:
                 [video_file.name],
                 self.device,
                 clip_duration=2,
-                clips_per_video=duration // 2
+                clips_per_video=min(duration // 2, MAX_CLIPS_PER_VIDEO),
             )
             audio_data = data.load_and_transform_audio_data(
                 [audio_file.name],
                 self.device,
                 clip_duration=2,
-                clips_per_video=duration // 2
+                clips_per_video=min(duration // 2, MAX_CLIPS_PER_VIDEO),
             )
             inputs = {
                 ModalityType.TEXT: load_and_transform_text([description], self.device),
@@ -129,7 +129,7 @@ class ImageBind:
                     [video_filepaths[idx]],
                     self.device,
                     clip_duration=2,
-                    clips_per_video=durations[idx] // 2
+                    clips_per_video=min(durations[idx] // 2, MAX_CLIPS_PER_VIDEO),
                 )[0]
                 for idx in range(len(video_filepaths))
             ]
@@ -148,7 +148,7 @@ class ImageBind:
                     [video_filepaths[idx]],
                     self.device,
                     clip_duration=2,
-                    clips_per_video=durations[idx] // 2
+                    clips_per_video=min(durations[idx] // 2, MAX_CLIPS_PER_VIDEO),
                 )[0]
                 for idx in range(len(video_filepaths))
             ],
