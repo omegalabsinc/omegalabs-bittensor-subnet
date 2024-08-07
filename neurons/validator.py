@@ -362,7 +362,7 @@ class Validator(BaseValidatorNeuron):
                         random_metadata.video_id,
                         random_metadata.start_time,
                         random_metadata.end_time,
-                        # proxy=proxy_url
+                        proxy=proxy_url
                     ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
             except video_utils.IPBlockedException:
                 # IP is blocked, cannot download video, check description only
