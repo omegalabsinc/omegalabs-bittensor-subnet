@@ -148,7 +148,7 @@ def download_youtube_video(
         # Quick check to see if miner passed an "unplayable" (sign-in required, paid video, etc.).
         fake_video = False
         try:
-            result = requests.get(video_url, proxies={'https': proxy})
+            result = requests.get(video_url)
             json_match = re.search(r"ytInitialPlayerResponse\s*=\s*(\{(?:.*?)\})\s*;\s*<", result.text)
             if json_match:
                 player_info = json.loads(json_match.group(1))
