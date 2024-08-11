@@ -16,6 +16,7 @@ import omega.models.ib_lora.lora as LoRA
 
 BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
 LORA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ib_lora", "checkpoint")
+TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
 
 class Embeddings(BaseModel):
     class Config:
@@ -29,8 +30,7 @@ class Embeddings(BaseModel):
 def load_and_transform_text(text, device):
     if text is None:
         return None
-    tokenizer = SimpleTokenizer(bpe_path=BPE_PATH)
-    tokens = [tokenizer(t).unsqueeze(0).to(device) for t in text]
+    tokens = [TOKENIZER(t).unsqueeze(0).to(device) for t in text]
     tokens = torch.cat(tokens, dim=0)
     return tokens
 

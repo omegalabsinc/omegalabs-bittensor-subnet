@@ -53,6 +53,7 @@ from omega.constants import (
     FAKE_VIDEO_PUNISHMENT,
     QUERY_RELEVANCE_SCALING_FACTOR,
     DESCRIPTION_RELEVANCE_SCALING_FACTOR,
+    VIDEO_RELEVANCE_WEIGHT,
     YOUTUBE_REWARDS_PERCENT,
     FOCUS_REWARDS_PERCENT
 )
@@ -639,16 +640,28 @@ class Validator(BaseValidatorNeuron):
             #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
             
             # Compute relevance scores
-            description_relevance_scores = F.cosine_similarity(
+            video_description_relevance_scores = F.cosine_similarity(
                 embeddings.video, embeddings.description
+            ).tolist()
+            audio_description_relevance_scores = F.cosine_similarity(
+                embeddings.audio, embeddings.description
             ).tolist()
             query_relevance_scores = F.cosine_similarity(
                 embeddings.video, query_emb
             ).tolist()
 
+            # Combine audio & visual description scores, weighted towards visual.
+            description_relevance_scores = [
+                sum([
+                    video_description_relevance_scores[idx] * VIDEO_RELEVANCE_WEIGHT,
+                    audio_description_relevance_scores[idx] * (1.0 - VIDEO_RELEVANCE_WEIGHT),
+                ])
+                for idx in range(len(video_description_relevance_scores))
+            ]
+
             description_mlp_scores = []
             # Apply penalties and store the penalized scores
-            for desc_score, desc_mlp_score in zip(description_relevance_scores, filtered_description_mlp_results):
+            for desc_score, desc_mlp_score in zip(video_description_relevance_scores, filtered_description_mlp_results):
                 if desc_mlp_score == 4 or desc_mlp_score == 5:
                     # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
                     bt.logging.info("Good description detected, thank you honest miner.")
