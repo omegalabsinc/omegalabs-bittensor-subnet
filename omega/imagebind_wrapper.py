@@ -16,7 +16,6 @@ import omega.models.ib_lora.lora as LoRA
 
 BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
 LORA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ib_lora", "checkpoint")
-MAX_CLIPS_PER_VIDEO = 15
 
 class Embeddings(BaseModel):
     class Config:
@@ -42,37 +41,24 @@ def run_async(func, *args, **kwargs):
 
 
 class ImageBind:
-    def __init__(self):
+    def __init__(self, disable_lora=False):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
         self.imagebind = imagebind_model.imagebind_huge(pretrained=True)
 
         # Load the adapter, fine-tuned on gemini flash/pro annotated videos of varying lengths.
-        self.imagebind.modality_trunks.update(
-            LoRA.apply_lora_modality_trunks(
-                self.imagebind.modality_trunks,
-                rank=16,
-                modality_names=[ModalityType.TEXT, ModalityType.VISION, ModalityType.AUDIO]
+        if not disable_lora:
+            self.imagebind.modality_trunks.update(
+                LoRA.apply_lora_modality_trunks(
+                    self.imagebind.modality_trunks,
+                    rank=16,
+                    modality_names=[ModalityType.TEXT, ModalityType.VISION, ModalityType.AUDIO]
+                )
             )
-        )
-        LoRA.load_lora_modality_trunks(
-            self.imagebind.modality_trunks,
-            checkpoint_dir=LORA_PATH,
-            postfix="_last"
-        )
-        self.imagebind.modality_postprocessors.load_state_dict(
-            torch.load(
-                os.path.join(LORA_PATH, "imagebind-postprocessors_last.pth"),
-                map_location=self.device,
-            ),
-            strict=False
-        )
-        self.imagebind.modality_heads.load_state_dict(
-            torch.load(
-                os.path.join(LORA_PATH, "imagebind-heads_last.pth"),
-                map_location=self.device,
-            ),
-            strict=False
-        )
+            LoRA.load_lora_modality_trunks(
+                self.imagebind.modality_trunks,
+                checkpoint_dir=LORA_PATH,
+                postfix="_last"
+            )
         self.imagebind.eval()
         self.imagebind.to(self.device)
 
@@ -83,14 +69,10 @@ class ImageBind:
             video_data = data.load_and_transform_video_data(
                 [video_file.name],
                 self.device,
-                clip_duration=2,
-                clips_per_video=min(duration // 2, MAX_CLIPS_PER_VIDEO),
             )
             audio_data = data.load_and_transform_audio_data(
                 [audio_file.name],
                 self.device,
-                clip_duration=2,
-                clips_per_video=min(duration // 2, MAX_CLIPS_PER_VIDEO),
             )
             inputs = {
                 ModalityType.TEXT: load_and_transform_text([description], self.device),
@@ -128,8 +110,6 @@ class ImageBind:
                 data.load_and_transform_video_data(
                     [video_filepaths[idx]],
                     self.device,
-                    clip_duration=2,
-                    clips_per_video=min(durations[idx] // 2, MAX_CLIPS_PER_VIDEO),
                 )[0]
                 for idx in range(len(video_filepaths))
             ]
@@ -147,8 +127,6 @@ class ImageBind:
                 data.load_and_transform_video_data(
                     [video_filepaths[idx]],
                     self.device,
-                    clip_duration=2,
-                    clips_per_video=min(durations[idx] // 2, MAX_CLIPS_PER_VIDEO),
                 )[0]
                 for idx in range(len(video_filepaths))
             ],
