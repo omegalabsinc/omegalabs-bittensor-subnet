@@ -160,7 +160,7 @@ def download_youtube_video(
             print(f"Error sanity checking playability: {fake_check_exc}")
         if fake_video:
             raise FakeVideoException("Unplayable video provided")
-        if any(fake_vid_msg in str(e) for fake_vid_msg in ["Video unavailable", "is not a valid URL", "Incomplete YouTube ID"]):
+        if any(fake_vid_msg in str(e) for fake_vid_msg in ["Video unavailable", "is not a valid URL", "Incomplete YouTube ID", "Unsupported URL"]):
             raise FakeVideoException(e)
         print(f"Error downloading video: {e}")
         return None
