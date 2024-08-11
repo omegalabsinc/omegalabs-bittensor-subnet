@@ -17,3 +17,10 @@ VIDEO_RELEVANCE_WEIGHT = 0.65
 MAX_FOCUS_SCORE = 1000
 FOCUS_REWARDS_PERCENT = 0.2
 YOUTUBE_REWARDS_PERCENT = 0.8
+
+# Description length scaling values.
+#  The average unique token count in "gold standard" captioning dataset was 77 (round to 80).
+#  Let's say 10 tokens is bare minimum, and anything above that deserves some increase.
+DESCRIPTION_LENGTH_WEIGHT = 0.3
+MIN_LENGTH_BOOST_TOKEN_COUNT = 10
+MAX_LENGTH_BOOST_TOKEN_COUNT = 80

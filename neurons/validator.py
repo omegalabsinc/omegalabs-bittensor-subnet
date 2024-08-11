@@ -55,7 +55,10 @@ from omega.constants import (
     DESCRIPTION_RELEVANCE_SCALING_FACTOR,
     VIDEO_RELEVANCE_WEIGHT,
     YOUTUBE_REWARDS_PERCENT,
-    FOCUS_REWARDS_PERCENT
+    FOCUS_REWARDS_PERCENT,
+    DESCRIPTION_LENGTH_WEIGHT,
+    MIN_LENGTH_BOOST_TOKEN_COUNT,
+    MAX_LENGTH_BOOST_TOKEN_COUNT,
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
@@ -658,6 +661,16 @@ class Validator(BaseValidatorNeuron):
                 ])
                 for idx in range(len(video_description_relevance_scores))
             ]
+
+            # Scale description scores by number of unique tokens.
+            for idx in range(len(description_relevance_scores)):
+                unique_token_count = len(set(TOKENIZER(metadata[idx].description)))
+                if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+                    description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+                    continue
+                length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+                length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+                description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
 
             description_mlp_scores = []
             # Apply penalties and store the penalized scores
