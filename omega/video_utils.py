@@ -153,7 +153,7 @@ def download_youtube_video(
             if json_match:
                 player_info = json.loads(json_match.group(1))
                 status = player_info.get('playabilityStatus', {}).get('status', 'ok')
-                if status == 'UNPLAYABLE' or (status == 'ERROR' and player_info['playabilityStatus'].get('reason', '').lower() == 'video unavailable'):
+                if status in ('UNPLAYABLE', 'LOGIN_REQUIRED') or (status == 'ERROR' and player_info['playabilityStatus'].get('reason', '').lower() == 'video unavailable'):
                     fake_video = True
                     print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
         except Exception as fake_check_exc:
