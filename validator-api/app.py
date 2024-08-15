@@ -644,6 +644,47 @@ async def main():
     @app.get("/leaderboard")
     def leaderboard():
         return FileResponse('./validator-api/static/leaderboard.html')
+    
+    @app.get("/api/leaderboard-dataset-data")
+    async def get_leaderboard_dataset_data():
+        try:
+            connection = connect_to_db()
+            query = "SELECT * FROM hf_dataset_snapshots ORDER BY snapshot_date ASC"
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query)
+            data = cursor.fetchall()
+            
+            cursor.close()
+            connection.close()
+            return data        
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching leaderboard dataset data from MySQL database: {err}")
+        
+    @app.get("/api/leaderboard-miner-data")
+    async def get_leaderboard_miner_data(hotkey: Optional[str] = None):
+        try:
+            connection = connect_to_db()
+            params = []
+
+            query = "SELECT * FROM miner_leaderboard_snapshots wHERE 1=1"
+
+             # Filter by hotkey if provided
+            if hotkey:
+                query += " AND hotkey = %s"
+                params.append(hotkey)
+
+            query += " ORDER BY snapshot_date ASC"
+
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query, params)
+            data = cursor.fetchall()
+            
+            cursor.close()
+            connection.close()
+            return data        
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching leaderboard miner data from MySQL database: {err}")
+
     ################ END LEADERBOARD ################
 
     ################ START DASHBOARD ################
