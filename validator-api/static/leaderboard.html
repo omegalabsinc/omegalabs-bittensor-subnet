@@ -7,6 +7,8 @@
     <title>OMEGA Leaderboard</title>
     <script src="https://cdn.jsdelivr.net/npm/vue@2.6.14/dist/vue.min.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/axios/dist/axios.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/chartjs-adapter-date-fns@2.0.0/dist/chartjs-adapter-date-fns.bundle.min.js"></script>
     <style>
         /* Apply base font styles */
         html, body {
@@ -77,6 +79,21 @@
             color: #ffffff; /* Ensure table text is light-colored */
             border-radius: 10px; /* Rounded corners */
             box-shadow: 4px 4px 8px 0 rgba(70, 70, 70, 0.3); /* Drop shadow */
+        }
+
+        /* not first child */
+        tr:not(:first-child) {
+            cursor: pointer;
+            transition: background-color 0.3s ease, box-shadow 0.3s ease;
+        }
+        
+        tr:not(:first-child):hover {
+            background-color: rgba(98, 30, 100, 0.4); /* More translucent background color */
+            box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        }
+
+        tr.graph-row:hover {
+            background-color: #1f2a48; /* Dark background for headers */
         }
 
         th.center {
@@ -168,16 +185,20 @@
             border-radius: 5px; /* Slightly rounded corners */
             box-shadow: inset 0 1px 3px rgba(0, 0, 0, 0.1); /* Inner shadow for depth */
             display: block; /* Ensure it's a block-level element */
-            margin-left: auto; /* Combined with margin-right: auto, centers the input */
+            margin-left: 11%; /* Combined with margin-right: auto, centers the input */
             margin-right: auto;
         }
 
         .input-social-container {
             display: flex;
             align-items: center;
-            justify-content: space-between;
         }
 
+        .info-text {
+            margin-left: 9em;
+            margin-right: 0em;
+        }
+       
         .social-icons {
             position: absolute;
             right: 5%;
@@ -236,6 +257,65 @@
                 width: 100%; /* Full width on mobile */
             }
         }
+
+        .chart-card {
+            background-color: rgba(255, 255, 255, 0.05);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            border-radius: 10px;
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1), 0 1px 3px rgba(0, 0, 0, 0.08);
+            padding: 20px;
+            margin: 20px auto;
+            max-width: 88%;
+            transition: transform 0.3s ease-in-out, box-shadow 0.3s ease-in-out;
+            margin-bottom: 40px;
+        }
+
+        .chart-card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 7px 14px rgba(0, 0, 0, 0.15), 0 3px 6px rgba(0, 0, 0, 0.1);
+        }
+
+        .chart-title {
+            color: #ffffff;
+            font-size: 1.5rem;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .chart-container {
+            position: relative;
+            height: 40vh;
+            width: 100%;
+        }
+
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .chart-card {
+                padding: 15px;
+                margin: 15px auto;
+            }
+
+            .chart-title {
+                font-size: 1.2rem;
+            }
+
+            .chart-container {
+                height: 50vh;
+            }
+        }
+
+        .miner-chart-container {
+            height: 300px;
+            margin-top: 20px;
+            margin-bottom: 20px;
+        }
+        .expanded-row {
+            background-color: rgba(255, 255, 255, 0.05);
+            transition: all 0.3s ease;
+        }
+        .expanded-content {
+            padding: 20px;
+        }
     </style>
 </head>
 <body>
@@ -257,7 +337,15 @@
             </svg>
         </div>
         <h1>OMEGA Leaderboard</h1>
+        <div v-if="datasetSizeData" class="chart-card">
+            <h2 class="chart-title">OMEGA Multimodal Dataset Size Over Time</h2>
+            <div class="chart-container">
+                <canvas ref="datasetSizeChart"></canvas>
+            </div>
+        </div>
+        
         <div class="input-social-container">
+            <p class="info-text">Click on a row to display miner performance graph.</p>
             <input type="text" v-model="filterKey" placeholder="Filter by hotkey...">
             <div class="social-icons">
                 <a href="https://twitter.com/omegalabsai" target="_blank" class="social-icon"><button class="" type="button"><span class=""><img src="https://omegatron.ai/static/images/16b3234e15bf0aece98c.png"></span></button></a>
@@ -275,16 +363,27 @@
                 <th>Last Updated</th>
                 <th class="width20"><span class="refresh-icon" @click="fetchData">&#x21bb;</span></th>
             </tr>
-            <tr v-for="miner in filteredMiners" :key="miner.hotkey">
-                <td class="width520">{{ miner.hotkey }}</td>
-                <td>{{ miner.is_bittensor ? 'Bittensor' : 'Commune' }}</td>
-                <td>{{ miner.datapoints }}</td>
-                <td>{{ miner.avg_desc_relevance }}</td>
-                <td>{{ miner.avg_query_relevance }}</td>
-                <td>{{ miner.avg_score }}</td>
-                <td>{{ miner.last_updated }}</td>
-                <td class="width20"></td>
-            </tr>
+            <template v-for="miner in filteredMiners">
+                <tr :key="miner.hotkey" @click="toggleExpand(miner)" :class="{ 'expanded-row': miner.expanded }">
+                    <td class="width520">{{ miner.hotkey }}</td>
+                    <td>{{ miner.is_bittensor ? 'Bittensor' : 'Commune' }}</td>
+                    <td>{{ miner.datapoints }}</td>
+                    <td>{{ miner.avg_desc_relevance }}</td>
+                    <td>{{ miner.avg_query_relevance }}</td>
+                    <td>{{ miner.avg_score }}</td>
+                    <td>{{ miner.last_updated }}</td>
+                    <td class="width20"></td>
+                </tr>
+                <tr v-if="miner.expanded" :key="miner.hotkey + '-expanded'" class="graph-row">
+                    <td colspan="8">
+                        <div class="expanded-content">
+                            <div class="miner-chart-container">
+                                <canvas :ref="'minerChart-' + miner.hotkey"></canvas>
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            </template>
         </table>
     </div>
     <div>&nbsp;</div>
@@ -296,7 +395,10 @@
                 miners: [],
                 filterKey: '',
                 sortKey: '',
-                sortOrder: 1
+                sortOrder: 1,
+                datasetSizeData: null,
+                chartCreated: false,
+                minerCharts: {}
             },
             computed: {
                 filteredMiners() {
@@ -308,6 +410,17 @@
                         if(a[this.sortKey] > b[this.sortKey]) return 1 * modifier;
                         return 0;
                     });
+                }
+            },
+            watch: {
+                datasetSizeData: {
+                    handler(newData) {
+                        console.log('Dataset size data updated:', newData);
+                        this.$nextTick(() => {
+                            this.createOrUpdateChart();
+                        });
+                    },
+                    deep: true
                 }
             },
             methods: {
@@ -327,10 +440,373 @@
                         this.sortKey = key;
                         this.sortOrder = 1;
                     }
+                },
+                fetchDatasetSizeData() {
+                    console.log('Fetching dataset size data...');
+                    axios.get('/api/leaderboard-dataset-data')
+                        .then(response => {
+                            console.log('Dataset size data received:', response.data);
+                            const data = response.data;
+                            
+                            // Process the data to extract only what we need
+                            this.datasetSizeData = {
+                                labels: data.map(item => item.snapshot_date),
+                                datasets: [
+                                    {
+                                        label: 'TOTAL ROWS',
+                                        borderColor: '#98C379', // Green
+                                        backgroundColor: '#98C379',
+                                        data: data.map(item => ({
+                                            x: item.snapshot_date,
+                                            y: item.total_rows
+                                        })),
+                                        yAxisID: 'y'
+                                    },
+                                    {
+                                        label: 'MEMORY SIZE (GB)',
+                                        borderColor: '#61AFEF', // Blue
+                                        backgroundColor: '#61AFEF',
+                                        data: data.map(item => ({
+                                            x: item.snapshot_date,
+                                            y: item.memory_size_gb
+                                        })),
+                                        yAxisID: 'y1'
+                                    }
+                                ]
+                            };
+                            
+                            this.$nextTick(() => {
+                                this.createOrUpdateChart();
+                            });
+                        })
+                        .catch(error => {
+                            console.error('There was an error fetching the dataset size data:', error);
+                        });
+                },
+                createOrUpdateChart() {
+                    const canvas = this.$refs.datasetSizeChart;
+                    if (canvas && this.datasetSizeData && !this.chartCreated) {
+                        const ctx = canvas.getContext('2d');
+
+                        this.chart = new Chart(ctx, {
+                            type: 'line',
+                            data: {
+                                labels: this.datasetSizeData.labels,
+                                datasets: this.datasetSizeData.datasets,
+                            },
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    x: {
+                                        type: 'time',
+                                        time: {
+                                            parser: 'yyyy-MM-dd',
+                                            unit: 'day',
+                                            displayFormats: {
+                                                day: 'MMM d, yyyy'
+                                            }
+                                        },
+                                        title: {
+                                            display: true,
+                                            text: 'DATE (UTC)',
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 14,
+                                                weight: 'bold'
+                                            }
+                                        },
+                                        ticks: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            },
+                                            source: 'data'
+                                        }
+                                    },
+                                    y: {
+                                        type: 'linear',
+                                        display: true,
+                                        position: 'left',
+                                        title: {
+                                            display: true,
+                                            text: 'TOTAL ROWS',
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 14,
+                                                weight: 'bold'
+                                            }
+                                        },
+                                        ticks: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            },
+                                            callback: function(value, index, values) {
+                                                return value.toLocaleString();
+                                            }
+                                        }
+                                    },
+                                    y1: {
+                                        type: 'linear',
+                                        display: true,
+                                        position: 'right',
+                                        title: {
+                                            display: true,
+                                            text: 'MEMORY SIZE (GB)',
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 14,
+                                                weight: 'bold'
+                                            }
+                                        },
+                                        ticks: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            },
+                                            callback: function(value, index, values) {
+                                                return value.toLocaleString();
+                                            }
+                                        },
+                                        grid: {
+                                            drawOnChartArea: false
+                                        }
+                                    },
+                                },
+                                plugins: {
+                                    legend: {
+                                        labels: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            }
+                                        }
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            title: function(tooltipItems) {
+                                                return tooltipItems[0].label + ' (UTC)';
+                                            },
+                                            label: function(context) {
+                                                let label = context.dataset.label || '';
+                                                if (label) {
+                                                    label += ': ';
+                                                }
+                                                if (context.parsed.y !== null) {
+                                                    label += context.parsed.y.toLocaleString();
+                                                }
+                                                return label;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        this.chartCreated = true;
+                    } else if (this.chart && this.datasetSizeData) {
+                        this.chart.data = this.datasetSizeData;
+                        this.chart.update();
+                    } else {
+                        console.log('Unable to create or update chart. Canvas:', !!canvas, 'Data:', !!this.datasetSizeData, 'Chart created:', this.chartCreated);
+                    }
+                },
+                toggleExpand(miner) {
+                    this.$set(miner, 'expanded', !miner.expanded);
+                    if (miner.expanded) {
+                        this.fetchMinerData(miner.hotkey);
+                    }
+                },
+                fetchMinerData(hotkey) {
+                    axios.get(`/api/leaderboard-miner-data?hotkey=${hotkey}`)
+                        .then(response => {
+                            this.createMinerChart(hotkey, response.data);
+                        })
+                        .catch(error => {
+                            console.error('Error fetching miner data:', error);
+                        });
+                },
+                createMinerChart(hotkey, data) {
+                    const canvas = this.$refs[`minerChart-${hotkey}`][0];
+                    const ctx = canvas.getContext('2d');
+
+                    if (this.minerCharts[hotkey]) {
+                        this.minerCharts[hotkey].destroy();
+                    }
+
+                    this.minerCharts[hotkey] = new Chart(ctx, {
+                        type: 'line',
+                        data: {
+                            labels: data.map(item => item.snapshot_date),
+                            datasets: [
+                                {
+                                    label: 'Datapoints',
+                                    borderColor: '#98C379', // Green
+                                    backgroundColor: '#98C379',
+                                    data: data.map(item => ({x: item.snapshot_date, y: item.datapoints})),
+                                    yAxisID: 'y'
+                                },
+                                {
+                                    label: 'Avg Score',
+                                    borderColor: '#61AFEF', // Blue
+                                    backgroundColor: '#61AFEF',
+                                    data: data.map(item => ({x: item.snapshot_date, y: item.avg_score})),
+                                    yAxisID: 'y1'
+                                },
+                                {
+                                    label: 'Avg Query Relevance',
+                                    borderColor: '#D19A66',
+                                    backgroundColor: '#D19A66',
+                                    data: data.map(item => ({x: item.snapshot_date, y: item.avg_query_relevance})),
+                                    yAxisID: 'y1'
+                                },
+                                {
+                                    label: 'Avg Desc Relevance',
+                                    borderColor: '#C678DD',
+                                    backgroundColor: '#C678DD',
+                                    data: data.map(item => ({x: item.snapshot_date, y: item.avg_desc_relevance})),
+                                    yAxisID: 'y1'
+                                },
+                                {
+                                    label: 'Incentive',
+                                    borderColor: '#E06C75',
+                                    backgroundColor: '#E06C75',
+                                    data: data.map(item => ({x: item.snapshot_date, y: item.incentive})),
+                                    yAxisID: 'y2'
+                                }
+                            ]
+                        },
+                        options: {
+                            responsive: true,
+                            maintainAspectRatio: false,
+                            scales: {
+                                x: {
+                                    type: 'time',
+                                    time: {
+                                        parser: 'yyyy-MM-dd',
+                                        unit: 'day',
+                                        displayFormats: {
+                                            day: 'MMM d, yyyy'
+                                        }
+                                    },
+                                    title: {
+                                        display: true,
+                                        text: 'DATE (UTC)',
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 14,
+                                            weight: 'bold'
+                                        }
+                                    },
+                                    ticks: {
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 12
+                                        }
+                                    }
+                                },
+                                y: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'left',
+                                    title: {
+                                        display: true,
+                                        text: 'DATAPOINTS',
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 14,
+                                            weight: 'bold'
+                                        }
+                                    },
+                                    ticks: {
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 12
+                                        },
+                                        callback: function(value) {
+                                            return value.toLocaleString();
+                                        }
+                                    }
+                                },
+                                y1: {
+                                    type: 'linear',
+                                    display: true,
+                                    position: 'right',
+                                    min: 0,
+                                    max: 1,
+                                    title: {
+                                        display: true,
+                                        text: 'SCORES',
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 14,
+                                            weight: 'bold'
+                                        }
+                                    },
+                                    ticks: {
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 12
+                                        }
+                                    },
+                                    grid: {
+                                        drawOnChartArea: false
+                                    }
+                                },
+                                y2: {
+                                    type: 'linear',
+                                    display: false,
+                                    position: 'right',
+                                    grid: {
+                                        drawOnChartArea: false,
+                                    },
+                                    ticks: {
+                                        callback: function(value, index, values) {
+                                            return value.toFixed(5);
+                                        }
+                                    }
+                                },
+                            },
+                            plugins: {
+                                legend: {
+                                    labels: {
+                                        color: '#E0E0E0',
+                                        font: {
+                                            size: 12
+                                        }
+                                    }
+                                },
+                                tooltip: {
+                                    callbacks: {
+                                        title: function(tooltipItems) {
+                                            return tooltipItems[0].label + ' (UTC)';
+                                        },
+                                        label: function(context) {
+                                            let label = context.dataset.label || '';
+                                            if (label) {
+                                                label += ': ';
+                                            }
+                                            if (context.parsed.y !== null) {
+                                                if (label.startsWith('Incentive')) {
+                                                    // Display incentive with 5 decimal places
+                                                    label += context.parsed.y.toFixed(5);
+                                                } else {
+                                                    // For other metrics, use the existing formatting
+                                                    label += context.parsed.y.toLocaleString();
+                                                }
+                                            }
+                                            return label;
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    });
                 }
             },
             mounted() {
                 this.fetchData();
+                this.fetchDatasetSizeData();
             }
         });
     </script>
