@@ -387,6 +387,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         elif desc_mlp_score == 1:
             # score of 1 is "bad", penalize full description relevance score penalty
             print("Bad description detected, omitting submission.")
+            description_mlp_scores.append(desc_score * -1.0)
         else:
             # score of 3 is "OK", no reward or penalty
             print("This description is OK, but please improve.")
