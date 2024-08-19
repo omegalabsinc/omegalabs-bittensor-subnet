@@ -31,7 +31,7 @@ import bittensor as bt
 import omega
 
 from omega.base.miner import BaseMinerNeuron
-from omega.imagebind_wrapper import ImageBind
+from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
 from omega.miner_utils import search_and_embed_youtube_videos, embed_focus_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
@@ -78,6 +78,7 @@ class Miner(BaseMinerNeuron):
         synapse.video_metadata = search_and_embed_youtube_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
+        synapse.imagebind_version = IMAGEBIND_VERSION
         time_elapsed = time.time() - start
         
         if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:

@@ -76,6 +76,8 @@ class Videos(bt.Synapse):
     - query: the input query for which to find relevant videos
     - num_videos: the number of videos to return
     - video_metadata: a list of video metadata objects
+    - focus_metadata: a list of focus video metadata objects
+    - imagebind_version: the version of the imagebind model used to generate the embeddings
     """
 
     query: str
@@ -83,6 +85,7 @@ class Videos(bt.Synapse):
     num_focus_videos: typing.Optional[int] = None
     video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
     focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = None
+    imagebind_version: typing.Optional[str] = None
 
     def deserialize(self) -> typing.List[VideoMetadata]:
         assert self.video_metadata is not None
@@ -95,7 +98,7 @@ class Videos(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_videos", "num_focus_videos", "video_metadata", "focus_metadata"})
+            include={"query", "num_videos", "num_focus_videos", "video_metadata", "focus_metadata", "imagebind_version"})
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Videos") -> "Videos":
@@ -108,5 +111,6 @@ class Videos(bt.Synapse):
             num_focus_videos=input_synapse.num_focus_videos,
             video_metadata=self.video_metadata[:input_synapse.num_videos],
             focus_metadata=self.focus_metadata,
+            imagebind_version=self.imagebind_version,
             axon=self.axon
         )

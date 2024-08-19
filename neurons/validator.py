@@ -62,7 +62,7 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
 )
 from omega import video_utils
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 # import base validator class which takes care of most of the boilerplate
@@ -128,11 +128,13 @@ class Validator(BaseValidatorNeuron):
         self.all_topics = self.load_topics()
 
         self.imagebind = None
+        self.imagebind_v1 = None
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
                 bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
                 self.decentralization = True
                 self.imagebind = ImageBind()
+                self.imagebind_v1 = ImageBind(disable_lora=True)
             else:
                 bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
                 self.decentralization = False
@@ -428,18 +430,18 @@ class Validator(BaseValidatorNeuron):
         return random_metadata, random_video
 
 
-    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata]) -> bool:
+    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata], imagebind) -> bool:
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
-            desc_embeddings = self.imagebind.embed_text([random_metadata.description])
+            desc_embeddings = imagebind.embed_text([random_metadata.description])
             is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
             strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
             bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
             return is_similar_
 
         # Video downloaded, check all embeddings
-        embeddings = self.imagebind.embed([random_metadata.description], [random_video])
+        embeddings = imagebind.embed([random_metadata.description], [random_video])
         is_similar_ = (
             self.is_similar(embeddings.video, random_metadata.video_emb) and
             self.is_similar(embeddings.audio, random_metadata.audio_emb) and
@@ -539,6 +541,13 @@ class Validator(BaseValidatorNeuron):
             # check video_ids for fake videos
             if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
+            
+            if videos.imagebind_version is None:
+                bt.logging.info("imagebind_version is None, using original model")
+            elif videos.imagebind_version != IMAGEBIND_VERSION:
+                bt.logging.info(f"imagebind_version is {videos.imagebind_version}, using original model")
+            else:
+                bt.logging.info(f"imagebind_version is {IMAGEBIND_VERSION}, using new model")
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
@@ -555,19 +564,33 @@ class Validator(BaseValidatorNeuron):
 
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
-                passed_check = await self.random_youtube_check(random_meta_and_vid)
+                if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+                    passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind)
+                else:
+                    passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
                 # punish miner if not passing
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
                 # create query embeddings for relevance scoring
-                query_emb = await self.imagebind.embed_text_async([videos.query])
+                if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+                    query_emb = await self.imagebind.embed_text_async([videos.query])
+                else:
+                    query_emb = await self.imagebind_v1.embed_text_async([videos.query])
 
-            # generate embeddings
-            embeddings = Embeddings(
-                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
-                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
-                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
-            )
+            if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+                # generate embeddings
+                embeddings = Embeddings(
+                    video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+                    audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
+                    description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+                )
+            else:
+                # generate embeddings
+                embeddings = Embeddings(
+                    video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+                    audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
+                    description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+                )
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
             metadata_is_similar = await self.deduplicate_videos(embeddings)
