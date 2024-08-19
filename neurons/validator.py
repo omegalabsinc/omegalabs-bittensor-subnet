@@ -29,6 +29,7 @@ import datetime as dt
 import random
 import traceback
 import requests
+import math
 
 # Bittensor
 import bittensor as bt
@@ -61,7 +62,7 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
 )
 from omega import video_utils
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 # import base validator class which takes care of most of the boilerplate
