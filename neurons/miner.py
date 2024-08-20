@@ -58,7 +58,9 @@ class Miner(BaseMinerNeuron):
             self.augment = OpenAIAugment(device=self.config.neuron.device)
         else:
             raise ValueError("Invalid query augment")
+        
         self.imagebind = ImageBind()
+        self.imagebind_v1 = ImageBind(disable_lora=True)
 
         self.focus_videos_api = (
             #"https://dev-focus-api.omegatron.ai/"
@@ -75,10 +77,16 @@ class Miner(BaseMinerNeuron):
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         
         start = time.time()
-        synapse.video_metadata = search_and_embed_youtube_videos(
-            self.augment(synapse.query), synapse.num_videos, self.imagebind
-        )
-        synapse.imagebind_version = IMAGEBIND_VERSION
+
+        if synapse.imagebind_version is not None and synapse.imagebind_version == IMAGEBIND_VERSION:
+            synapse.video_metadata = search_and_embed_youtube_videos(
+                self.augment(synapse.query), synapse.num_videos, self.imagebind
+            )
+        else:
+            synapse.video_metadata = search_and_embed_youtube_videos(
+                self.augment(synapse.query), synapse.num_videos, self.imagebind_v1
+            )
+        
         time_elapsed = time.time() - start
         
         if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:
