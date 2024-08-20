@@ -664,7 +664,7 @@ class Validator(BaseValidatorNeuron):
 
             # Scale description scores by number of unique tokens.
             for idx in range(len(description_relevance_scores)):
-                unique_token_count = len(set(TOKENIZER(metadata[idx].description)))
+                unique_token_count = len(set(TOKENIZER(metadata[idx].description).nonzero()))
                 if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
                     description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
                     continue
