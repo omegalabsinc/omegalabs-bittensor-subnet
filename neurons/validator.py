@@ -225,7 +225,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=self.num_videos, num_focus_videos=self.num_focus_videos, imagebind_version=IMAGEBIND_VERSION)
+        input_synapse = Videos(query=query, num_videos=self.num_videos, num_focus_videos=self.num_focus_videos, vali_imagebind_version=IMAGEBIND_VERSION)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
@@ -542,12 +542,12 @@ class Validator(BaseValidatorNeuron):
             if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
             
-            if videos.imagebind_version is None:
-                bt.logging.info("imagebind_version is None, using original model")
-            elif videos.imagebind_version != IMAGEBIND_VERSION:
-                bt.logging.info(f"imagebind_version is {videos.imagebind_version}, using original model")
+            if videos.miner_imagebind_version is None:
+                bt.logging.info("miner imagebind_version is None, using original model")
+            elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+                bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
             else:
-                bt.logging.info(f"imagebind_version is {IMAGEBIND_VERSION}, using new model")
+                bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
@@ -564,7 +564,7 @@ class Validator(BaseValidatorNeuron):
 
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
-                if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+                if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
                     passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind)
                 else:
                     passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
@@ -572,12 +572,12 @@ class Validator(BaseValidatorNeuron):
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
                 # create query embeddings for relevance scoring
-                if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+                if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
                     query_emb = await self.imagebind.embed_text_async([videos.query])
                 else:
                     query_emb = await self.imagebind_v1.embed_text_async([videos.query])
 
-            if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+            if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
                 # generate embeddings
                 embeddings = Embeddings(
                     video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),

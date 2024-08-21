@@ -77,15 +77,16 @@ class Miner(BaseMinerNeuron):
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         
         start = time.time()
-
-        if synapse.imagebind_version is not None and synapse.imagebind_version == IMAGEBIND_VERSION:
+        if synapse.vali_imagebind_version is not None and synapse.vali_imagebind_version == IMAGEBIND_VERSION:
             synapse.video_metadata = search_and_embed_youtube_videos(
                 self.augment(synapse.query), synapse.num_videos, self.imagebind
             )
+            synapse.miner_imagebind_version = IMAGEBIND_VERSION
         else:
             synapse.video_metadata = search_and_embed_youtube_videos(
                 self.augment(synapse.query), synapse.num_videos, self.imagebind_v1
             )
+            synapse.miner_imagebind_version = "1.0"
         
         time_elapsed = time.time() - start
         
