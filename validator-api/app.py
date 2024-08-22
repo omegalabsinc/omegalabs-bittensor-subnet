@@ -31,7 +31,7 @@ from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
-from omega.imagebind_wrapper import ImageBind
+from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
 from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 from validator_api import score
@@ -64,6 +64,7 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 security = HTTPBasic()
 imagebind = ImageBind()
+imagebind_v1 = ImageBind(disable_lora=True)
 
 ### Utility functions for OMEGA Metadata Dashboard ###
 def get_timestamp_from_filename(filename: str):
@@ -493,9 +494,19 @@ async def main():
             print(f"Focus Videos Reward points are: {focus_rewards}")
             # Normalize focus score
             focus_rewards = focus_rewards / 10
+
+        if videos.imagebind_version is None:
+            print("imagebind_version is None, using original model")
+        elif videos.imagebind_version != IMAGEBIND_VERSION:
+            print(f"imagebind_version is {videos.imagebind_version}, using original model")
+        else:
+            print(f"imagebind_version is {IMAGEBIND_VERSION}, using new model")
         
         # handle youtube video metadata
-        youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
+        if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+            youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
+        else:
+            youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v1)
 
         if youtube_rewards is None and focus_rewards is None:
             print("YouTube and Focus rewards are empty, returning None")

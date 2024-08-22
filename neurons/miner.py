@@ -31,7 +31,7 @@ import bittensor as bt
 import omega
 
 from omega.base.miner import BaseMinerNeuron
-from omega.imagebind_wrapper import ImageBind
+from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
 from omega.miner_utils import search_and_embed_youtube_videos, embed_focus_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
@@ -58,7 +58,9 @@ class Miner(BaseMinerNeuron):
             self.augment = OpenAIAugment(device=self.config.neuron.device)
         else:
             raise ValueError("Invalid query augment")
+        
         self.imagebind = ImageBind()
+        self.imagebind_v1 = ImageBind(disable_lora=True)
 
         self.focus_videos_api = (
             #"https://dev-focus-api.omegatron.ai/"
@@ -75,9 +77,17 @@ class Miner(BaseMinerNeuron):
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         
         start = time.time()
-        synapse.video_metadata = search_and_embed_youtube_videos(
-            self.augment(synapse.query), synapse.num_videos, self.imagebind
-        )
+        if synapse.vali_imagebind_version is not None and synapse.vali_imagebind_version == IMAGEBIND_VERSION:
+            synapse.video_metadata = search_and_embed_youtube_videos(
+                self.augment(synapse.query), synapse.num_videos, self.imagebind
+            )
+            synapse.miner_imagebind_version = IMAGEBIND_VERSION
+        else:
+            synapse.video_metadata = search_and_embed_youtube_videos(
+                self.augment(synapse.query), synapse.num_videos, self.imagebind_v1
+            )
+            synapse.miner_imagebind_version = "1.0"
+        
         time_elapsed = time.time() - start
         
         if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:

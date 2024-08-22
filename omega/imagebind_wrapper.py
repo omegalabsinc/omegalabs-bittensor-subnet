@@ -13,7 +13,7 @@ import torch
 from omega import video_utils
 import omega.models.ib_lora.lora as LoRA
 
-
+IMAGEBIND_VERSION = "2.0"
 BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
 LORA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ib_lora", "checkpoint")
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
