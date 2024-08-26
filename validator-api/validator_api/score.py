@@ -2,6 +2,7 @@ import asyncio
 import random
 import uuid
 from typing import List, Tuple, Optional, BinaryIO
+import math
 
 from pinecone import Pinecone
 import torch
@@ -10,17 +11,26 @@ import torch.nn.functional as F
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega import video_utils
 from omega.constants import (
+    VALIDATOR_TIMEOUT, 
+    VALIDATOR_TIMEOUT_MARGIN, 
     MAX_VIDEO_LENGTH, 
     MIN_VIDEO_LENGTH,
+    CHECK_PROBABILITY,
     DIFFERENCE_THRESHOLD, 
     SIMILARITY_THRESHOLD, 
     VIDEO_DOWNLOAD_TIMEOUT, 
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
     QUERY_RELEVANCE_SCALING_FACTOR,
-    DESCRIPTION_RELEVANCE_SCALING_FACTOR
+    DESCRIPTION_RELEVANCE_SCALING_FACTOR,
+    VIDEO_RELEVANCE_WEIGHT,
+    YOUTUBE_REWARDS_PERCENT,
+    FOCUS_REWARDS_PERCENT,
+    DESCRIPTION_LENGTH_WEIGHT,
+    MIN_LENGTH_BOOST_TOKEN_COUNT,
+    MAX_LENGTH_BOOST_TOKEN_COUNT,
 )
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 from validator_api import config
@@ -365,16 +375,38 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         print(f"Filtering {original_length} videos down to {len(metadata)} videos that had poor descriptions.")
 
     # Compute relevance scores
-    description_relevance_scores = F.cosine_similarity(
+    video_description_relevance_scores = F.cosine_similarity(
         embeddings.video, embeddings.description
+    ).tolist()
+    audio_description_relevance_scores = F.cosine_similarity(
+        embeddings.audio, embeddings.description
     ).tolist()
     query_relevance_scores = F.cosine_similarity(
         embeddings.video, query_emb
     ).tolist()
 
+    # Combine audio & visual description scores, weighted towards visual.
+    description_relevance_scores = [
+        sum([
+            video_description_relevance_scores[idx] * VIDEO_RELEVANCE_WEIGHT,
+            audio_description_relevance_scores[idx] * (1.0 - VIDEO_RELEVANCE_WEIGHT),
+        ])
+        for idx in range(len(video_description_relevance_scores))
+    ]
+
+    # Scale description scores by number of unique tokens.
+    for idx in range(len(description_relevance_scores)):
+        unique_token_count = len(set(TOKENIZER(metadata[idx].description).nonzero()))
+        if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+            description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+            continue
+        length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+        length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+        description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
+
     description_mlp_scores = []
     # Apply penalties and store the penalized scores
-    for desc_score, desc_mlp_score in zip(description_relevance_scores, filtered_description_mlp_results):
+    for desc_score, desc_mlp_score in zip(video_description_relevance_scores, filtered_description_mlp_results):
         if desc_mlp_score == 4 or desc_mlp_score == 5:
             # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
             print("Good description detected, thank you honest miner.")
