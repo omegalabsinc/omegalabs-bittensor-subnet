@@ -29,6 +29,7 @@ import datetime as dt
 import random
 import traceback
 import requests
+import math
 
 # Bittensor
 import bittensor as bt
@@ -53,11 +54,15 @@ from omega.constants import (
     FAKE_VIDEO_PUNISHMENT,
     QUERY_RELEVANCE_SCALING_FACTOR,
     DESCRIPTION_RELEVANCE_SCALING_FACTOR,
+    VIDEO_RELEVANCE_WEIGHT,
     YOUTUBE_REWARDS_PERCENT,
-    FOCUS_REWARDS_PERCENT
+    FOCUS_REWARDS_PERCENT,
+    DESCRIPTION_LENGTH_WEIGHT,
+    MIN_LENGTH_BOOST_TOKEN_COUNT,
+    MAX_LENGTH_BOOST_TOKEN_COUNT,
 )
 from omega import video_utils
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 # import base validator class which takes care of most of the boilerplate
@@ -123,11 +128,13 @@ class Validator(BaseValidatorNeuron):
         self.all_topics = self.load_topics()
 
         self.imagebind = None
+        self.imagebind_v1 = None
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
                 bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
                 self.decentralization = True
                 self.imagebind = ImageBind()
+                self.imagebind_v1 = ImageBind(disable_lora=True)
             else:
                 bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
                 self.decentralization = False
@@ -218,7 +225,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=self.num_videos, num_focus_videos=self.num_focus_videos)
+        input_synapse = Videos(query=query, num_videos=self.num_videos, num_focus_videos=self.num_focus_videos, vali_imagebind_version=IMAGEBIND_VERSION)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
@@ -423,18 +430,18 @@ class Validator(BaseValidatorNeuron):
         return random_metadata, random_video
 
 
-    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata]) -> bool:
+    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata], imagebind) -> bool:
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
-            desc_embeddings = self.imagebind.embed_text([random_metadata.description])
+            desc_embeddings = imagebind.embed_text([random_metadata.description])
             is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
             strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
             bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
             return is_similar_
 
         # Video downloaded, check all embeddings
-        embeddings = self.imagebind.embed([random_metadata.description], [random_video])
+        embeddings = imagebind.embed([random_metadata.description], [random_video])
         is_similar_ = (
             self.is_similar(embeddings.video, random_metadata.video_emb) and
             self.is_similar(embeddings.audio, random_metadata.audio_emb) and
@@ -534,6 +541,13 @@ class Validator(BaseValidatorNeuron):
             # check video_ids for fake videos
             if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
+            
+            if videos.miner_imagebind_version is None:
+                bt.logging.info("miner imagebind_version is None, using original model")
+            elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+                bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
+            else:
+                bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
@@ -550,19 +564,33 @@ class Validator(BaseValidatorNeuron):
 
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
-                passed_check = await self.random_youtube_check(random_meta_and_vid)
+                if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+                    passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind)
+                else:
+                    passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
                 # punish miner if not passing
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
                 # create query embeddings for relevance scoring
-                query_emb = await self.imagebind.embed_text_async([videos.query])
+                if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+                    query_emb = await self.imagebind.embed_text_async([videos.query])
+                else:
+                    query_emb = await self.imagebind_v1.embed_text_async([videos.query])
 
-            # generate embeddings
-            embeddings = Embeddings(
-                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
-                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
-                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
-            )
+            if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+                # generate embeddings
+                embeddings = Embeddings(
+                    video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+                    audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
+                    description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+                )
+            else:
+                # generate embeddings
+                embeddings = Embeddings(
+                    video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+                    audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
+                    description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+                )
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
             metadata_is_similar = await self.deduplicate_videos(embeddings)
@@ -639,16 +667,38 @@ class Validator(BaseValidatorNeuron):
             #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
             
             # Compute relevance scores
-            description_relevance_scores = F.cosine_similarity(
+            video_description_relevance_scores = F.cosine_similarity(
                 embeddings.video, embeddings.description
+            ).tolist()
+            audio_description_relevance_scores = F.cosine_similarity(
+                embeddings.audio, embeddings.description
             ).tolist()
             query_relevance_scores = F.cosine_similarity(
                 embeddings.video, query_emb
             ).tolist()
 
+            # Combine audio & visual description scores, weighted towards visual.
+            description_relevance_scores = [
+                sum([
+                    video_description_relevance_scores[idx] * VIDEO_RELEVANCE_WEIGHT,
+                    audio_description_relevance_scores[idx] * (1.0 - VIDEO_RELEVANCE_WEIGHT),
+                ])
+                for idx in range(len(video_description_relevance_scores))
+            ]
+
+            # Scale description scores by number of unique tokens.
+            for idx in range(len(description_relevance_scores)):
+                unique_token_count = len(set(TOKENIZER(metadata[idx].description)))
+                if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+                    description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+                    continue
+                length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+                length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+                description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
+
             description_mlp_scores = []
             # Apply penalties and store the penalized scores
-            for desc_score, desc_mlp_score in zip(description_relevance_scores, filtered_description_mlp_results):
+            for desc_score, desc_mlp_score in zip(video_description_relevance_scores, filtered_description_mlp_results):
                 if desc_mlp_score == 4 or desc_mlp_score == 5:
                     # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
                     bt.logging.info("Good description detected, thank you honest miner.")
