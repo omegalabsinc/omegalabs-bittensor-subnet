@@ -11,11 +11,8 @@ import torch.nn.functional as F
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega import video_utils
 from omega.constants import (
-    VALIDATOR_TIMEOUT, 
-    VALIDATOR_TIMEOUT_MARGIN, 
     MAX_VIDEO_LENGTH, 
     MIN_VIDEO_LENGTH,
-    CHECK_PROBABILITY,
     DIFFERENCE_THRESHOLD, 
     SIMILARITY_THRESHOLD, 
     VIDEO_DOWNLOAD_TIMEOUT, 
@@ -24,8 +21,6 @@ from omega.constants import (
     QUERY_RELEVANCE_SCALING_FACTOR,
     DESCRIPTION_RELEVANCE_SCALING_FACTOR,
     VIDEO_RELEVANCE_WEIGHT,
-    YOUTUBE_REWARDS_PERCENT,
-    FOCUS_REWARDS_PERCENT,
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
@@ -329,12 +324,26 @@ async def get_num_unique_videos(videos: Videos) -> int:
 
 
 async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only: bool) -> float:
+    
+    # check video_ids for fake videos
     if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
         return {"score": FAKE_VIDEO_PUNISHMENT}
+    
+
+    '''
+    Commented segment to support Imagebind v1 and Imagebind 
+    # if videos.miner_imagebind_version is None:
+    #     bt.logging.info("miner imagebind_version is None, using original model")
+    # elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+    #     bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
+    # else:
+    #     bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
+    '''
 
     metadata = metadata_check(videos.video_metadata)[:videos.num_videos]
     print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
+    # return minimum score if no videos were found in video_metadata
     if len(metadata) == 0:
         return {"score": MIN_SCORE}
 
@@ -344,13 +353,48 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         return {"score": FAKE_VIDEO_PUNISHMENT}
 
     async with GPU_SEMAPHORE:
+        '''
+        ## Commented segment to support Imagebind v1 and Imagebind 
+        # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+        #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind)
+        # else:
+        #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind_v1)
+        '''
         passed_check = await random_check(random_meta_and_vid, imagebind)
+
         if not passed_check:
             return {"score": FAKE_VIDEO_PUNISHMENT}
+        
+        '''
+        ## Commented segment to support Imagebind v1 and Imagebind 
+        # create query embeddings for relevance scoring
+        # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+        #     query_emb = await self.imagebind.embed_text_async([videos.query])
+        # else:
+        #     query_emb = await self.imagebind_v1.embed_text_async([videos.query])
+        '''
+        
         query_emb = await imagebind.embed_text_async([videos.query])
 
     # Upload the videos to Pinecone and deduplicate
     original_length = len(metadata)
+    '''
+    ## Commented segment to support Imagebind v1 and Imagebind 
+    # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+    #     # generate embeddings
+    #     embeddings = Embeddings(
+    #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+    #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
+    #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+    #     )
+    # else:
+    #     # generate embeddings
+    #     embeddings = Embeddings(
+    #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #     )
+    '''
     embeddings = Embeddings(
         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
