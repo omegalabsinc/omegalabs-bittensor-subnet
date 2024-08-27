@@ -439,14 +439,14 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     ]
 
     # Scale description scores by number of unique tokens.
-    for idx in range(len(description_relevance_scores)):
-        unique_token_count = len(set(TOKENIZER(metadata[idx].description).nonzero()))
-        if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
-            description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
-            continue
-        length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
-        length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
-        description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
+    # for idx in range(len(description_relevance_scores)):
+    #     unique_token_count = len(set(TOKENIZER(metadata[idx].description).nonzero()))
+    #     if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+    #         description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+    #         continue
+    #     length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+    #     length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+    #     description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
 
     description_mlp_scores = []
     # Apply penalties and store the penalized scores
