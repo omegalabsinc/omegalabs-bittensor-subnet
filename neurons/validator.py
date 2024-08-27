@@ -127,14 +127,16 @@ class Validator(BaseValidatorNeuron):
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
 
-        self.imagebind = None
-        self.imagebind_v1 = None
+        # self.imagebind_v2 = None
+        self.imagebind_v1 = None ## Commented segment to support Imagebind v1 and Imagebind v2
+
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
                 bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
                 self.decentralization = True
-                self.imagebind = ImageBind()
-                self.imagebind_v1 = ImageBind(disable_lora=True)
+
+                # self.imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
+                self.imagebind_v1 = ImageBind(disable_lora=True) 
             else:
                 bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
                 self.decentralization = False
@@ -459,14 +461,14 @@ class Validator(BaseValidatorNeuron):
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
-            desc_embeddings = self.imagebind.embed_text([random_metadata.focus_task_str])
+            desc_embeddings = self.imagebind_v1.embed_text([random_metadata.focus_task_str])
             is_similar_ = self.is_similar(desc_embeddings, random_metadata.description_emb)
             strict_is_similar_ = self.strict_is_similar(desc_embeddings, random_metadata.description_emb)
             bt.logging.info(f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
             return is_similar_
 
         # Video downloaded, check all embeddings
-        embeddings = self.imagebind.embed_video_and_text([random_video], [random_metadata.focus_task_str])
+        embeddings = self.imagebind_v1.embed_video_and_text([random_video], [random_metadata.focus_task_str])
 
         is_similar_ = (
             self.is_similar(embeddings.video, random_metadata.video_emb) and 
@@ -542,12 +544,15 @@ class Validator(BaseValidatorNeuron):
             if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
             
-            if videos.miner_imagebind_version is None:
-                bt.logging.info("miner imagebind_version is None, using original model")
-            elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
-                bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
-            else:
-                bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
+            '''
+            Commented segment to support Imagebind v1 and Imagebind v2
+            # if videos.miner_imagebind_version is None:
+            #     bt.logging.info("miner imagebind_version is None, using original model")
+            # elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+            #     bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
+            # else:
+            #     bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
+            '''
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
@@ -564,33 +569,54 @@ class Validator(BaseValidatorNeuron):
 
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
-                if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-                    passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind)
-                else:
-                    passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
+                '''
+                ## Commented segment to support Imagebind v1 and Imagebind v2
+                # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+                #     passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
+                # else:
+                #     passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v2)
+                '''
+                passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
+
                 # punish miner if not passing
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
+                
+                '''
+                ## Commented segment to support Imagebind v1 and Imagebind v2
                 # create query embeddings for relevance scoring
-                if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-                    query_emb = await self.imagebind.embed_text_async([videos.query])
-                else:
-                    query_emb = await self.imagebind_v1.embed_text_async([videos.query])
+                # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+                #     query_emb = await self.imagebind_v1.embed_text_async([videos.query])
+                # else:
+                #     query_emb = await self.imagebind_v2.embed_text_async([videos.query])
+                '''
+                query_emb = await self.imagebind_v1.embed_text_async([videos.query])
 
-            if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-                # generate embeddings
-                embeddings = Embeddings(
-                    video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
-                    audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
-                    description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
-                )
-            else:
-                # generate embeddings
-                embeddings = Embeddings(
-                    video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
-                    audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
-                    description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
-                )
+
+            
+            '''
+            ## Commented segment to support Imagebind v1 and Imagebind v2
+            # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+            #     # generate embeddings
+            #     embeddings = Embeddings(
+            #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+            #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
+            #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+            #     )
+            # else:
+            #     # generate embeddings
+            #     embeddings = Embeddings(
+            #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v2.device),
+            #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v2.device),
+            #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v2.device),
+            #     )
+            '''
+            embeddings = Embeddings(
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+            )
+
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
             metadata_is_similar = await self.deduplicate_videos(embeddings)
@@ -781,12 +807,12 @@ class Validator(BaseValidatorNeuron):
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
                 # create query embeddings for relevance scoring
-                # query_emb = await self.imagebind.embed_text_async([videos.query])
+                # query_emb = await self.imagebind_v1.embed_text_async([videos.query])
 
             # generate embeddings
             embeddings = Embeddings(
-                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
-                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
             )
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
