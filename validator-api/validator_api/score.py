@@ -331,7 +331,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     
 
     '''
-    Commented segment to support Imagebind v1 and Imagebind 
+    Commented segment to support Imagebind v1 and Imagebind v2
     # if videos.miner_imagebind_version is None:
     #     bt.logging.info("miner imagebind_version is None, using original model")
     # elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
@@ -354,11 +354,11 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
 
     async with GPU_SEMAPHORE:
         '''
-        ## Commented segment to support Imagebind v1 and Imagebind 
+        ## Commented segment to support Imagebind v1 and Imagebind v2
         # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-        #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind)
-        # else:
         #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind_v1)
+        # else:
+        #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind_v2)
         '''
         passed_check = await random_check(random_meta_and_vid, imagebind)
 
@@ -366,12 +366,12 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
             return {"score": FAKE_VIDEO_PUNISHMENT}
         
         '''
-        ## Commented segment to support Imagebind v1 and Imagebind 
+        ## Commented segment to support Imagebind v1 and Imagebind v2
         # create query embeddings for relevance scoring
         # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-        #     query_emb = await self.imagebind.embed_text_async([videos.query])
-        # else:
         #     query_emb = await self.imagebind_v1.embed_text_async([videos.query])
+        # else:
+        #     query_emb = await self.imagebind_v2.embed_text_async([videos.query])
         '''
         
         query_emb = await imagebind.embed_text_async([videos.query])
@@ -379,20 +379,20 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     # Upload the videos to Pinecone and deduplicate
     original_length = len(metadata)
     '''
-    ## Commented segment to support Imagebind v1 and Imagebind 
+    ## Commented segment to support Imagebind v1 and Imagebind v2
     # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-    #     # generate embeddings
-    #     embeddings = Embeddings(
-    #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
-    #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
-    #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
-    #     )
-    # else:
     #     # generate embeddings
     #     embeddings = Embeddings(
     #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
     #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
     #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #     )
+    # else:
+    #     # generate embeddings
+    #     embeddings = Embeddings(
+    #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v2.device),
+    #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v2.device),
+    #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v2.device),
     #     )
     '''
     embeddings = Embeddings(
