@@ -495,7 +495,9 @@ async def main():
             # Normalize focus score
             focus_rewards = focus_rewards / 10
 
-        if videos.imagebind_version is None:
+        if not hasattr(videos, 'imagebind_version'):
+            print("`videos` object does not have `imagebind_version` attribute, using original model")
+        elif videos.imagebind_version is None:
             print("imagebind_version is None, using original model")
         elif videos.imagebind_version != IMAGEBIND_VERSION:
             print(f"imagebind_version is {videos.imagebind_version}, using original model")
