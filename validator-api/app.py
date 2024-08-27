@@ -31,7 +31,7 @@ from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
-from omega.imagebind_wrapper import ImageBind
+from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
 from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 from validator_api import score
@@ -63,7 +63,8 @@ def connect_to_db():
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 
 security = HTTPBasic()
-imagebind = ImageBind()
+# imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
+imagebind_v1 = ImageBind(disable_lora=True)
 
 ### Utility functions for OMEGA Metadata Dashboard ###
 def get_timestamp_from_filename(filename: str):
@@ -282,7 +283,7 @@ async def main():
         topic_query = upload_data.topic_query
 
         start_time = time.time()
-        video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind)
+        video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind_v1)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         
         if upload_data.miner_hotkey is not None:
@@ -378,7 +379,7 @@ async def main():
         metadata = upload_data.metadata
 
         start_time = time.time()
-        video_ids = await score.upload_focus_metadata(metadata, imagebind)
+        video_ids = await score.upload_focus_metadata(metadata, imagebind_v1)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         
         if upload_data.miner_hotkey is not None:
@@ -493,9 +494,24 @@ async def main():
             print(f"Focus Videos Reward points are: {focus_rewards}")
             # Normalize focus score
             focus_rewards = focus_rewards / 10
+
+        if videos.imagebind_version is None:
+            print("imagebind_version is None, using original model")
+        elif videos.imagebind_version != IMAGEBIND_VERSION:
+            print(f"imagebind_version is {videos.imagebind_version}, using original model")
+        else:
+            print(f"imagebind_version is {IMAGEBIND_VERSION}, using new model")
+        
+        '''
+        ## Commented segment to support Imagebind v1 and Imagebind v2
         
         # handle youtube video metadata
-        youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
+        if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
+            youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v1)
+        else:
+            youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v2)
+        '''
+        youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v1)
 
         if youtube_rewards is None and focus_rewards is None:
             print("YouTube and Focus rewards are empty, returning None")
@@ -527,7 +543,7 @@ async def main():
         async def check_score(
             videos: Videos,
         ) -> dict:
-            detailed_score = await score.score_videos_for_testing(videos, imagebind)
+            detailed_score = await score.score_videos_for_testing(videos, imagebind_v1)
             return detailed_score
 
     @app.get("/api/topic")

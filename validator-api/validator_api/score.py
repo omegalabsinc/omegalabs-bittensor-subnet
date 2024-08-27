@@ -2,6 +2,7 @@ import asyncio
 import random
 import uuid
 from typing import List, Tuple, Optional, BinaryIO
+import math
 
 from pinecone import Pinecone
 import torch
@@ -18,9 +19,13 @@ from omega.constants import (
     MIN_SCORE, 
     FAKE_VIDEO_PUNISHMENT,
     QUERY_RELEVANCE_SCALING_FACTOR,
-    DESCRIPTION_RELEVANCE_SCALING_FACTOR
+    DESCRIPTION_RELEVANCE_SCALING_FACTOR,
+    VIDEO_RELEVANCE_WEIGHT,
+    DESCRIPTION_LENGTH_WEIGHT,
+    MIN_LENGTH_BOOST_TOKEN_COUNT,
+    MAX_LENGTH_BOOST_TOKEN_COUNT,
 )
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
 import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 from validator_api import config
@@ -319,12 +324,26 @@ async def get_num_unique_videos(videos: Videos) -> int:
 
 
 async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only: bool) -> float:
+    
+    # check video_ids for fake videos
     if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
         return {"score": FAKE_VIDEO_PUNISHMENT}
+    
+
+    '''
+    Commented segment to support Imagebind v1 and Imagebind v2
+    # if videos.miner_imagebind_version is None:
+    #     bt.logging.info("miner imagebind_version is None, using original model")
+    # elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+    #     bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
+    # else:
+    #     bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
+    '''
 
     metadata = metadata_check(videos.video_metadata)[:videos.num_videos]
     print(f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
 
+    # return minimum score if no videos were found in video_metadata
     if len(metadata) == 0:
         return {"score": MIN_SCORE}
 
@@ -334,13 +353,48 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         return {"score": FAKE_VIDEO_PUNISHMENT}
 
     async with GPU_SEMAPHORE:
+        '''
+        ## Commented segment to support Imagebind v1 and Imagebind v2
+        # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+        #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind_v1)
+        # else:
+        #     passed_check = await self.random_check(random_meta_and_vid, self.imagebind_v2)
+        '''
         passed_check = await random_check(random_meta_and_vid, imagebind)
+
         if not passed_check:
             return {"score": FAKE_VIDEO_PUNISHMENT}
+        
+        '''
+        ## Commented segment to support Imagebind v1 and Imagebind v2
+        # create query embeddings for relevance scoring
+        # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+        #     query_emb = await self.imagebind_v1.embed_text_async([videos.query])
+        # else:
+        #     query_emb = await self.imagebind_v2.embed_text_async([videos.query])
+        '''
+        
         query_emb = await imagebind.embed_text_async([videos.query])
 
     # Upload the videos to Pinecone and deduplicate
     original_length = len(metadata)
+    '''
+    ## Commented segment to support Imagebind v1 and Imagebind v2
+    # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
+    #     # generate embeddings
+    #     embeddings = Embeddings(
+    #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+    #     )
+    # else:
+    #     # generate embeddings
+    #     embeddings = Embeddings(
+    #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v2.device),
+    #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v2.device),
+    #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v2.device),
+    #     )
+    '''
     embeddings = Embeddings(
         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
@@ -365,16 +419,38 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         print(f"Filtering {original_length} videos down to {len(metadata)} videos that had poor descriptions.")
 
     # Compute relevance scores
-    description_relevance_scores = F.cosine_similarity(
+    video_description_relevance_scores = F.cosine_similarity(
         embeddings.video, embeddings.description
+    ).tolist()
+    audio_description_relevance_scores = F.cosine_similarity(
+        embeddings.audio, embeddings.description
     ).tolist()
     query_relevance_scores = F.cosine_similarity(
         embeddings.video, query_emb
     ).tolist()
 
+    # Combine audio & visual description scores, weighted towards visual.
+    description_relevance_scores = [
+        sum([
+            video_description_relevance_scores[idx] * VIDEO_RELEVANCE_WEIGHT,
+            audio_description_relevance_scores[idx] * (1.0 - VIDEO_RELEVANCE_WEIGHT),
+        ])
+        for idx in range(len(video_description_relevance_scores))
+    ]
+
+    # Scale description scores by number of unique tokens.
+    # for idx in range(len(description_relevance_scores)):
+    #     unique_token_count = len(set(TOKENIZER(metadata[idx].description).nonzero()))
+    #     if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+    #         description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+    #         continue
+    #     length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+    #     length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+    #     description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
+
     description_mlp_scores = []
     # Apply penalties and store the penalized scores
-    for desc_score, desc_mlp_score in zip(description_relevance_scores, filtered_description_mlp_results):
+    for desc_score, desc_mlp_score in zip(video_description_relevance_scores, filtered_description_mlp_results):
         if desc_mlp_score == 4 or desc_mlp_score == 5:
             # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
             print("Good description detected, thank you honest miner.")
@@ -387,6 +463,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         elif desc_mlp_score == 1:
             # score of 1 is "bad", penalize full description relevance score penalty
             print("Bad description detected, omitting submission.")
+            description_mlp_scores.append(desc_score * -1.0)
         else:
             # score of 3 is "OK", no reward or penalty
             print("This description is OK, but please improve.")
