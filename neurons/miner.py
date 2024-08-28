@@ -59,8 +59,8 @@ class Miner(BaseMinerNeuron):
         else:
             raise ValueError("Invalid query augment")
         
-        self.imagebind = ImageBind()
         self.imagebind_v1 = ImageBind(disable_lora=True)
+        self.imagebind_v2 = ImageBind(disable_lora=False)
 
         self.focus_videos_api = (
             #"https://dev-focus-api.omegatron.ai/"
@@ -79,7 +79,8 @@ class Miner(BaseMinerNeuron):
         start = time.time()
         if synapse.vali_imagebind_version is not None and synapse.vali_imagebind_version == IMAGEBIND_VERSION:
             synapse.video_metadata = search_and_embed_youtube_videos(
-                self.augment(synapse.query), synapse.num_videos, self.imagebind
+                # self.augment(synapse.query), synapse.num_videos, self.imagebind_v2
+                self.augment(synapse.query), synapse.num_videos, self.imagebind_v1
             )
             synapse.miner_imagebind_version = IMAGEBIND_VERSION
         else:
@@ -106,7 +107,7 @@ class Miner(BaseMinerNeuron):
                 bt.logging.warning(f'{len(video_data)} - {video_data}')
                 if len(video_data) > 0:
                     bt.logging.info(f"Purchased FocusVideo list: {video_data} sending: {video_data[:synapse.num_focus_videos]}")
-                    synapse.focus_metadata = embed_focus_videos(synapse.query, video_data[:synapse.num_focus_videos], self.imagebind)
+                    synapse.focus_metadata = embed_focus_videos(synapse.query, video_data[:synapse.num_focus_videos], self.imagebind_v1)
                     bt.logging.info(f"focus metadata {synapse.focus_metadata}")
                 else:
                     bt.logging.info(f"Failed to retrieve focus video list: No videos found.")
