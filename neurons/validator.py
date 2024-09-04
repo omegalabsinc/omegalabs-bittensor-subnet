@@ -690,7 +690,7 @@ class Validator(BaseValidatorNeuron):
             penalties = []
             for idx in range(len(description_relevance_scores)):
                 desc_score, desc_mlp_score = description_relevance_scores[idx], filtered_description_mlp_results[idx]
-                penalty = desc_score * DESCRIPTION_LENGTH_WEIGHT * (5.0 - desc_mlp_score) / 5.0
+                penalty = desc_score * (5.0 - desc_mlp_score) / 5.0
                 penalties.append(penalty)
                 if penalty:
                     description_relevance_scores[idx] -= penalty
