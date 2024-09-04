@@ -410,7 +410,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         penalty = desc_score * (5.0 - desc_mlp_score) / 5.0
         if penalty:
             print(f"Applying flat penalty of {penalty} for MLP label {desc_mlp_score}")
-            description_relevance_scores[idx] -= desc_score * penalty
+            description_relevance_scores[idx] -= penalty
 
     # Aggregate scores
     score = (
