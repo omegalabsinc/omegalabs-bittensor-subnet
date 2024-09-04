@@ -6,17 +6,17 @@ from typing import List, BinaryIO, Optional
 from imagebind import data
 from imagebind.models import imagebind_model
 from imagebind.models.imagebind_model import ModalityType
-from imagebind.models.multimodal_preprocessors import SimpleTokenizer
+from imagebind.models.multimodal_preprocessors import SimpleTokenizer, TextPreprocessor
 from pydantic import BaseModel
 import torch
 
 from omega import video_utils
-import omega.models.ib_lora.lora as LoRA
 
-IMAGEBIND_VERSION = "2.0"
+
 BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
-LORA_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "models", "ib_lora", "checkpoint")
+V2_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".checkpoints", "videobind.pth")
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
+TOKENIZER_V2 = SimpleTokenizer(bpe_path=BPE_PATH, context_length=1024)
 
 class Embeddings(BaseModel):
     class Config:
@@ -27,10 +27,11 @@ class Embeddings(BaseModel):
     description: Optional[torch.Tensor]
 
 
-def load_and_transform_text(text, device):
+def load_and_transform_text(text, device, v2=True):
     if text is None:
         return None
-    tokens = [TOKENIZER(t).unsqueeze(0).to(device) for t in text]
+    tokenizer = TOKENIZER_V2 if v2 else TOKENIZER
+    tokens = [tokenizer(t).unsqueeze(0).to(device) for t in text]
     tokens = torch.cat(tokens, dim=0)
     return tokens
 
@@ -41,24 +42,20 @@ def run_async(func, *args, **kwargs):
 
 
 class ImageBind:
-    def __init__(self, disable_lora=False):
+    def __init__(self, v2=True):
         self.device = "cuda:0" if torch.cuda.is_available() else "cpu"
-        self.imagebind = imagebind_model.imagebind_huge(pretrained=True)
-
-        # Load the adapter, fine-tuned on gemini flash/pro annotated videos of varying lengths.
-        if not disable_lora:
-            self.imagebind.modality_trunks.update(
-                LoRA.apply_lora_modality_trunks(
-                    self.imagebind.modality_trunks,
-                    rank=16,
-                    modality_names=[ModalityType.TEXT, ModalityType.VISION, ModalityType.AUDIO]
+        self.v2 = v2
+        if self.v2:
+            if not os.path.exists(V2_PATH):
+                os.makedirs(os.path.dirname(V2_PATH), exist_ok=True)
+                torch.hub.download_url_to_file(
+                    "https://huggingface.co/jondurbin/videobind-v0.1/resolve/main/videobind.pth",
+                    V2_PATH,
+                    progress=True,
                 )
-            )
-            LoRA.load_lora_modality_trunks(
-                self.imagebind.modality_trunks,
-                checkpoint_dir=LORA_PATH,
-                postfix="_last"
-            )
+            self.imagebind = torch.load(V2_PATH)
+        else:
+            self.imagebind = imagebind_model.imagebind_huge(pretrained=True)
         self.imagebind.eval()
         self.imagebind.to(self.device)
 
@@ -75,7 +72,7 @@ class ImageBind:
                 self.device,
             )
             inputs = {
-                ModalityType.TEXT: load_and_transform_text([description], self.device),
+                ModalityType.TEXT: load_and_transform_text([description], self.device, v2=self.v2),
                 ModalityType.VISION: video_data,
                 ModalityType.AUDIO: audio_data,
             }
@@ -130,7 +127,7 @@ class ImageBind:
                 )[0]
                 for idx in range(len(video_filepaths))
             ],
-            ModalityType.TEXT: load_and_transform_text(descriptions, self.device)
+            ModalityType.TEXT: load_and_transform_text(descriptions, self.device, v2=self.v2)
         })
         return Embeddings(
             video=embeddings[ModalityType.VISION],
@@ -140,7 +137,7 @@ class ImageBind:
     @torch.no_grad()
     def embed_text(self, texts: List[str]) -> torch.Tensor:
         return self.imagebind({
-            ModalityType.TEXT: load_and_transform_text(texts, self.device),
+            ModalityType.TEXT: load_and_transform_text(texts, self.device, v2=self.v2),
         })[ModalityType.TEXT]
 
     @torch.no_grad()

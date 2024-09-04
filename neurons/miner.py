@@ -59,8 +59,8 @@ class Miner(BaseMinerNeuron):
         else:
             raise ValueError("Invalid query augment")
         
-        self.imagebind_v1 = ImageBind(disable_lora=True)
-        self.imagebind_v2 = ImageBind(disable_lora=False)
+        self.imagebind_v1 = ImageBind(v2=False)
+        self.imagebind_v2 = ImageBind(v2=True)
 
         self.focus_videos_api = (
             #"https://dev-focus-api.omegatron.ai/"
