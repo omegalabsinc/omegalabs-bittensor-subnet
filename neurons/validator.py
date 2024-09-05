@@ -22,7 +22,7 @@ os.environ["USE_TORCH"] = "1"
 
 from aiohttp import ClientSession, BasicAuth
 import asyncio
-from typing import List, Tuple, Optional, BinaryIO, Union
+from typing import List, Tuple, Optional, BinaryIO, Dict
 from fastapi import HTTPException
 from pydantic import ValidationError
 import datetime as dt
@@ -279,15 +279,16 @@ class Validator(BaseValidatorNeuron):
         # Gather all focus videos purchased by the subset of miners
         focus_miner_uids = []
         focus_miner_hotkeys = []
+        
         # Get all the focus videos by iteratively calling the get_focus_videos() function.
-        focus_videos = await asyncio.gather(*[
-            self.get_focus_videos(self.metagraph.hotkeys[miner_uid], miner_uid)
-            for miner_uid in miner_uids
-        ])
+        miner_hotkeys = []
+        for miner_uid in miner_uids:
+            miner_hotkeys.append(self.metagraph.hotkeys[miner_uid])
+        focus_videos = await self.get_focus_videos(miner_hotkeys, miner_uids)
 
         # Check responses and mark which miner uids and hotkeys have focus videos
         for focus_video in focus_videos:
-            if focus_video is not None and 'purchased_videos' in focus_video:
+            if focus_video and focus_video is not None and 'purchased_videos' in focus_video:
                 focus_miner_uids.append(focus_video['miner_uid'])
                 focus_miner_hotkeys.append(focus_video['miner_hotkey'])
 
@@ -906,43 +907,64 @@ class Validator(BaseValidatorNeuron):
 
     """
     {
-        "purchased_videos": [{
-                "video_id": "bcdb8247-2261-4268-af9c-1275101730d5",
-                "task_id": "salman_test",
-                "user_email": "salman@omega-labs.ai",
-                "video_score": 0.408363,
-                "video_details": {
-                    "description": "This is a random score, testing purposes only",
-                    "focusing_task": "focusing on nothing!",
-                    "video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-                },
-                "rejection_reason": null,
-                "expected_reward_tao": 0.0816726,
-                "earned_reward_tao": 0.0816726,
-                "created_at": "2024-09-03T16:18:03",
-                "updated_at": "2024-09-03T16:28:20",
-                "deleted_at": null,
-                "processing_state": "PURCHASED",
-                "miner_uid": null,
-                "miner_hotkey": "5DaNytPVo6uFZFr2f9pZ6ck2gczNyYebLgrYZoFuccPS6qMi"
-            }
-        ],
-        "total_focus_points": 127.2251,
-        "max_focus_points": 1000.0,
-        "focus_points_percentage": 0.1272251
+        "5DaNytPVo6uFZFr2f9pZ6ck2gczNyYebLgrYZoFuccPS6qMi": {
+            "purchased_videos": [{
+                    "video_id": "bcdb8247-2261-4268-af9c-1275101730d5",
+                    "task_id": "salman_test",
+                    "user_email": "salman@omega-labs.ai",
+                    "video_score": 0.408363,
+                    "video_details": {
+                        "description": "This is a random score, testing purposes only",
+                        "focusing_task": "focusing on nothing!",
+                        "video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
+                    },
+                    "rejection_reason": null,
+                    "expected_reward_tao": 0.0816726,
+                    "earned_reward_tao": 0.0816726,
+                    "created_at": "2024-09-03T16:18:03",
+                    "updated_at": "2024-09-03T16:28:20",
+                    "deleted_at": null,
+                    "processing_state": "PURCHASED",
+                    "miner_uid": null,
+                    "miner_hotkey": "5DaNytPVo6uFZFr2f9pZ6ck2gczNyYebLgrYZoFuccPS6qMi"
+                }
+            ],
+            "total_focus_points": 127.2251,
+            "max_focus_points": 1000.0,
+            "focus_points_percentage": 0.1272251
+        }
     }
     """
-    async def get_focus_videos(self, miner_hotkey: str, miner_uid: int):
-        bt.logging.debug(f"Making API call to get focus videos for {miner_hotkey}")
-        response = requests.get(f"{self.focus_videos_api}/market/miner_purchase_score/{miner_hotkey}", timeout=10)
-        res_data = response.json()
-        if response.status_code == 200 and "purchased_videos" in res_data:
-            res_data['miner_hotkey'] = miner_hotkey
-            res_data['miner_uid'] = miner_uid
-            return res_data
-        else:
-            bt.logging.warning(f"Retrieving miner focus videos failed. {miner_hotkey} - {res_data['message']}")
-            return False
+    async def get_focus_videos(self, miner_hotkeys: List[str], miner_uids: List[int]) -> List[Dict]:
+        bt.logging.debug(f"Making API call to get focus videos for {miner_hotkeys}")
+        miner_hotkeys_str = ",".join(miner_hotkeys)
+        try:
+            response = requests.get(f"{self.focus_videos_api}/market/miner_purchase_scores/{miner_hotkeys_str}", timeout=10)
+            res_data = response.json()
+            if response.status_code == 200:
+                if len(res_data) == 0:
+                    bt.logging.debug(f"-- No focus videos found for {miner_hotkeys}")
+                    return []
+                
+                result = []
+                for i, miner_hotkey in enumerate(miner_hotkeys):
+                    if miner_hotkey in res_data:
+                        miner_data = res_data[miner_hotkey]
+                        miner_data['miner_hotkey'] = miner_hotkey
+                        miner_data['miner_uid'] = miner_uids[i]
+                        result.append(miner_data)
+                        if len(miner_data["purchased_videos"]) == 0:
+                            bt.logging.debug(f"-- No focus videos found for {miner_hotkey}")
+                    else:
+                        bt.logging.debug(f"-- No data found for {miner_hotkey}")
+                
+                return result
+            else:
+                bt.logging.warning(f"Retrieving miner focus videos failed. {res_data['message']}")
+                return []
+        except Exception as e:
+            bt.logging.error(f"Error in get_focus_videos: {e}")
+            return []
 
 # The main function parses the configuration and runs the validator.
 if __name__ == "__main__":
