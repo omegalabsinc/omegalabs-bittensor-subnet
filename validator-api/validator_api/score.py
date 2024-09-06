@@ -24,7 +24,7 @@ from omega.constants import (
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
-    STUFFED_DESCRIPTION_PENALTY,
+    STUFFED_DESCRIPTION_PUNISHMENT,
 )
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
 from validator_api import config
