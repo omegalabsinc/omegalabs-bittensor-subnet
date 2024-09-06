@@ -1,5 +1,4 @@
 import torch
-import bittensor as bt
 from transformers import pipeline
 from typing import Tuple
 
@@ -10,7 +9,7 @@ def is_stuffed(description: str) -> Tuple[bool, float]:
     stuffed = False if int(result[0]["label"]) == 1 else True
     confidence = result[0]["score"]
     if stuffed:
-        bt.logging.warning(f"Detected stuffed description [{confidence=}]: {description}")
+        print(f"Detected stuffed description [{confidence=}]: {description}")
     else:
-        bt.logging.success(f"Description does not appear to be stuffed [{confidence=}]: {description}")
+        print(f"Description does not appear to be stuffed [{confidence=}]: {description}")
     return stuffed, confidence
