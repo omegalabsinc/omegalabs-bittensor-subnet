@@ -24,10 +24,9 @@ from omega.constants import (
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
+    STUFFED_DESCRIPTION_PENALTY,
 )
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
-import omega.imagebind_desc_mlp as imagebind_desc_mlp
-
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
 
@@ -211,16 +210,16 @@ def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Emb
         embeddings.description = embeddings.description[~is_too_similar]
     return embeddings
 
-def filter_embeddings_by_mlp_results(embeddings: Embeddings, description_mlp_results: List[int]) -> Embeddings:
-    """Filter the embeddings based on the description MLP results."""
-    valid_indices = [i for i, result in enumerate(description_mlp_results) if result > 1]
-    valid_indices = torch.tensor(valid_indices, dtype=torch.long)
+
+def filter_stuffed_embeddings(embeddings: Embeddings, stuffed: List[Tuple[bool, float]]) -> Embeddings:
+    """Filter the embeddings based on whether they are too similar to the query."""
+    stuffed = torch.tensor([s for s, _ in stuffed])
     if embeddings.video is not None:
-        embeddings.video = embeddings.video[valid_indices]
+        embeddings.video = embeddings.video[~stuffed]
     if embeddings.audio is not None:
-        embeddings.audio = embeddings.audio[valid_indices]
+        embeddings.audio = embeddings.audio[~stuffed]
     if embeddings.description is not None:
-        embeddings.description = embeddings.description[valid_indices]
+        embeddings.description = embeddings.description[~stuffed]
     return embeddings
 
 def is_similar(emb_1: torch.Tensor, emb_2: List[float]) -> bool:
@@ -359,18 +358,27 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
     print(f"Deduplicated {original_length} videos down to {len(metadata)} videos")
 
-    original_length = len(metadata)
-    # Compute description scores using the imagebind_desc_mlp model
-    description_mlp_results = [imagebind_desc_mlp.get_desc_embedding_score(embedding) for embedding in embeddings.description]
-    print(f"description_mlp_results: {description_mlp_results}")
-    # filter out metadata that have description scores of 1
-    metadata = [metadata for metadata, desc_mlp_result in zip(metadata, description_mlp_results) if desc_mlp_result > 1]
-    # filter out embeddings that have description scores of 1
-    embeddings = filter_embeddings_by_mlp_results(embeddings, description_mlp_results)
-    # filter out description scores that are 1
-    filtered_description_mlp_results = [desc_mlp_result for desc_mlp_result in description_mlp_results if desc_mlp_result > 1]
-    if len(metadata) < original_length:
-        print(f"Filtering {original_length} videos down to {len(metadata)} videos that had poor descriptions.")
+    # Filter out "stuffed" descriptions.
+    pre_filter_metadata_length = len(metadata)
+    stuffed = [
+        is_stuffed(meta.description)
+        for meta in metadata
+    ]
+    if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
+        print("Stuffed description found with high confidence, penalizing the miner.")
+        return {"score": STUFFED_DESCRIPTION_PUNISHMENT}
+
+    metadata = [
+        metadata[idx]
+        for idx in range(len(metadata))
+        if not stuffed[idx][0]
+    ]
+    if len(metadata) < pre_filter_metadata_length:
+        print(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions.")
+    if len(metadata) == 0:
+        return {"score": MIN_SCORE}
+
+    embeddings = filter_stuffed_embeddings(embeddings, stuffed)
 
     # Compute relevance scores
     video_description_relevance_scores = F.cosine_similarity(
@@ -404,14 +412,6 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         print(f"Description length scaling factor = {length_scaler}")
         description_relevance_scores[idx] -= description_relevance_scores[idx] * DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
 
-    # Apply penalties for token stuffing.
-    for idx in range(len(description_relevance_scores)):
-        desc_score, desc_mlp_score = description_relevance_scores[idx], filtered_description_mlp_results[idx]
-        penalty = desc_score * (5.0 - desc_mlp_score) / 5.0
-        if penalty:
-            print(f"Applying flat penalty of {penalty} for MLP label {desc_mlp_score}")
-            description_relevance_scores[idx] -= penalty
-
     # Aggregate scores
     score = (
         (sum(description_relevance_scores) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
@@ -424,7 +424,6 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
         audio cosine sim: {audio_description_relevance_scores},
         description relevance scores: {description_relevance_scores},
         query relevance scores: {query_relevance_scores},
-        mlp penalties: {penalties},
         length scalers: {length_scalers},
         total score: {score}
     ''')

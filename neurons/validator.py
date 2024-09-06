@@ -60,10 +60,10 @@ from omega.constants import (
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
+    STUFFED_DESCRIPTION_PUNISHMENT,
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
-import omega.imagebind_desc_mlp as imagebind_desc_mlp
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -308,19 +308,18 @@ class Validator(BaseValidatorNeuron):
         if embeddings.description is not None:
             embeddings.description = embeddings.description[~is_too_similar]
         return embeddings
-    
-    def filter_embeddings_by_mlp_results(self, embeddings: Embeddings, description_mlp_results: List[int]) -> Embeddings:
-        """Filter the embeddings based on the description MLP results."""
-        valid_indices = [i for i, result in enumerate(description_mlp_results) if result > 1]
-        valid_indices = torch.tensor(valid_indices, dtype=torch.long)
-        if embeddings.video is not None:
-            embeddings.video = embeddings.video[valid_indices]
-        if embeddings.audio is not None:
-            embeddings.audio = embeddings.audio[valid_indices]
-        if embeddings.description is not None:
-            embeddings.description = embeddings.description[valid_indices]
-        return embeddings
 
+    def filter_stuffed_embeddings(self, embeddings: Embeddings, stuffed: List[Tuple[bool, float]]) -> Embeddings:
+        """Filter the embeddings based on whether they are too similar to the query."""
+        stuffed = torch.tensor([s for s, _ in stuffed])
+        if embeddings.video is not None:
+            embeddings.video = embeddings.video[~stuffed]
+        if embeddings.audio is not None:
+            embeddings.audio = embeddings.audio[~stuffed]
+        if embeddings.description is not None:
+            embeddings.description = embeddings.description[~stuffed]
+        return embeddings
+    
     async def deduplicate_videos(self, embeddings: Embeddings) -> Videos:
         # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
         video_tensor = embeddings.video
@@ -633,26 +632,26 @@ class Validator(BaseValidatorNeuron):
             if len(metadata) == 0:
                 return MIN_SCORE
 
+            # Filter out "stuffed" descriptions.
             pre_filter_metadata_length = len(metadata)
-            # Compute description scores using the imagebind_desc_mlp model
-            description_mlp_results = [imagebind_desc_mlp.get_desc_embedding_score(embedding) for embedding in embeddings.description]
-            bt.logging.debug(f"description_mlp_results: {description_mlp_results}")
-            # filter out metadata that have description scores of 1
-            metadata = [metadata for metadata, desc_mlp_result in zip(metadata, description_mlp_results) if desc_mlp_result > 1]
-            # filter out embeddings that have description scores of 1
-            embeddings = self.filter_embeddings_by_mlp_results(embeddings, description_mlp_results)
-            # filter out description scores that are 1
-            filtered_description_mlp_results = [desc_mlp_result for desc_mlp_result in description_mlp_results if desc_mlp_result > 1]
+            stuffed = [
+                is_stuffed(meta.description)
+                for meta in metadata
+            ]
+            if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
+                bt.logging.warning("Stuffed description found with high confidence, penalizing the miner.")
+                return STUFFED_DESCRIPTION_PUNISHMENT
+            metadata = [
+                metadata[idx]
+                for idx in range(len(metadata))
+                if not stuffed[idx][0]
+            ]
             if len(metadata) < pre_filter_metadata_length:
-                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that had poor descriptions.")
-
-            # return minimum score if no unique videos were found
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions.")
             if len(metadata) == 0:
                 return MIN_SCORE
+            embeddings = self.filter_stuffed_embeddings(embeddings, stuffed)
 
-            # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
-            #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
-            
             # Compute relevance scores
             video_description_relevance_scores = F.cosine_similarity(
                 embeddings.video, embeddings.description
@@ -686,15 +685,6 @@ class Validator(BaseValidatorNeuron):
                 length_scalers.append(length_scaler)
                 description_relevance_scores[idx] -= description_relevance_scores[idx] * DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
 
-            # Apply penalties for token stuffing.
-            penalties = []
-            for idx in range(len(description_relevance_scores)):
-                desc_score, desc_mlp_score = description_relevance_scores[idx], filtered_description_mlp_results[idx]
-                penalty = desc_score * (5.0 - desc_mlp_score) / 5.0
-                penalties.append(penalty)
-                if penalty:
-                    description_relevance_scores[idx] -= penalty
-
             # Aggregate scores
             score = (
                 (sum(description_relevance_scores) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
@@ -709,7 +699,6 @@ class Validator(BaseValidatorNeuron):
                 audio cosine sim: {audio_description_relevance_scores},
                 description relevance scores: {description_relevance_scores},
                 query relevance scores: {query_relevance_scores},
-                mlp penalties: {penalties},
                 length scalers: {length_scalers},
                 total score: {score}
             ''')
