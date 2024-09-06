@@ -191,7 +191,7 @@ class BaseValidatorNeuron(BaseNeuron):
                 self.step += 1
 
                 # Check if we should start a new wandb run.
-                if not self.config.wandb.off:
+                if not self.config.wandb.off and self.successfully_started_wandb:
                     if (dt.datetime.now() - self.wandb_run_start) >= dt.timedelta(
                         days=1
                     ):
