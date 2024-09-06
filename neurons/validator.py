@@ -94,14 +94,18 @@ class Validator(BaseValidatorNeuron):
 
         bt.logging.info("load_state()")
         self.load_state()
+        self.successfully_started_wandb = False
 
         if not self.config.wandb.off:
             if os.getenv("WANDB_API_KEY"):
                 self.new_wandb_run()
+                self.successfully_started_wandb = True
             else:
                 bt.logging.exception("WANDB_API_KEY not found. Set it with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.off, but it is strongly recommended to run with W&B enabled.")
+                self.successfully_started_wandb = False
         else:
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
+            self.successfully_started_wandb = False
 
         self.focus_videos_api = (
             "https://dev-focus-api.omegatron.ai/"
