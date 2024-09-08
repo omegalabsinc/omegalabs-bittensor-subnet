@@ -32,7 +32,7 @@ import omega
 
 from omega.base.miner import BaseMinerNeuron
 from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
-from omega.miner_utils import search_and_embed_youtube_videos, embed_focus_videos
+from omega.miner_utils import search_and_embed_youtube_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
 from omega.constants import VALIDATOR_TIMEOUT
