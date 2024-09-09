@@ -60,6 +60,7 @@ from omega.constants import (
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
+    FOCUS_MIN_SCORE,
 )
 from omega import video_utils
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
@@ -100,8 +101,7 @@ class Validator(BaseValidatorNeuron):
             self.successfully_started_wandb = False
 
         self.focus_videos_api = (
-            #"https://dev-focus-api.omegatron.ai/"
-            "https://focus-api.omegatron.ai/"
+            "https://dev-focus-api.omegatron.ai/"
             if self.config.subtensor.network == "test" else
             "https://focus-api.omegatron.ai/"
         )
@@ -307,8 +307,16 @@ class Validator(BaseValidatorNeuron):
         focus_rewards = torch.FloatTensor(focus_rewards).to(self.device)
         self.update_focus_scores(focus_rewards, focus_reward_uids)
 
+        # set focus score to 0 for miners who don't have any focus videos
+        no_focus_videos_miner_uids = [uid for uid in miner_uids if uid not in focus_reward_uids]
+        no_rewards_tensor = torch.FloatTensor([FOCUS_MIN_SCORE] * len(no_focus_videos_miner_uids)).to(self.device)
+        self.update_focus_scores(no_rewards_tensor, no_focus_videos_miner_uids)
+
         for reward, miner_uid in zip(focus_rewards, focus_reward_uids):
             bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward} for focus videos")
+
+        for no_reward, miner_uid in zip(no_rewards_tensor, no_focus_videos_miner_uids):
+            bt.logging.info(f"Scoring miner={miner_uid} with reward={no_reward} for no focus videos")
         """ END FOCUS VIDEOS PROCESSING AND SCORING """
 
     def metadata_check(self, metadata: List[VideoMetadata]) -> List[VideoMetadata]:
@@ -708,12 +716,8 @@ class Validator(BaseValidatorNeuron):
         try:
             # return if no purchased videos were found
             if len(videos["purchased_videos"]) == 0:
+                bt.logging.info("No focus videos found for miner.")
                 return None
-
-            # check video_ids for fake videos
-            if any(not video_utils.is_valid_focus_id(video["video_id"]) for video in videos["purchased_videos"]):
-                bt.logging.warning(f"Fake focus video_id found. Penalizing the miner.")
-                return FAKE_VIDEO_PUNISHMENT
             
             total_score = 0
             # Aggregate scores

@@ -99,9 +99,6 @@ class FakeVideoException(Exception):
 def is_valid_youtube_id(youtube_id: str) -> bool:
     return youtube_id is not None and len(youtube_id) == 11
 
-def is_valid_focus_id(focus_id: str) -> bool:
-    return focus_id is not None and len(focus_id) == 36
-
 def download_youtube_video(
     video_id: str, start: Optional[int]=None, end: Optional[int]=None, proxy: Optional[str]=None
 ) -> Optional[BinaryIO]:
