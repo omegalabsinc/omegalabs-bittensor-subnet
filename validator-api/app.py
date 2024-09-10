@@ -4,7 +4,7 @@ import os
 import json
 from datetime import datetime
 import time
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Dict
 import random
 import json
 from pydantic import BaseModel
@@ -18,13 +18,21 @@ from traceback import print_exception
 
 import bittensor
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security
+from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
+
+from sqlalchemy.orm import Session
+from validator_api.database import get_db
+from validator_api.database.crud.focusvideo import (
+    get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
+    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats
+)
+from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 
 from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
@@ -473,7 +481,8 @@ async def main():
         
         return random.choice(PROXY_LIST)
 
-    @app.post("/api/get_focus_score")
+    
+    @app.post("/api/focus/get_focus_score")
     async def get_focus_score(
         api_key: str = Security(get_focus_api_key),
         video_id: Annotated[str, Body()] = None,
@@ -490,7 +499,73 @@ async def main():
         )
         
         return response
+    
+    ################ START OMEGA FOCUS ENDPOINTS ################
 
+    # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
+    # retrieve the coldkey and use that to confirm the transfer
+    @app.post("/api/focus/purchase")
+    async def purchase_video(
+        background_tasks: BackgroundTasks,
+        video_id: Annotated[str, Body()],
+        miner_hotkey: Annotated[str, Body()],
+        db: Session=Depends(get_db),
+    ):
+        if await already_purchased_max_focus_tao(db):
+            print("Purchases in the last 24 hours have reached the max focus tao limit.")
+            raise HTTPException(400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
+
+        availability = await check_availability(db, video_id, miner_hotkey)
+        print('availability', availability)
+        if availability['status'] == 'success':
+            amount = availability['price']
+            video_owner_coldkey = get_video_owner_coldkey(db, video_id)
+            background_tasks.add_task(confirm_video_purchased, db, video_id)
+            return {
+                'status': 'success',
+                'address': video_owner_coldkey,
+                'amount': amount,
+            }
+        else:
+            return availability
+        
+    @app.post("/api/focus/verify-purchase")
+    async def verify_purchase(
+        miner_hotkey: Annotated[str, Body()],
+        video_id: Annotated[str, Body()],
+        block_hash: Annotated[str, Body()],
+        db: Session=Depends(get_db),
+    ):
+        video_owner_coldkey = get_video_owner_coldkey(db, video_id)
+        result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
+        if result:
+            return {
+                'status': 'success',
+                'message': 'Video purchase verification was successful'
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}'
+            }
+
+    @app.get('/api/focus/miner_purchase_score/{miner_hotkey}')
+    async def miner_purchase_score(
+        miner_hotkey: str,
+        db: Session = Depends(get_db)
+    ) -> MinerPurchaseStats:
+        return get_miner_purchase_stats(db, miner_hotkey)
+
+    @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
+    async def miner_purchase_scores(
+        miner_hotkey_list: str,
+        db: Session = Depends(get_db)
+    ) -> Dict[str, MinerPurchaseStats]:
+        return {
+            hotkey: get_miner_purchase_stats(db, hotkey)
+            for hotkey in miner_hotkey_list.split(',')
+        }
+    ################ END OMEGA FOCUS ENDPOINTS ################
     
     """ TO BE DEPRECATED """
     @app.post("/api/validate")
