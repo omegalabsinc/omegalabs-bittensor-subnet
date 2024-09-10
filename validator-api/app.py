@@ -30,9 +30,10 @@ from sqlalchemy.orm import Session
 from validator_api.database import get_db
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
-    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats
+    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected
 )
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
+from validator_api.services.scoring_service import FocusScoringService
 
 from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
@@ -76,6 +77,8 @@ focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 security = HTTPBasic()
 # imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
 imagebind_v1 = ImageBind(disable_lora=True)
+
+focus_scoring_service = FocusScoringService()
 
 ### Utility functions for OMEGA Metadata Dashboard ###
 def get_timestamp_from_filename(filename: str):
@@ -487,18 +490,18 @@ async def main():
         api_key: str = Security(get_focus_api_key),
         video_id: Annotated[str, Body()] = None,
         focusing_task: Annotated[str, Body()] = None,
+        focusing_description: Annotated[str, Body()] = None,
+        db: Session=Depends(get_db),
     ) -> FocusScoreResponse:
-        
-        video_score, video_details = await score_focus.calculate_focus_score(video_id, focusing_task)
-        print(f"Score for focus video <{video_id}>: {video_score}")
-        
-        response = FocusScoreResponse(
-            video_id=video_id,
-            video_score=video_score,
-            video_details=video_details
-        )
-        
-        return response
+        try:
+            response = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
+            print(f"Score for focus video <{video_id}>: {response.combined_score}")
+            set_focus_video_score(db, video_id, response)
+            return { "success": True }
+        except Exception as e:
+            print(f"Error scoring focus video <{video_id}>: {e}")
+            mark_video_rejected(db, video_id, rejection_reason=str(e))
+            return { "success": False, "error": str(e) }
     
     ################ START OMEGA FOCUS ENDPOINTS ################
 
