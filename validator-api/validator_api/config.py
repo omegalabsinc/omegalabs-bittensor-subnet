@@ -39,4 +39,11 @@ DB_CONFIG = {
     'database': os.environ["DBNAME"]
 }
 
+# Omega Focus Constants
 FOCUS_BACKEND_API_URL = os.environ["FOCUS_BACKEND_API_URL"]
+FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
+GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
+AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
+AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
+AWS_S3_REGION = os.environ["AWS_S3_REGION"]
+AWS_S3_BUCKET_NAME = os.environ["AWS_S3_BUCKET_NAME"]

@@ -35,11 +35,13 @@ from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
 from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 from validator_api import score
+from validator_api import score_focus
 from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
-    TOPICS_LIST, PROXY_LIST, IS_PROD, FOCUS_BACKEND_API_URL
+    TOPICS_LIST, PROXY_LIST, IS_PROD, 
+    FOCUS_BACKEND_API_URL, FOCUS_API_KEYS
 )
 from validator_api.dataset_upload import dataset_uploader
 
@@ -61,6 +63,7 @@ def connect_to_db():
 
 # define the APIKeyHeader for API authorization to our multi-modal endpoints
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
 # imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
@@ -118,6 +121,15 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
             status_code=401,
             detail="Invalid API Key"
         )
+    
+async def get_focus_api_key(focus_api_key_header: str = Security(focus_api_key_header)):
+    if focus_api_key_header in FOCUS_API_KEYS:
+        return focus_api_key_header
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key"
+        )
 
 class VideoMetadataUpload(BaseModel):
     metadata: List[VideoMetadata]
@@ -132,6 +144,11 @@ class FocusMetadataUpload(BaseModel):
     metadata: List[FocusVideoMetadata]
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
+
+class FocusScoreResponse(BaseModel):
+    video_id: str
+    focus_score: float
+    video_details: dict
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -456,6 +473,25 @@ async def main():
         
         return random.choice(PROXY_LIST)
 
+    @app.post("/api/get_focus_score")
+    async def get_focus_score(
+        api_key: str = Security(get_focus_api_key),
+        video_id: Annotated[str, Body()] = None,
+        focusing_task: Annotated[str, Body()] = None,
+    ) -> FocusScoreResponse:
+        
+        video_score, video_details = await score_focus.calculate_focus_score(video_id, focusing_task)
+        print(f"Score for focus video <{video_id}>: {video_score}")
+        
+        response = FocusScoreResponse(
+            video_id=video_id,
+            video_score=video_score,
+            video_details=video_details
+        )
+        
+        return response
+
+    
     """ TO BE DEPRECATED """
     @app.post("/api/validate")
     async def validate(
