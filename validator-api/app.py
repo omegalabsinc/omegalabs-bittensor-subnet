@@ -147,7 +147,7 @@ class FocusMetadataUpload(BaseModel):
 
 class FocusScoreResponse(BaseModel):
     video_id: str
-    focus_score: float
+    video_score: float
     video_details: dict
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
