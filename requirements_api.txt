@@ -9,3 +9,4 @@ google-generativeai
 typing_extensions
 bcrypt
 uuid
+google-cloud-aiplatform==1.65.0

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from typing import List
+from typing import List, Optional
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
 from validator_api.database.models import User
@@ -286,3 +286,9 @@ def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseSta
         max_focus_points=MAX_FOCUS_POINTS,
         focus_points_percentage=focus_points_percentage
     )
+
+def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
+    return db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id,
+        FocusVideoRecord.deleted_at.is_(None)
+    ).first()
