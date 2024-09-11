@@ -289,12 +289,6 @@ def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseSta
         focus_points_percentage=focus_points_percentage
     )
 
-def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
-    return db.query(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id,
-        FocusVideoRecord.deleted_at.is_(None)
-    ).first()
-
 def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore):
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,

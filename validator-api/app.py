@@ -8,6 +8,7 @@ from typing import Annotated, List, Optional, Dict
 import random
 import json
 from pydantic import BaseModel
+import traceback
 
 from tempfile import TemporaryDirectory
 import huggingface_hub
@@ -484,13 +485,10 @@ async def main():
         
         return random.choice(PROXY_LIST)
 
-    
-    @app.post("/api/focus/get_focus_score")
-    async def get_focus_score(
-        api_key: str = Security(get_focus_api_key),
-        video_id: Annotated[str, Body()] = None,
-        focusing_task: Annotated[str, Body()] = None,
-        focusing_description: Annotated[str, Body()] = None,
+    async def run_focus_scoring(
+        video_id: Annotated[str, Body()],
+        focusing_task: Annotated[str, Body()],
+        focusing_description: Annotated[str, Body()],
         db: Session=Depends(get_db),
     ) -> FocusScoreResponse:
         try:
@@ -499,10 +497,24 @@ async def main():
             set_focus_video_score(db, video_id, response)
             return { "success": True }
         except Exception as e:
-            print(f"Error scoring focus video <{video_id}>: {e}")
-            mark_video_rejected(db, video_id, rejection_reason=str(e))
-            return { "success": False, "error": str(e) }
-    
+            error_string = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"Error scoring focus video <{video_id}>: {error_string}")
+            mark_video_rejected(db, video_id, rejection_reason=error_string)
+            return { "success": False, "error": error_string }
+
+    @app.post("/api/focus/get_focus_score")
+    async def get_focus_score(
+        api_key: str = Security(get_focus_api_key),
+        video_id: Annotated[str, Body()] = None,
+        focusing_task: Annotated[str, Body()] = None,
+        focusing_description: Annotated[str, Body()] = None,
+        db: Session=Depends(get_db),
+        background_tasks: BackgroundTasks = BackgroundTasks(),
+    ) -> Dict[str, bool]:
+        # await run_focus_scoring(video_id, focusing_task, focusing_description, db)
+        background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description, db)
+        return { "success": True }
+
     ################ START OMEGA FOCUS ENDPOINTS ################
 
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also

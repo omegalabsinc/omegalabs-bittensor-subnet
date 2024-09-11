@@ -1,9 +1,11 @@
 from typing import List, Optional
 import json
 import random
+import time
 
 from openai import AsyncClient
 from pydantic import BaseModel, Field, ValidationError
+from sqlalchemy.orm import Session
 import vertexai
 from vertexai.generative_models import Part
 from vertexai.preview import caching
@@ -12,14 +14,34 @@ from vertexai.preview.generative_models import (
 )
 from vertexai.vision_models import MultiModalEmbeddingModel, Video
 from vertexai.vision_models import VideoSegmentConfig
+from pinecone import Pinecone
 
-from validator_api.config import GOOGLE_PROJECT_ID, GOOGLE_LOCATION, OPENAI_API_KEY, GOOGLE_CLOUD_BUCKET_NAME
+from validator_api.config import GOOGLE_PROJECT_ID, GOOGLE_LOCATION, OPENAI_API_KEY, GOOGLE_CLOUD_BUCKET_NAME, PINECONE_API_KEY
 from validator_api.services import focus_scoring_prompts
 from validator_api.utils import run_async
 from validator_api.database import get_db_context
-from validator_api.database.crud.focusvideo import get_video_metadata
+from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 
 TWENTY_FIVE_MINUTES = 1500  # in seconds
+
+def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
+    return db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id,
+        FocusVideoRecord.deleted_at.is_(None)
+    ).first()
+
+async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float:
+    response = await run_async(
+        pinecone_index.query,
+        vector=vector,
+        top_k=1,
+    )
+    if len(response["matches"]) > 0:
+        similarity_score = response["matches"][0]["score"]
+    else:
+        print(f"No pinecone matches, returning 0")
+        similarity_score = 0
+    return 1 - similarity_score
 
 class TaskScoreBreakdown(BaseModel):
     reasoning_steps: List[str] = Field(description="Steps of reasoning used to arrive at the final score. Before each step, write the text 'Step X: '")
@@ -81,6 +103,9 @@ class FocusScoringService:
         }
         self.temperature = 1.3
         self.openai_client = AsyncClient(api_key=OPENAI_API_KEY)
+        self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-task-overview-index")
+        self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-video-description-index")
+        self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-completion-video-index")
 
     # Gemini API call related functions
 
@@ -157,14 +182,14 @@ Additionally, here is a detailed description of the video content:
 
     # Pinecone related functions
 
-    def get_task_uniqueness_score(self, task_overview_embedding: List[float]) -> float:
-        pass
+    async def get_task_uniqueness_score(self, task_overview_embedding: List[float]) -> float:
+        return await query_pinecone(self.task_overview_index, task_overview_embedding)
 
-    def get_description_uniqueness_score(self, detailed_video_description_embedding: List[float]) -> float:
-        pass
+    async def get_description_uniqueness_score(self, detailed_video_description_embedding: List[float]) -> float:
+        return await query_pinecone(self.video_description_index, detailed_video_description_embedding)
 
-    def get_video_uniqueness_score(self, video_embedding: List[float]) -> float:
-        pass
+    async def get_video_uniqueness_score(self, video_embedding: List[float]) -> float:
+        return await query_pinecone(self.video_description_index, video_embedding)
 
     # Embedding related functions
 
@@ -184,15 +209,15 @@ Additionally, here is a detailed description of the video content:
 
     async def get_video_embedding(self, video_id: str, video_duration_seconds: int) -> List[float]:
         model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding")
-        start_offset_sec = random.randint(0, video_duration_seconds - 120)
-        end_offset_sec = start_offset_sec + 120
+        start_offset_sec = random.randint(0, max(0, video_duration_seconds - 120))
+        end_offset_sec = min(video_duration_seconds, start_offset_sec + 120)
         embeddings = await run_async(
             model.get_embeddings,
             video=Video.load_from_file(get_gcs_uri(video_id)),
             video_segment_config=VideoSegmentConfig(
                 start_offset_sec=start_offset_sec,
                 end_offset_sec=end_offset_sec,
-                interval_sec=120
+                interval_sec=end_offset_sec - start_offset_sec
             )
         )
         return embeddings.video_embeddings[0].embedding
@@ -224,22 +249,21 @@ Additionally, here is a detailed description of the video content:
             raise ValueError(f"Video duration is too long: {video_duration_seconds} seconds")
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
-        task_overview_embedding = self.get_text_embedding(task_overview)  # uses openai to get embedding
+        task_overview_embedding = await self.get_text_embedding(task_overview)  # uses openai to get embedding
 
-        task_score_breakdown: TaskScoreBreakdown = await service.get_task_score_from_gemini(task_overview)  # uses gemini to score task
+        task_score_breakdown: TaskScoreBreakdown = await self.get_task_score_from_gemini(task_overview)  # uses gemini to score task
         task_gemini_score = task_score_breakdown.final_score
-        task_uniqueness_score = self.get_task_uniqueness_score(task_overview_embedding)  # uses pinecone embedding similarity
+        task_uniqueness_score = await self.get_task_uniqueness_score(task_overview_embedding)  # uses pinecone embedding similarity
         
-        # use the same chat session with context caching for faster and cheaper processing
-        detailed_video_description: DetailedVideoDescription = await self.get_detailed_video_description(video_id, task_overview)  # uses gemini to get detailed description
         # NOTE: we could choose to not include the detailed breakdown in the completion score, in which cause we could run them in parallel and save some user latency
+        detailed_video_description: DetailedVideoDescription = await self.get_detailed_video_description(video_id, task_overview)  # uses gemini to get detailed description
         completion_score_breakdown: CompletionScoreBreakdown = await self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description)  # use gemini to get breakdown of task score
         completion_gemini_score = completion_score_breakdown.final_score
 
-        detailed_video_description_embedding = self.get_text_embedding(detailed_video_description.model_dump_json())
-        description_uniqueness_score = self.get_description_uniqueness_score(detailed_video_description_embedding)
-        video_embedding = self.get_video_embedding(video_id, video_duration_seconds)
-        video_uniqueness_score = self.get_video_uniqueness_score(video_embedding)
+        detailed_video_description_embedding = await self.get_text_embedding(detailed_video_description.model_dump_json())
+        description_uniqueness_score = await self.get_description_uniqueness_score(detailed_video_description_embedding)
+        video_embedding = await self.get_video_embedding(video_id, video_duration_seconds)
+        video_uniqueness_score = await self.get_video_uniqueness_score(video_embedding)
 
         combined_score = (task_gemini_score + task_uniqueness_score + completion_gemini_score + description_uniqueness_score + video_uniqueness_score) / 5
 
@@ -270,37 +294,40 @@ Additionally, here is a detailed description of the video content:
     #     return GenerativeModel.from_cached_content(cached_content=cached_content)
 
 
-if __name__ == "__main__":
+def main():
     service = FocusScoringService()
     import asyncio
     import time
 
     async def main():
-        video_id = "123testID"
+        video_id = "29f91a6f-1393-4765-ba00-263b4cff28b6"
         task_overview = """
 # Multimodal tokenization research
 
 Read the Show-O peper to understand how they have trained a unified diffusion and autoregressive model for multimodal tokenization.
 """.strip()
 
-        task_overview_embedding = await service.get_text_embedding(task_overview)
-        print(len(task_overview_embedding))
+        score_details = await service.score_video(video_id, task_overview, "description")
+        print(score_details)
 
-        detailed_video_description = DetailedVideoDescription(
-            applications_used=[],
-            completion_sequence_steps=[],
-            user_feedback="",
-            description=""
-        )
+        # task_overview_embedding = await service.get_text_embedding(task_overview)
+        # print(len(task_overview_embedding))
 
-        video_embedding = await service.get_video_embedding(video_id, 1740)
-        print(f"Sum: {sum(video_embedding)}, min: {min(video_embedding)}, max: {max(video_embedding)}")
+        # detailed_video_description = DetailedVideoDescription(
+        #     applications_used=[],
+        #     completion_sequence_steps=[],
+        #     user_feedback="",
+        #     description=""
+        # )
 
-        task_score_breakdown = await service.get_task_score_from_gemini(task_overview)
-        print(task_score_breakdown)
+        # video_embedding = await service.get_video_embedding(video_id, 1740)
+        # print(f"Sum: {sum(video_embedding)}, min: {min(video_embedding)}, max: {max(video_embedding)}")
 
-        completion_score_breakdown = await service.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None)
-        print(completion_score_breakdown)
+        # task_score_breakdown = await service.get_task_score_from_gemini(task_overview)
+        # print(task_score_breakdown)
+
+        # completion_score_breakdown = await service.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None)
+        # print(completion_score_breakdown)
 
         # start = time.time()
         # model = service.get_model_cached_on_video(video_id)
@@ -316,3 +343,7 @@ Read the Show-O peper to understand how they have trained a unified diffusion an
         #     print(f"Got detailed video description ({video_description}) in {time.time() - start} seconds")
 
     asyncio.run(main())
+
+
+if __name__ == "__main__":
+    main()
