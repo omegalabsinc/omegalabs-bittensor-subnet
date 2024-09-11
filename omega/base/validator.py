@@ -213,6 +213,15 @@ class BaseValidatorNeuron(BaseNeuron):
                     self.all_topics = self.load_topics()
                     self.load_topics_start = dt.datetime.now()
 
+                # Check if we should reload the focus videos rewards percentage.
+                if (dt.datetime.now() - self.load_focus_rewards_start) >= dt.timedelta(
+                    hours=1
+                ):
+                    bt.logging.info("Reloading topics after 1 hour.")
+                    self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
+                    self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
+                    self.load_focus_rewards_start = dt.datetime.now()
+
         # If someone intentionally stops the validator, it'll safely terminate operations.
         except KeyboardInterrupt:
             self.axon.stop()
@@ -285,12 +294,13 @@ class BaseValidatorNeuron(BaseNeuron):
                 f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
 
+        bt.logging.debug(f"Normalizing scores with YOUTUBE_REWARDS_PERCENT: {self.YOUTUBE_REWARDS_PERCENT} and FOCUS_REWARDS_PERCENT: {self.FOCUS_REWARDS_PERCENT}")
         # Calculate the average reward for each uid across non-zero values.
         # Replace any NaN values with 0.
         # Normalize the youtube rewards and scale by the percentage.
-        raw_weights_youtube = torch.nn.functional.normalize(self.scores, p=1, dim=0) * YOUTUBE_REWARDS_PERCENT
+        raw_weights_youtube = torch.nn.functional.normalize(self.scores, p=1, dim=0) * self.YOUTUBE_REWARDS_PERCENT
         # Normalize the focus rewards and scale by the percentage.
-        raw_weights_focus = torch.nn.functional.normalize(self.focus_scores, p=1, dim=0) * FOCUS_REWARDS_PERCENT
+        raw_weights_focus = torch.nn.functional.normalize(self.focus_scores, p=1, dim=0) * self.FOCUS_REWARDS_PERCENT
         # Combine the youtube and focus rewards.
         raw_weights = raw_weights_youtube + raw_weights_focus
 

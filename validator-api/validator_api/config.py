@@ -3,6 +3,7 @@ from dotenv import load_dotenv
 import json
 from typing import List
 import boto3
+from omega import constants
 
 load_dotenv(override=True)
 
@@ -76,7 +77,7 @@ assert NETWORK in [BT_TESTNET, BT_MAINNET], "SUBTENSOR_NETWORK must be either te
 TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10))
 FV_EMISSIONS_PCT = float(os.getenv('FV_EMISSIONS_PCT', 0.2))
 
-FOCUS_BACKEND_API_URL = os.environ["FOCUS_BACKEND_API_URL"]
+FOCUS_REWARDS_PERCENT = float(os.getenv('FOCUS_REWARDS_PERCENT', constants.FOCUS_REWARDS_PERCENT))
 FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
 GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]

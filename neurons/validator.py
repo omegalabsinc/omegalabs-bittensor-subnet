@@ -109,7 +109,7 @@ class Validator(BaseValidatorNeuron):
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
-        self.upload_focus_metadata_endpoint = f"{api_root}/api/upload_focus_metadata"
+        self.focus_rewards_percent_endpoint = f"{api_root}/api/focus/get_rewards_percent"
         self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
@@ -117,6 +117,10 @@ class Validator(BaseValidatorNeuron):
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
+
+        self.load_focus_rewards_start = dt.datetime.now()
+        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
+        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
 
         # self.imagebind_v2 = None
         self.imagebind_v1 = None ## Commented segment to support Imagebind v1 and Imagebind v2
@@ -175,6 +179,20 @@ class Validator(BaseValidatorNeuron):
             all_topics = [line.strip() for line in open(self.config.topics_path) if line.strip()]
             bt.logging.info(f"Loaded {len(all_topics)} topics from {self.config.topics_path}")
         return all_topics
+    
+    def load_focus_rewards_percent(self):
+        # get focus rewards percent from API endpoint or fallback to default
+        try:
+            response = requests.get(self.focus_rewards_percent_endpoint)
+            response.raise_for_status()
+            rewards_percent = float(response.text)
+            bt.logging.info(f"Loaded focus rewards percent of {rewards_percent} from {self.focus_rewards_percent_endpoint}")
+        except Exception as e:
+            bt.logging.error(f"Error loading topics from URL {self.config.topics_url}: {e}")
+            traceback.print_exc()
+            bt.logging.info(f"Using fallback focus rewards percent of {FOCUS_REWARDS_PERCENT}")
+            rewards_percent = FOCUS_REWARDS_PERCENT
+        return rewards_percent
 
     async def forward(self):
         """
@@ -867,10 +885,6 @@ class Validator(BaseValidatorNeuron):
         keypair = self.dendrite.keypair
         hotkey = keypair.ss58_address
         signature = f"0x{keypair.sign(hotkey).hex()}"
-        
-        if len(response.focus_metadata) > 0 and response.axon.hotkey != response.focus_metadata[0].miner_hotkey:
-            bt.logging.warning(f"Synapse response hotkey does not match focus metadata miner hotkey.")
-            return None
         
         try:
             async with ClientSession() as session:
