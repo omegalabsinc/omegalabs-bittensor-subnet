@@ -41,7 +41,7 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
     else:
         print(f"No pinecone matches, returning 0")
         similarity_score = 0
-    similarity_score = min(0.0, max(similarity_score, 1.0))
+    similarity_score = max(0.0, min(similarity_score, 1.0))
     return 1.0 - similarity_score
 
 class TaskScoreBreakdown(BaseModel):
