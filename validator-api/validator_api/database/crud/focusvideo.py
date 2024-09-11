@@ -302,6 +302,7 @@ def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore)
         **video_record.video_details,
         **json.loads(score_details.model_dump_json()),
     }
+    video_record.processing_state = FocusVideoStateInternal.READY
     db.add(video_record)
     db.commit()
 
