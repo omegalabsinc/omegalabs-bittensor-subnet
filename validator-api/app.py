@@ -33,6 +33,7 @@ from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
     get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected
 )
+from validator_api.utils.marketplace import get_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 from validator_api.services.scoring_service import FocusScoringService
 
@@ -56,7 +57,7 @@ from validator_api.dataset_upload import dataset_uploader
 ### Constants for OMEGA Metadata Dashboard ###
 HF_DATASET = "omegalabsinc/omega-multimodal"
 DATA_FILES_PREFIX = "default/train/"
-MAX_FILES = 3
+MAX_FILES = 1
 CACHE_FILE = "desc_embeddings_recent.json"
 MIN_AGE = 60 * 60 * 48  # 2 days in seconds
 
@@ -238,7 +239,7 @@ async def main():
                 print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
-
+    
     @app.on_event("shutdown")
     async def shutdown_event():
         print("Shutdown event fired, attempting dataset upload of current batch.")
@@ -485,6 +486,31 @@ async def main():
     @app.get('/api/focus/get_rewards_percent')
     async def get_rewards_percent():
         return FOCUS_REWARDS_PERCENT
+    
+    async def cache_max_focus_tao():
+        while True:
+            """Re-caches the value of max_focus_tao."""
+            print("cache_max_focus_tao()")
+
+            max_attempts = 3
+            attempt = 0
+
+            while attempt < max_attempts:
+                try:
+                    max_focus_tao = get_max_focus_tao()
+                    break  # Exit the loop if the function succeeds
+
+                # In case of unforeseen errors, the api will log the error and continue operations.
+                except Exception as err:
+                    attempt += 1
+                    print(f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
+
+                    if attempt >= max_attempts:
+                        print("Max attempts reached. Skipping this caching this cycle.")
+                        break
+
+            # Sleep in seconds
+            await asyncio.sleep(1800) # 30 minutes
     ################ END OMEGA FOCUS ENDPOINTS ################
     
     """ TO BE DEPRECATED """
@@ -795,10 +821,12 @@ async def main():
     
     server_task = asyncio.create_task(run_server())
     try:
+        # Wait for the server to start
         await asyncio.gather(
-            resync_metagraph(),
-            resync_dataset(),
             server_task,
+            resync_metagraph(),
+            cache_max_focus_tao(),
+            resync_dataset(),
         )
     except asyncio.CancelledError:
         server_task.cancel()
