@@ -487,6 +487,10 @@ async def main():
     async def get_rewards_percent():
         return FOCUS_REWARDS_PERCENT
     
+    @app.get('/api/focus/get_max_focus_tao')
+    async def _get_max_focus_tao():
+        return await get_max_focus_tao()
+    
     async def cache_max_focus_tao():
         while True:
             """Re-caches the value of max_focus_tao."""
@@ -497,7 +501,7 @@ async def main():
 
             while attempt < max_attempts:
                 try:
-                    max_focus_tao = get_max_focus_tao()
+                    max_focus_tao = await get_max_focus_tao()
                     break  # Exit the loop if the function succeeds
 
                 # In case of unforeseen errors, the api will log the error and continue operations.
