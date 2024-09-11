@@ -1,6 +1,30 @@
 import os
+from dotenv import load_dotenv
 import json
 from typing import List
+import boto3
+
+load_dotenv(override=True)
+
+def get_secret(secret_name, region_name):
+    # Create a Secrets Manager client
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name,
+    )
+
+    get_secret_value_response = client.get_secret_value(
+        SecretId=secret_name
+    )
+
+    # For a list of exceptions thrown, see
+    # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
+
+    # Decrypts secret using the associated KMS key.
+    secret = get_secret_value_response['SecretString']
+
+    return secret
 
 def parse_proxies(proxy_list: List[str]) -> List[str]:
     transformed_proxies = []
@@ -8,7 +32,6 @@ def parse_proxies(proxy_list: List[str]) -> List[str]:
         proxy_ip, proxy_port, proxy_user, proxy_pass = proxy.split(':')
         transformed_proxies.append(f"http://{proxy_user}:{proxy_pass}@{proxy_ip}:{proxy_port}")
     return transformed_proxies
-
 
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
@@ -39,4 +62,35 @@ DB_CONFIG = {
     'database': os.environ["DBNAME"]
 }
 
+# Omega Focus Constants
+FOCUS_DB_HOST = os.environ["FOCUS_DB_HOST"]
+FOCUS_DB_NAME = os.environ["FOCUS_DB_NAME"]
+FOCUS_DB_USER = os.environ["FOCUS_DB_USER"]
+FOCUS_DB_PASSWORD = os.environ["FOCUS_DB_PASSWORD"]
+DB_STRING_LENGTH = 200
+ENCRYPTION_KEY = os.environ["ENCRYPTION_KEY"]
+
+BT_TESTNET = "test"
+BT_MAINNET = "finney"
+assert NETWORK in [BT_TESTNET, BT_MAINNET], "SUBTENSOR_NETWORK must be either test or finney"
+TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10))
+FV_EMISSIONS_PCT = float(os.getenv('FV_EMISSIONS_PCT', 0.2))
+
 FOCUS_BACKEND_API_URL = os.environ["FOCUS_BACKEND_API_URL"]
+FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
+GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
+OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
+AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
+AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
+AWS_S3_REGION = os.environ["AWS_S3_REGION"]
+AWS_S3_BUCKET_NAME = os.environ["AWS_S3_BUCKET_NAME"]
+
+MAX_FOCUS_POINTS = int(os.getenv('MAX_FOCUS_POINTS', 1000))
+
+GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
+GOOGLE_LOCATION = os.getenv("GOOGLE_LOCATION", "us-central1")
+GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
+GOOGLE_CLOUD_BUCKET_NAME = os.getenv("GOOGLE_CLOUD_BUCKET_NAME")
+
+with open(GOOGLE_APPLICATION_CREDENTIALS, "w") as f:
+    f.write(get_secret("prod/gcp_service_user", region_name=AWS_S3_REGION))

@@ -2,3 +2,11 @@
 mysql==0.0.3
 mysql-connector-python==8.3.0
 mysqlclient==2.2.4
+PyMySQL
+SQLAlchemy
+boto3
+google-generativeai
+typing_extensions
+bcrypt
+uuid
+google-cloud-aiplatform==1.65.0
