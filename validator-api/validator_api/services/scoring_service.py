@@ -41,7 +41,8 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
     else:
         print(f"No pinecone matches, returning 0")
         similarity_score = 0
-    return 1 - similarity_score
+    similarity_score = min(0.0, max(similarity_score, 1.0))
+    return 1.0 - similarity_score
 
 class TaskScoreBreakdown(BaseModel):
     reasoning_steps: List[str] = Field(description="Steps of reasoning used to arrive at the final score. Before each step, write the text 'Step X: '")
@@ -265,7 +266,8 @@ Additionally, here is a detailed description of the video content:
         video_embedding = await self.get_video_embedding(video_id, video_duration_seconds)
         video_uniqueness_score = await self.get_video_uniqueness_score(video_embedding)
 
-        combined_score = (task_gemini_score + task_uniqueness_score + completion_gemini_score + description_uniqueness_score + video_uniqueness_score) / 5
+        # combined_score = (task_gemini_score + task_uniqueness_score + completion_gemini_score + description_uniqueness_score + video_uniqueness_score) / 5
+        combined_score = (task_gemini_score * task_uniqueness_score * completion_gemini_score * description_uniqueness_score * video_uniqueness_score) ** (1/5)
 
         return VideoScore(
             task_score=task_gemini_score,
