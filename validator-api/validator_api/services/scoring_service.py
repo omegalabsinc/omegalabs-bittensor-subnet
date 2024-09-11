@@ -189,7 +189,7 @@ Additionally, here is a detailed description of the video content:
         return await query_pinecone(self.video_description_index, detailed_video_description_embedding)
 
     async def get_video_uniqueness_score(self, video_embedding: List[float]) -> float:
-        return await query_pinecone(self.video_description_index, video_embedding)
+        return await query_pinecone(self.completion_video_index, video_embedding)
 
     # Embedding related functions
 
