@@ -9,11 +9,10 @@ parser = argparse.ArgumentParser(description='Purchase a video from the API.')
 parser.add_argument('video_id', nargs='+', help='The video id to purchase.')
 args = parser.parse_args()
 
-SUBTENSOR_NETWORK = "test" # "test" or None
+SUBTENSOR_NETWORK = None # "test" or None
 
 API_BASE = (
-    #"https://dev-validator.api.omega-labs.ai"
-    "http://34.135.252.115:8001"
+    "https://dev-validator.api.omega-labs.ai"
     if SUBTENSOR_NETWORK == "test" else
     "https://validator.api.omega-labs.ai"
 )

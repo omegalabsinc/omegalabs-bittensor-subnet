@@ -40,7 +40,7 @@ import wandb
 
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
-from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
+from omega.protocol import Videos, VideoMetadata
 from omega.constants import (
     VALIDATOR_TIMEOUT, 
     VALIDATOR_TIMEOUT_MARGIN, 
@@ -99,13 +99,7 @@ class Validator(BaseValidatorNeuron):
         else:
             bt.logging.warning("Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
             self.successfully_started_wandb = False
-
-        self.focus_videos_api = (
-            "https://dev-focus-api.omegatron.ai/"
-            if self.config.subtensor.network == "test" else
-            "https://focus-api.omegatron.ai/"
-        )
-
+        
         api_root = (
             "https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
@@ -116,6 +110,7 @@ class Validator(BaseValidatorNeuron):
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.upload_focus_metadata_endpoint = f"{api_root}/api/upload_focus_metadata"
+        self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
@@ -942,33 +937,39 @@ class Validator(BaseValidatorNeuron):
     async def get_focus_videos(self, miner_hotkeys: List[str], miner_uids: List[int]) -> List[Dict]:
         bt.logging.debug(f"Making API call to get focus videos for {miner_hotkeys}")
         miner_hotkeys_str = ",".join(miner_hotkeys)
-        try:
-            response = requests.get(f"{self.focus_videos_api}/market/miner_purchase_scores/{miner_hotkeys_str}", timeout=10)
-            res_data = response.json()
-            if response.status_code == 200:
-                if len(res_data) == 0:
-                    bt.logging.debug(f"-- No focus videos found for {miner_hotkeys}")
-                    return []
-                
-                result = []
-                for i, miner_hotkey in enumerate(miner_hotkeys):
-                    if miner_hotkey in res_data:
-                        miner_data = res_data[miner_hotkey]
-                        miner_data['miner_hotkey'] = miner_hotkey
-                        miner_data['miner_uid'] = miner_uids[i]
-                        result.append(miner_data)
-                        if len(miner_data["purchased_videos"]) == 0:
-                            bt.logging.debug(f"-- No focus videos found for {miner_hotkey}")
+        
+        async with ClientSession() as session:
+            try:
+                async with session.get(f"{self.focus_miner_purchases_endpoint}/{miner_hotkeys_str}", timeout=10) as response:
+                    if response.status == 200:
+                        res_data = await response.json()
+                        if len(res_data) == 0:
+                            bt.logging.debug(f"-- No focus videos found for {miner_hotkeys}")
+                            return []
+                        
+                        result = []
+                        for i, miner_hotkey in enumerate(miner_hotkeys):
+                            if miner_hotkey in res_data:
+                                miner_data = res_data[miner_hotkey]
+                                miner_data['miner_hotkey'] = miner_hotkey
+                                miner_data['miner_uid'] = miner_uids[i]
+                                result.append(miner_data)
+                                if len(miner_data["purchased_videos"]) == 0:
+                                    bt.logging.debug(f"-- No focus videos found for {miner_hotkey}")
+                            else:
+                                bt.logging.debug(f"-- No data found for {miner_hotkey}")
+                        
+                        return result
                     else:
-                        bt.logging.debug(f"-- No data found for {miner_hotkey}")
-                
-                return result
-            else:
-                bt.logging.warning(f"Retrieving miner focus videos failed. {res_data['message']}")
+                        error_message = await response.text()
+                        bt.logging.warning(f"Retrieving miner focus videos failed. Status: {response.status}, Message: {error_message}")
+                        return []
+            except asyncio.TimeoutError:
+                bt.logging.error("Request timed out in get_focus_videos")
                 return []
-        except Exception as e:
-            bt.logging.error(f"Error in get_focus_videos: {e}")
-            return []
+            except Exception as e:
+                bt.logging.error(f"Error in get_focus_videos: {e}")
+                return []
 
 # The main function parses the configuration and runs the validator.
 if __name__ == "__main__":
