@@ -2,13 +2,15 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
-from typing import List
+from typing import List, Optional
+import json
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
 from validator_api.database.models import User
 from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao
 from validator_api.config import MAX_FOCUS_POINTS
 from pydantic import BaseModel
+from validator_api.services.scoring_service import VideoScore
 
 def get_all_available_focus(
     db: Session
@@ -286,3 +288,32 @@ def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseSta
         max_focus_points=MAX_FOCUS_POINTS,
         focus_points_percentage=focus_points_percentage
     )
+
+def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore):
+    video_record = db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id,
+        FocusVideoRecord.deleted_at.is_(None)
+    ).first()
+    if video_record is None:
+        raise HTTPException(404, detail="Focus video not found")
+
+    video_record.video_score = score_details.combined_score
+    video_record.video_details = {
+        **video_record.video_details,
+        **json.loads(score_details.model_dump_json()),
+    }
+    db.add(video_record)
+    db.commit()
+
+def mark_video_rejected(db: Session, video_id: str, rejection_reason: str):
+    video_record = db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id,
+        FocusVideoRecord.deleted_at.is_(None)
+    ).first()
+    if video_record is None:
+        raise HTTPException(404, detail="Focus video not found")
+
+    video_record.processing_state = FocusVideoStateInternal.REJECTED
+    video_record.rejection_reason = rejection_reason
+    db.add(video_record)
+    db.commit()
