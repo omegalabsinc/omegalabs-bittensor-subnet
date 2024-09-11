@@ -45,7 +45,6 @@ from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
 from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 from validator_api import score
-from validator_api import score_focus
 from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
@@ -484,7 +483,8 @@ async def main():
             )
         
         return random.choice(PROXY_LIST)
-
+    
+    ################ START OMEGA FOCUS ENDPOINTS ################
     async def run_focus_scoring(
         video_id: Annotated[str, Body()],
         focusing_task: Annotated[str, Body()],
@@ -514,8 +514,6 @@ async def main():
         # await run_focus_scoring(video_id, focusing_task, focusing_description, db)
         background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description, db)
         return { "success": True }
-
-    ################ START OMEGA FOCUS ENDPOINTS ################
 
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
