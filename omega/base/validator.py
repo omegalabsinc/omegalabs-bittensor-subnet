@@ -217,7 +217,7 @@ class BaseValidatorNeuron(BaseNeuron):
                 if (dt.datetime.now() - self.load_focus_rewards_start) >= dt.timedelta(
                     hours=1
                 ):
-                    bt.logging.info("Reloading topics after 1 hour.")
+                    bt.logging.info("Reloading focus videos rewards percent after 1 hour.")
                     self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
                     self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
                     self.load_focus_rewards_start = dt.datetime.now()
