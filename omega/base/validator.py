@@ -284,15 +284,19 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.debug("Stopped")
 
     def pad_tensors(self, tensor_a, tensor_b):
+        # Ensure both tensors are on the same device
+        device = tensor_a.device
+        tensor_b = tensor_b.to(device)
+
         if tensor_a.size() != tensor_b.size():
             max_size = max(tensor_a.size(0), tensor_b.size(0))
 
             if tensor_a.size(0) < max_size:
-                padding = torch.zeros(max_size - tensor_a.size(0))
+                padding = torch.zeros(max_size - tensor_a.size(0), device=device)
                 tensor_a = torch.cat((tensor_a, padding))
                 print("tensor a was padded")
             if tensor_b.size(0) < max_size:
-                padding = torch.zeros(max_size - tensor_b.size(0))
+                padding = torch.zeros(max_size - tensor_b.size(0), device=device)
                 tensor_b = torch.cat((tensor_b, padding))
                 print("tensor b was padded")
 
