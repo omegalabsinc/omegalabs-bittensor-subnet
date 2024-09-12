@@ -283,6 +283,21 @@ class BaseValidatorNeuron(BaseNeuron):
             self.is_running = False
             bt.logging.debug("Stopped")
 
+    def pad_tensors(self, tensor_a, tensor_b):
+        if tensor_a.size() != tensor_b.size():
+            max_size = max(tensor_a.size(0), tensor_b.size(0))
+
+            if tensor_a.size(0) < max_size:
+                padding = torch.zeros(max_size - tensor_a.size(0))
+                tensor_a = torch.cat((tensor_a, padding))
+                print("tensor a was padded")
+            if tensor_b.size(0) < max_size:
+                padding = torch.zeros(max_size - tensor_b.size(0))
+                tensor_b = torch.cat((tensor_b, padding))
+                print("tensor b was padded")
+
+        return tensor_a, tensor_b
+
     def set_weights(self):
         """
         Sets the validator weights to the metagraph hotkeys based on the scores it has received from the miners. The weights determine the trust and incentive level the validator assigns to miner nodes on the network.
@@ -293,6 +308,8 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.warning(
                 f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
+
+        self.scores, self.focus_scores = self.pad_tensors(self.scores, self.focus_scores)
 
         bt.logging.debug(f"Normalizing scores with YOUTUBE_REWARDS_PERCENT: {self.YOUTUBE_REWARDS_PERCENT} and FOCUS_REWARDS_PERCENT: {self.FOCUS_REWARDS_PERCENT}")
         # Calculate the average reward for each uid across non-zero values.
