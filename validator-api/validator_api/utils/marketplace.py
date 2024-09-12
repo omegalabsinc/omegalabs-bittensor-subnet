@@ -2,7 +2,7 @@ import time
 from typing import Tuple
 import requests
 import bittensor as bt
-from validator_api.config import NETWORK, BT_MAINNET, BT_TESTNET, NETUID, FV_EMISSIONS_PCT, MAX_FOCUS_POINTS
+from validator_api.config import NETWORK, BT_MAINNET, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, MAX_FOCUS_POINTS
 from validator_api.utils import run_with_retries, run_async
 
 async def get_subtensor_and_metagraph() -> Tuple[bt.subtensor, bt.metagraph]:
@@ -53,7 +53,7 @@ async def get_max_focus_tao() -> float:
 
         total_miner_emission = total_vali_and_miner_emission / 2  # per tempo
         total_miner_emission_per_day = total_miner_emission * 20  # 20 tempo intervals per day
-        max_focus_tao = total_miner_emission_per_day * FV_EMISSIONS_PCT
+        max_focus_tao = total_miner_emission_per_day * FOCUS_REWARDS_PERCENT
 
         if NETWORK == BT_TESTNET:
             max_focus_tao = max(2, max_focus_tao)

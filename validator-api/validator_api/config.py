@@ -75,7 +75,6 @@ BT_TESTNET = "test"
 BT_MAINNET = "finney"
 assert NETWORK in [BT_TESTNET, BT_MAINNET], "SUBTENSOR_NETWORK must be either test or finney"
 TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10))
-FV_EMISSIONS_PCT = float(os.getenv('FV_EMISSIONS_PCT', 0.2))
 
 FOCUS_REWARDS_PERCENT = float(os.getenv('FOCUS_REWARDS_PERCENT', constants.FOCUS_REWARDS_PERCENT))
 FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
