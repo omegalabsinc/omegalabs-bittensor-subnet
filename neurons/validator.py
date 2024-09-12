@@ -246,45 +246,44 @@ class Validator(BaseValidatorNeuron):
 
         if len(working_miner_uids) == 0:
             bt.logging.info("No miner responses available")
-            
-        if len(working_miner_uids) > 0:
-            # Log the results for monitoring purposes.
-            bt.logging.info(f"Received responses: {responses}")
+        
+        # Log the results for monitoring purposes.
+        bt.logging.info(f"Received responses: {responses}")
 
-            # Adjust the scores based on responses from miners.
-            try:
-                # Check if this validator is running decentralization
-                if not self.decentralization:
-                    # if not, use validator API get_rewards system
-                    rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
-                else:
-                    # if so, use decentralization logic with local GPU
-                    rewards_list = await self.handle_checks_and_rewards_youtube(input_synapse=input_synapse, responses=finished_responses)
-            except Exception as e:
-                bt.logging.error(f"Error in handle_checks_and_rewards_youtube: {e}")
-                traceback.print_exc()
-                return
+        # Adjust the scores based on responses from miners.
+        try:
+            # Check if this validator is running decentralization
+            if not self.decentralization:
+                # if not, use validator API get_rewards system
+                rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
+            else:
+                # if so, use decentralization logic with local GPU
+                rewards_list = await self.handle_checks_and_rewards_youtube(input_synapse=input_synapse, responses=finished_responses)
+        except Exception as e:
+            bt.logging.error(f"Error in handle_checks_and_rewards_youtube: {e}")
+            traceback.print_exc()
+            return
 
-            # give reward to all miners who responded and had a non-null reward
-            rewards = []
-            reward_uids = []
-            for r, r_uid in zip(rewards_list, working_miner_uids):
-                if r is not None:
-                    rewards.append(r)
-                    reward_uids.append(r_uid)
-            rewards = torch.FloatTensor(rewards).to(self.device)
-            self.update_scores(rewards, reward_uids)
-            
-            # give min reward to miners who didn't respond
-            bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
-            penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
-            self.update_scores(penalty_tensor, bad_miner_uids)
+        # give reward to all miners who responded and had a non-null reward
+        rewards = []
+        reward_uids = []
+        for r, r_uid in zip(rewards_list, working_miner_uids):
+            if r is not None:
+                rewards.append(r)
+                reward_uids.append(r_uid)
+        rewards = torch.FloatTensor(rewards).to(self.device)
+        self.update_scores(rewards, reward_uids)
+        
+        # give min reward to miners who didn't respond
+        bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
+        penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
+        self.update_scores(penalty_tensor, bad_miner_uids)
 
-            for reward, miner_uid in zip(rewards, reward_uids):
-                bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
-            
-            for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
-                bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+        for reward, miner_uid in zip(rewards, reward_uids):
+            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+        
+        for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
+            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
         """ END YOUTUBE SYNAPSE REQUESTS, PROCESSING, AND SCORING """
 
         """ START FOCUS VIDEOS PROCESSING AND SCORING """
