@@ -395,6 +395,18 @@ class BaseValidatorNeuron(BaseNeuron):
     def update_scores(self, rewards: torch.FloatTensor, uids: List[int]):
         """Performs exponential moving average on the scores based on the rewards received from the miners."""
 
+        if len(rewards) == 0:
+            bt.logging.debug("self.update_scores: Rewards are empty, returning early")
+            return
+
+        if len(uids) == 0:
+            bt.logging.debug("self.update_scores: Miner UIDs list is empty, returning early")
+            return
+
+        if len(rewards) != len(uids):
+            bt.logging.exception("self.update_scores: Rewards are not the same size as UIDs list (THIS SHOULD NEVER HAPPEN!)")
+            return
+
         # Check if rewards contains NaN values.
         if torch.isnan(rewards).any():
             bt.logging.warning(f"NaN values detected in rewards: {rewards}")
