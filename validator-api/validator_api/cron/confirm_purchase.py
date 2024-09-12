@@ -116,7 +116,7 @@ async def confirm_transfer(
 DELAY_SECS = 30  # 30s
 RETRIES = 10  # 30s x 10 retries = 300s = 5 mins
 
-def confirm_video_purchased(
+async def confirm_video_purchased(
     db: Session,
     video_id: str,
 ):
@@ -129,7 +129,7 @@ def confirm_video_purchased(
     try:
         for i in range(0, RETRIES):
             try:
-                time.sleep(DELAY_SECS)
+                await asyncio.sleep(DELAY_SECS)
                 video = db.query(FocusVideoRecord).filter(
                     FocusVideoRecord.video_id == video_id,
                     FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
