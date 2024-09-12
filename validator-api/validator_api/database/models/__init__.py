@@ -19,8 +19,8 @@ class User(Base):
     google_sso = Column(Boolean)
     coldkey = Column(String)
     hotkey = Column(String)
-    cold_seed = Column(String)
-    hot_seed = Column(String)
+    cold_seed_enc = Column(String)
+    hot_seed_enc = Column(String)
     balance = Column(Float)
     coin_balance = Column(Float)
     tao_balance = Column(Float)
@@ -51,8 +51,8 @@ class User(Base):
         self.nick_name = nick_name
         self.coldkey = coldkey
         self.hotkey = hotkey
-        self.cold_seed = cold_seed
-        self.hot_seed = hot_seed
+        self.cold_seed_enc = cold_seed
+        self.hot_seed_enc = hot_seed
         self.balance = balance
         self.coin_balance = coin_balance
         self.tao_balance = tao_balance
