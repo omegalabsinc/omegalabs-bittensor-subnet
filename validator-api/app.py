@@ -451,7 +451,7 @@ async def main():
         if availability['status'] == 'success':
             amount = availability['price']
             video_owner_coldkey = get_video_owner_coldkey(db, video_id)
-            background_tasks.add_task(confirm_video_purchased, db, video_id)
+            background_tasks.add_task(confirm_video_purchased, video_id)
             return {
                 'status': 'success',
                 'address': video_owner_coldkey,

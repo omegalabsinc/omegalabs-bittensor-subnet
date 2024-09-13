@@ -5,6 +5,7 @@ import validator_api.config as config
 
 from sqlalchemy.orm import Session
 
+from validator_api.database import get_db_context
 from validator_api.database.models import User
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoStateInternal
 from validator_api.database.crud.user import update_user_tao_balance_from_email
@@ -117,28 +118,36 @@ DELAY_SECS = 30  # 30s
 RETRIES = 10  # 30s x 10 retries = 300s = 5 mins
 
 async def confirm_video_purchased(
-    db: Session,
     video_id: str,
 ):
     """
     The purpose of this function is to set the video back to the SUBMITTED state 
     if the miner has not confirmed the purchase in time.
     """
+
     current_time = datetime.utcnow()
     print(f"BACKGROUND TASK | {current_time} | Checking if video_id <{video_id}> has been marked as purchased ...")
     try:
         for i in range(0, RETRIES):
+            await asyncio.sleep(DELAY_SECS)
             try:
-                await asyncio.sleep(DELAY_SECS)
-                video = db.query(FocusVideoRecord).filter(
-                    FocusVideoRecord.video_id == video_id,
-                    FocusVideoRecord.deleted_at.is_(None),
-                ).first()
-                if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
-                    print(f"Video <{video_id}> has been marked as PURCHASED.")
-                    return True
+                with get_db_context() as db:
+                    video = db.query(FocusVideoRecord).filter(
+                        FocusVideoRecord.video_id == video_id,
+                        FocusVideoRecord.deleted_at.is_(None),
+                    ).first()
 
-                print(f"Video <{video_id}> has NOT been marked as PURCHASED. Retrying in {DELAY_SECS} seconds...")
+                    if not video:
+                        print(f"Video <{video_id}> not found")
+                        return False
+                    
+                    if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
+                        print(f"Video <{video_id}> has been marked as PURCHASED.")
+                        return True
+
+                    print(f"Video <{video_id}> has NOT been marked as PURCHASED. Retrying in {DELAY_SECS} seconds...")
+                    # close the db connection until next retry
+                    db.close()
 
             except Exception as e:
                 print(f"Error in checking confirm_video_purchased loop: {e}")
@@ -150,6 +159,7 @@ async def confirm_video_purchased(
         video.updated_at = datetime.utcnow()
         db.add(video)
         db.commit()
+        db.close()
         return False
 
     except Exception as e:
