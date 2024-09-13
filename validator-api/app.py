@@ -419,6 +419,15 @@ async def main():
         background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description, db)
         return { "success": True }
 
+    @app.get("/api/focus/get_list")
+    async def _get_available_focus_video_list(
+        db: Session=Depends(get_db)
+    ):
+        """
+        Return all available focus videos
+        """
+        return get_all_available_focus(db)
+
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
     @app.post("/api/focus/purchase")
