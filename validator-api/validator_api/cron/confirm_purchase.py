@@ -132,7 +132,6 @@ async def confirm_video_purchased(
                 await asyncio.sleep(DELAY_SECS)
                 video = db.query(FocusVideoRecord).filter(
                     FocusVideoRecord.video_id == video_id,
-                    FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
                     FocusVideoRecord.deleted_at.is_(None),
                 ).first()
                 if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
@@ -146,6 +145,7 @@ async def confirm_video_purchased(
 
         # we got here because we could not confirm the payment in time, so we need to revert
         # the video back to the SUBMITTED state (i.e. mark available for purchase)
+        print(f"Video <{video_id}> has NOT been marked as PURCHASED. Reverting to SUBMITTED state...")
         video.processing_state = FocusVideoStateInternal.SUBMITTED
         video.updated_at = datetime.utcnow()
         db.add(video)
