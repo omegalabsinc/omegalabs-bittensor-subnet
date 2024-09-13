@@ -400,7 +400,7 @@ async def main():
             print(f"Score for focus video <{video_id}>: {response.combined_score}")
             minimum_score = 0.1
             if response.combined_score < minimum_score:
-                rejection_reason = f"This video got a score of {response.combined_score * 100}%, which is lower than the minimum score of {minimum_score * 100}%."
+                rejection_reason = f"This video got a score of {response.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%."
                 mark_video_rejected(db, video_id, rejection_reason=rejection_reason)
             else:
                 set_focus_video_score(db, video_id, response)

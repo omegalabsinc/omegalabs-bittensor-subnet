@@ -1,3 +1,4 @@
+import asyncio
 from typing import List, Optional
 import json
 import random
@@ -225,7 +226,7 @@ Additionally, here is a detailed description of the video content:
                 )
             )
             return embeddings.video_embeddings[0].embedding
-        return run_with_retries(_internal_async)
+        return await run_with_retries(_internal_async)
 
     async def get_text_embedding(self, text: str) -> List[float]:
         async def _internal_async():
@@ -234,7 +235,7 @@ Additionally, here is a detailed description of the video content:
                 model="text-embedding-3-large"
             )
             return response.data[0].embedding
-        return run_with_retries(_internal_async)
+        return await run_with_retries(_internal_async)
 
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
@@ -263,8 +264,12 @@ Additionally, here is a detailed description of the video content:
         task_uniqueness_score = await self.get_task_uniqueness_score(task_overview_embedding)  # uses pinecone embedding similarity
         
         # NOTE: we could choose to not include the detailed breakdown in the completion score, in which cause we could run them in parallel and save some user latency
-        detailed_video_description: DetailedVideoDescription = await self.get_detailed_video_description(video_id, task_overview)  # uses gemini to get detailed description
-        completion_score_breakdown: CompletionScoreBreakdown = await self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description)  # use gemini to get breakdown of task score
+        video_annotations = await asyncio.gather(
+            self.get_detailed_video_description(video_id, task_overview),  # uses gemini to get detailed description
+            self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None)  # use gemini to get breakdown of task score
+        )
+        detailed_video_description: DetailedVideoDescription = video_annotations[0]
+        completion_score_breakdown: CompletionScoreBreakdown = video_annotations[1]
         completion_gemini_score = completion_score_breakdown.final_score
 
         detailed_video_description_embedding = await self.get_text_embedding(detailed_video_description.model_dump_json())
