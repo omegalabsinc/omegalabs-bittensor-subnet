@@ -18,7 +18,7 @@ from pinecone import Pinecone
 
 from validator_api.config import GOOGLE_PROJECT_ID, GOOGLE_LOCATION, OPENAI_API_KEY, GOOGLE_CLOUD_BUCKET_NAME, PINECONE_API_KEY
 from validator_api.services import focus_scoring_prompts
-from validator_api.utils import run_async
+from validator_api.utils import run_async, run_with_retries
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 
@@ -31,18 +31,20 @@ def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInterna
     ).first()
 
 async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float:
-    response = await run_async(
-        pinecone_index.query,
-        vector=vector,
-        top_k=1,
-    )
-    if len(response["matches"]) > 0:
-        similarity_score = response["matches"][0]["score"]
-    else:
-        print(f"No pinecone matches, returning 0")
-        similarity_score = 0
-    similarity_score = max(0.0, min(similarity_score, 1.0))
-    return 1.0 - similarity_score
+    async def _internal_async():
+        response = await run_async(
+            pinecone_index.query,
+            vector=vector,
+            top_k=1,
+        )
+        if len(response["matches"]) > 0:
+            similarity_score = response["matches"][0]["score"]
+        else:
+            print(f"No pinecone matches, returning 0")
+            similarity_score = 0
+        similarity_score = max(0.0, min(similarity_score, 1.0))
+        return 1.0 - similarity_score
+    return await run_with_retries(_internal_async)
 
 class TaskScoreBreakdown(BaseModel):
     reasoning_steps: List[str] = Field(description="Steps of reasoning used to arrive at the final score. Before each step, write the text 'Step X: '")
@@ -209,26 +211,30 @@ Additionally, here is a detailed description of the video content:
         return video_duration_seconds
 
     async def get_video_embedding(self, video_id: str, video_duration_seconds: int) -> List[float]:
-        model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding")
-        start_offset_sec = random.randint(0, max(0, video_duration_seconds - 120))
-        end_offset_sec = min(video_duration_seconds, start_offset_sec + 120)
-        embeddings = await run_async(
-            model.get_embeddings,
-            video=Video.load_from_file(get_gcs_uri(video_id)),
-            video_segment_config=VideoSegmentConfig(
-                start_offset_sec=start_offset_sec,
-                end_offset_sec=end_offset_sec,
-                interval_sec=end_offset_sec - start_offset_sec
+        async def _internal_async():
+            model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding")
+            start_offset_sec = random.randint(0, max(0, video_duration_seconds - 120))
+            end_offset_sec = min(video_duration_seconds, start_offset_sec + 120)
+            embeddings = await run_async(
+                model.get_embeddings,
+                video=Video.load_from_file(get_gcs_uri(video_id)),
+                video_segment_config=VideoSegmentConfig(
+                    start_offset_sec=start_offset_sec,
+                    end_offset_sec=end_offset_sec,
+                    interval_sec=end_offset_sec - start_offset_sec
+                )
             )
-        )
-        return embeddings.video_embeddings[0].embedding
+            return embeddings.video_embeddings[0].embedding
+        return run_with_retries(_internal_async)
 
     async def get_text_embedding(self, text: str) -> List[float]:
-        response = await self.openai_client.embeddings.create(
-            input=text,
-            model="text-embedding-3-large"
-        )
-        return response.data[0].embedding
+        async def _internal_async():
+            response = await self.openai_client.embeddings.create(
+                input=text,
+                model="text-embedding-3-large"
+            )
+            return response.data[0].embedding
+        return run_with_retries(_internal_async)
 
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
