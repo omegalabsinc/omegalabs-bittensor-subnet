@@ -16,7 +16,11 @@ def get_all_available_focus(
     db: Session
 ):
     try:
-        items = db.query(FocusVideoRecord).filter_by(processing_state=FocusVideoStateInternal.SUBMITTED).all()
+        # show oldest videos first so that they get rewarded fastest
+        items = db.query(FocusVideoRecord).filter_by(
+            processing_state=FocusVideoStateInternal.SUBMITTED,
+            deleted_at=None,
+        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
         return [FocusVideoInternal.model_validate(record) for record in items]
 
     except Exception as e:

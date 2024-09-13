@@ -398,7 +398,12 @@ async def main():
         try:
             response = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
             print(f"Score for focus video <{video_id}>: {response.combined_score}")
-            set_focus_video_score(db, video_id, response)
+            minimum_score = 0.1
+            if response.combined_score < minimum_score:
+                rejection_reason = f"This video got a score of {response.combined_score * 100}%, which is lower than the minimum score of {minimum_score * 100}%."
+                mark_video_rejected(db, video_id, rejection_reason=rejection_reason)
+            else:
+                set_focus_video_score(db, video_id, response)
             return { "success": True }
         except Exception as e:
             error_string = f"{str(e)}\n{traceback.format_exc()}"
