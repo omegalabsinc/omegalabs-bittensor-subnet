@@ -121,7 +121,7 @@ def main():
                         return False
                     
     else:
-        print(f"Failed to complete transfer for video {video_id}.")
+        print(f"Failed to complete transfer for video {video_id}: {err_msg}")
 
 if __name__ == "__main__":
     main()
