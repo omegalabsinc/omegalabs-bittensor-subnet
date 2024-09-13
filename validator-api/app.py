@@ -4,7 +4,7 @@ import os
 import json
 from datetime import datetime
 import time
-from typing import Annotated, List, Optional, Dict
+from typing import Annotated, List, Optional, Dict, Any
 import random
 import json
 from pydantic import BaseModel
@@ -394,7 +394,7 @@ async def main():
         focusing_task: Annotated[str, Body()],
         focusing_description: Annotated[str, Body()],
         db: Session=Depends(get_db),
-    ) -> FocusScoreResponse:
+    ) -> Dict[str, Any]:
         try:
             response = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
             print(f"Score for focus video <{video_id}>: {response.combined_score}")

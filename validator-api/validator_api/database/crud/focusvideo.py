@@ -17,7 +17,7 @@ def get_all_available_focus(
 ):
     try:
         items = db.query(FocusVideoRecord).filter_by(processing_state=FocusVideoStateInternal.SUBMITTED).all()
-        return items
+        return [FocusVideoInternal.model_validate(record) for record in items]
 
     except Exception as e:
         print(e)

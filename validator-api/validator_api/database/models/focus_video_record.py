@@ -85,7 +85,6 @@ class FocusVideoBase(BaseModel):
     task_id: str
     user_email: str
     video_score: Optional[float]
-    video_details: Optional[Dict[str, Any]]
     rejection_reason: Optional[str]
     expected_reward_tao: Optional[float]
     earned_reward_tao: Optional[float]
@@ -99,19 +98,3 @@ class FocusVideoInternal(FocusVideoBase):
     processing_state: FocusVideoStateInternal
     miner_uid: Optional[int]
     miner_hotkey: Optional[str]
-
-class FocusVideoExternal(FocusVideoBase):
-    processing_state: FocusVideoStateExternal
-
-    @classmethod
-    def from_internal(cls, internal: FocusVideoInternal) -> 'FocusVideoExternal':
-        input_dict = internal.model_dump()
-        input_dict['processing_state'] = map_focus_video_state(input_dict['processing_state'])
-        return cls(**input_dict)
-
-class FocusVideoExternalWithComputed(FocusVideoExternal):
-    expected_reward_usd: Optional[float]
-    earned_reward_usd: Optional[float]
-    video_url: Optional[str]
-    video_mb: Optional[int]
-    video_duration_seconds: Optional[int]
