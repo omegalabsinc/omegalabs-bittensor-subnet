@@ -135,10 +135,11 @@ async def confirm_video_purchased(
                     FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
                     FocusVideoRecord.deleted_at.is_(None),
                 ).first()
-                if not video:
-                    print(f"Video <{video_id}> not found")
-                    return False
-                return True
+                if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
+                    print(f"Video <{video_id}> has been marked as PURCHASED.")
+                    return True
+
+                print(f"Video <{video_id}> has NOT been marked as PURCHASED. Retrying in {DELAY_SECS} seconds...")
 
             except Exception as e:
                 print(f"Error in checking confirm_video_purchased loop: {e}")
