@@ -3,7 +3,7 @@ Using the OMEGA Focus Video Purchase System:
 
 1. Setup:
    - Ensure you have the latest required libraries installed. See requirements.txt.
-   - Make sure you have a Bittensor wallet set up.
+   - Make sure you have your SN24 Bittensor wallet set up. You *MUST* use your SN24 registered wallet to purchase videos.
 
 2. Running the Script:
    - Open a terminal and navigate to the directory containing the script.
@@ -49,6 +49,7 @@ Using the OMEGA Focus Video Purchase System:
 
 6. Wallet Information:
    - When purchasing, you'll need to provide your Bittensor wallet details.
+   - You *MUST* use your SN24 registered wallet to purchase videos.
    - The default wallet path is '~/.bittensor/wallets/'.
 
 Remember to keep your wallet information secure and never share your private keys.
