@@ -1,3 +1,59 @@
+"""
+Using the OMEGA Focus Video Purchase System:
+
+1. Setup:
+   - Ensure you have the latest required libraries installed. See requirements.txt.
+   - Make sure you have a Bittensor wallet set up.
+
+2. Running the Script:
+   - Open a terminal and navigate to the directory containing the script.
+   - Run the script with: `python purchase_focus_video.py`
+
+3. Main Menu Options:
+   When you run the script, you'll see a menu with 5 options:
+
+   1. View Focus Videos
+   2. Purchase Focus Video
+   3. Verify Purchase
+   4. Display Order History
+   5. Exit
+
+4. Using the Options:
+
+   Option 1: View Focus Videos
+   - Displays a list of available focus videos with details like Video ID, Score, Cost, and Expected Reward.
+   - The displayed cost is the amount of TAO tokens required to purchase the video.
+   - The expected reward is the amount of TAO tokens you'll earn from SN24 emissions for purchasing the video.
+   - Select a number from the list next to the video you want to purchase.
+
+   Option 2: Purchase Focus Video
+   - Allows you to purchase a video by entering its ID.
+   - You'll need to provide your wallet information (name, hotkey, path).
+   - The script will initiate a transfer of TAO tokens to the OMEGA Focus App user who created the video. This secures the purchase of the video.
+
+   Option 3: Verify Purchase
+   - This option is used when there are issues with the purchase verification during the purchase process. 
+   - If you've successfully transferred the TAO tokens but the purchase wasn't verified, you can use this option to verify the purchase.
+   - You'll need to provide the Video ID, Miner Hotkey, and Block Hash.
+
+   Option 4: Display Order History
+   - Shows a list of your previous purchases and their current status.
+
+   Option 5: Exit
+   - Closes the application.
+
+5. Important Notes:
+   - The script can be ran using Bittensor mainnet or testnet based on the SUBTENSOR_NETWORK variable. Set it to "test" for testnet. Set to None for mainnet.
+   - Purchases are saved locally in '~/.omega/focus_videos.json'.
+   - Always ensure you have sufficient TAO tokens in your wallet before making a purchase.
+
+6. Wallet Information:
+   - When purchasing, you'll need to provide your Bittensor wallet details.
+   - The default wallet path is '~/.bittensor/wallets/'.
+
+Remember to keep your wallet information secure and never share your private keys.
+"""
+
 import os
 import requests
 import bittensor as bt
