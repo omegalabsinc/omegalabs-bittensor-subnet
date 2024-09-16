@@ -30,6 +30,8 @@ Using the OMEGA Focus Video Purchase System:
    - Allows you to purchase a video by entering its ID.
    - You'll need to provide your wallet information (name, hotkey, path).
    - The script will initiate a transfer of TAO tokens to the OMEGA Focus App user who created the video. This secures the purchase of the video.
+   - After the transfer is complete, the script will attempt to verify the purchase. 
+   - Once successful, you're all set! SN24 validators will automatically detect your purchase and reward your expected TAO emissions.
 
    Option 3: Verify Purchase
    - This option is used when there are issues with the purchase verification during the purchase process. 
@@ -46,6 +48,7 @@ Using the OMEGA Focus Video Purchase System:
    - The script can be ran using Bittensor mainnet or testnet based on the SUBTENSOR_NETWORK variable. Set it to "test" for testnet. Set to None for mainnet.
    - Purchases are saved locally in '~/.omega/focus_videos.json'.
    - Always ensure you have sufficient TAO tokens in your wallet before making a purchase.
+   - Once a purchase has been verified successful, SN24 validators will automatically detect your purchase and reward your expected TAO emissions.
 
 6. Wallet Information:
    - When purchasing, you'll need to provide your Bittensor wallet details.
