@@ -4,10 +4,11 @@ import os
 import json
 from datetime import datetime
 import time
-from typing import Annotated, List, Optional
+from typing import Annotated, List, Optional, Dict, Any
 import random
 import json
 from pydantic import BaseModel
+import traceback
 
 from tempfile import TemporaryDirectory
 import huggingface_hub
@@ -18,7 +19,7 @@ from traceback import print_exception
 
 import bittensor
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security
+from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -26,27 +27,37 @@ from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
 
+from sqlalchemy.orm import Session
+from validator_api.database import get_db, get_db_context
+from validator_api.database.crud.focusvideo import (
+    get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
+    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected
+)
+from validator_api.utils.marketplace import get_max_focus_tao
+from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
+from validator_api.services.scoring_service import FocusScoringService
+
 from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
 from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
-from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 from validator_api import score
 from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
-    TOPICS_LIST, PROXY_LIST, IS_PROD, FOCUS_BACKEND_API_URL
+    TOPICS_LIST, PROXY_LIST, IS_PROD, 
+    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS
 )
 from validator_api.dataset_upload import dataset_uploader
 
 ### Constants for OMEGA Metadata Dashboard ###
 HF_DATASET = "omegalabsinc/omega-multimodal"
 DATA_FILES_PREFIX = "default/train/"
-MAX_FILES = 3
+MAX_FILES = 1
 CACHE_FILE = "desc_embeddings_recent.json"
 MIN_AGE = 60 * 60 * 48  # 2 days in seconds
 
@@ -61,10 +72,13 @@ def connect_to_db():
 
 # define the APIKeyHeader for API authorization to our multi-modal endpoints
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
+focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
 # imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
 imagebind_v1 = ImageBind(disable_lora=True)
+
+focus_scoring_service = FocusScoringService()
 
 ### Utility functions for OMEGA Metadata Dashboard ###
 def get_timestamp_from_filename(filename: str):
@@ -118,6 +132,15 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
             status_code=401,
             detail="Invalid API Key"
         )
+    
+async def get_focus_api_key(focus_api_key_header: str = Security(focus_api_key_header)):
+    if focus_api_key_header in FOCUS_API_KEYS:
+        return focus_api_key_header
+    else:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid API Key"
+        )
 
 class VideoMetadataUpload(BaseModel):
     metadata: List[VideoMetadata]
@@ -132,6 +155,11 @@ class FocusMetadataUpload(BaseModel):
     metadata: List[FocusVideoMetadata]
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
+
+class FocusScoreResponse(BaseModel):
+    video_id: str
+    video_score: float
+    video_details: dict
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -211,7 +239,7 @@ async def main():
                 print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
-
+    
     @app.on_event("shutdown")
     async def shutdown_event():
         print("Shutdown event fired, attempting dataset upload of current batch.")
@@ -346,102 +374,6 @@ async def main():
             print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
         
         return True
-    
-    @app.post("/api/upload_focus_metadata")
-    async def upload_focus_metadata(
-        upload_data: FocusMetadataUpload,
-        hotkey: Annotated[str, Depends(get_hotkey)],
-    ) -> bool:
-        print(f"uploaded: {upload_data}")
-        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
-            )
-        
-        uid = None
-        is_bittensor = 0
-        is_commune = 0
-        if ENABLE_COMMUNE and hotkey in commune_keys.values():
-            # get uid of commune validator
-            for key_uid, key_hotkey in commune_keys.items():
-                if key_hotkey == hotkey:
-                    uid = key_uid
-                    break
-            validator_chain = "commune"
-            is_commune = 1
-        elif uid is None and hotkey in metagraph.hotkeys:
-            # get uid of bittensor validator
-            uid = metagraph.hotkeys.index(hotkey)
-            validator_chain = "bittensor"
-            is_bittensor = 1
-
-        metadata = upload_data.metadata
-
-        start_time = time.time()
-        video_ids = await score.upload_focus_metadata(metadata, imagebind_v1)
-        print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-        
-        if upload_data.miner_hotkey is not None:
-            # Calculate and upsert leaderboard data
-            datapoints = len(video_ids)
-            avg_desc_relevance = 0
-            avg_query_relevance = 0
-            novelty_score = 0
-            total_score = upload_data.total_score
-            miner_hotkey = upload_data.miner_hotkey
-            
-            try:
-                start_time = time.time()
-                connection = connect_to_db()
-
-                leaderboard_table_name = "miner_leaderboard"
-                if not IS_PROD:
-                    leaderboard_table_name += "_test"
-                query = f"""
-                INSERT INTO {leaderboard_table_name} (
-                    hotkey,
-                    is_bittensor,
-                    is_commune,
-                    datapoints,
-                    avg_desc_relevance,
-                    avg_query_relevance,
-                    avg_novelty,
-                    avg_score,
-                    last_updated
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, NOW()
-                ) ON DUPLICATE KEY UPDATE
-                    datapoints = datapoints + VALUES(datapoints),
-                    avg_desc_relevance = ((avg_desc_relevance * (datapoints - VALUES(datapoints))) + (VALUES(avg_desc_relevance) * VALUES(datapoints))) / datapoints,
-                    avg_query_relevance = ((avg_query_relevance * (datapoints - VALUES(datapoints))) + (VALUES(avg_query_relevance) * VALUES(datapoints))) / datapoints,
-                    avg_novelty = ((avg_novelty * (datapoints - VALUES(datapoints))) + (VALUES(avg_novelty) * VALUES(datapoints))) / datapoints,
-                    avg_score = ((avg_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_score) * VALUES(datapoints))) / datapoints,
-                    last_updated = NOW();
-                """
-                cursor = connection.cursor()
-                cursor.execute(query, (
-                    miner_hotkey,
-                    is_bittensor,
-                    is_commune,
-                    datapoints,
-                    avg_desc_relevance,
-                    avg_query_relevance,
-                    novelty_score,
-                    total_score
-                ))
-                connection.commit()
-                print(f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-                
-            except mysql.connector.Error as err:
-                raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
-            finally:
-                if connection:
-                    connection.close()
-        else:
-            print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
-        
-        return True
 
     @app.post("/api/get_proxy")
     async def get_proxy(
@@ -455,7 +387,150 @@ async def main():
             )
         
         return random.choice(PROXY_LIST)
+    
+    ################ START OMEGA FOCUS ENDPOINTS ################
+    async def run_focus_scoring(
+        video_id: Annotated[str, Body()],
+        focusing_task: Annotated[str, Body()],
+        focusing_description: Annotated[str, Body()]
+    ) -> Dict[str, Any]:
+        try:
+            response = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
+            print(f"Score for focus video <{video_id}>: {response.combined_score}")
+            minimum_score = 0.1
+            # get the db after scoring the video so it's not open for too long
+            with get_db_context() as db:
+                if response.combined_score < minimum_score:
+                    rejection_reason = f"This video got a score of {response.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%."
+                    mark_video_rejected(db, video_id, rejection_reason=rejection_reason)
+                else:
+                    set_focus_video_score(db, video_id, response)
+            return { "success": True }
+        except Exception as e:
+            error_string = f"{str(e)}\n{traceback.format_exc()}"
+            print(f"Error scoring focus video <{video_id}>: {error_string}")
+            mark_video_rejected(db, video_id, rejection_reason=error_string)
+            return { "success": False, "error": error_string }
 
+    @app.post("/api/focus/get_focus_score")
+    async def get_focus_score(
+        api_key: str = Security(get_focus_api_key),
+        video_id: Annotated[str, Body()] = None,
+        focusing_task: Annotated[str, Body()] = None,
+        focusing_description: Annotated[str, Body()] = None,
+        background_tasks: BackgroundTasks = BackgroundTasks(),
+    ) -> Dict[str, bool]:
+        # await run_focus_scoring(video_id, focusing_task, focusing_description, db)
+        background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description)
+        return { "success": True }
+
+    @app.get("/api/focus/get_list")
+    async def _get_available_focus_video_list(
+        db: Session=Depends(get_db)
+    ):
+        """
+        Return all available focus videos
+        """
+        return get_all_available_focus(db)
+
+    # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
+    # retrieve the coldkey and use that to confirm the transfer
+    @app.post("/api/focus/purchase")
+    async def purchase_video(
+        background_tasks: BackgroundTasks,
+        video_id: Annotated[str, Body()],
+        miner_hotkey: Annotated[str, Body()],
+        db: Session=Depends(get_db),
+    ):
+        if await already_purchased_max_focus_tao(db):
+            print("Purchases in the last 24 hours have reached the max focus tao limit.")
+            raise HTTPException(400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
+
+        availability = await check_availability(db, video_id, miner_hotkey)
+        print('availability', availability)
+        if availability['status'] == 'success':
+            amount = availability['price']
+            video_owner_coldkey = get_video_owner_coldkey(db, video_id)
+            background_tasks.add_task(confirm_video_purchased, video_id)
+            return {
+                'status': 'success',
+                'address': video_owner_coldkey,
+                'amount': amount,
+            }
+        else:
+            return availability
+        
+    @app.post("/api/focus/verify-purchase")
+    async def verify_purchase(
+        miner_hotkey: Annotated[str, Body()],
+        video_id: Annotated[str, Body()],
+        block_hash: Annotated[str, Body()],
+        db: Session=Depends(get_db),
+    ):
+        video_owner_coldkey = get_video_owner_coldkey(db, video_id)
+        result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
+        if result:
+            return {
+                'status': 'success',
+                'message': 'Video purchase verification was successful'
+            }
+        else:
+            return {
+                'status': 'error',
+                'message': f'Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}'
+            }
+
+    @app.get('/api/focus/miner_purchase_score/{miner_hotkey}')
+    async def miner_purchase_score(
+        miner_hotkey: str,
+        db: Session = Depends(get_db)
+    ) -> MinerPurchaseStats:
+        return get_miner_purchase_stats(db, miner_hotkey)
+
+    @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
+    async def miner_purchase_scores(
+        miner_hotkey_list: str,
+        db: Session = Depends(get_db)
+    ) -> Dict[str, MinerPurchaseStats]:
+        return {
+            hotkey: get_miner_purchase_stats(db, hotkey)
+            for hotkey in miner_hotkey_list.split(',')
+        }
+    
+    @app.get('/api/focus/get_rewards_percent')
+    async def get_rewards_percent():
+        return FOCUS_REWARDS_PERCENT
+    
+    @app.get('/api/focus/get_max_focus_tao')
+    async def _get_max_focus_tao():
+        return await get_max_focus_tao()
+    
+    async def cache_max_focus_tao():
+        while True:
+            """Re-caches the value of max_focus_tao."""
+            print("cache_max_focus_tao()")
+
+            max_attempts = 3
+            attempt = 0
+
+            while attempt < max_attempts:
+                try:
+                    max_focus_tao = await get_max_focus_tao()
+                    break  # Exit the loop if the function succeeds
+
+                # In case of unforeseen errors, the api will log the error and continue operations.
+                except Exception as err:
+                    attempt += 1
+                    print(f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
+
+                    if attempt >= max_attempts:
+                        print("Max attempts reached. Skipping this caching this cycle.")
+                        break
+
+            # Sleep in seconds
+            await asyncio.sleep(1800) # 30 minutes
+    ################ END OMEGA FOCUS ENDPOINTS ################
+    
     """ TO BE DEPRECATED """
     @app.post("/api/validate")
     async def validate(
@@ -470,30 +545,6 @@ async def main():
         uid = metagraph.hotkeys.index(hotkey)
         
         start_time = time.time()
-            
-        # handle focus video metadata
-        focus_rewards = None
-        if videos.focus_metadata is not None and len(videos.focus_metadata) > 0:
-            focus_rewards = 0
-            check_response = requests.post(url=f'{FOCUS_BACKEND_API_URL}/market/check_video_metadata', data=json.dumps({
-                'video_id': videos.focus_metadata[0].video_id,
-                'video_link': videos.focus_metadata[0].video_link,
-                'creator': videos.focus_metadata[0].creator,
-                'miner_hotkey': videos.focus_metadata[0].miner_hotkey
-            }))
-            
-            if check_response.status_code == 200:
-                json_res = check_response.json()
-                if json_res['success'] == True:
-                    focus_rewards = float(json_res['score'])
-                else:
-                    print(f"Checking video metadata failed: {json_res['message']}")
-            else: 
-                focus_rewards = 0
-                
-            print(f"Focus Videos Reward points are: {focus_rewards}")
-            # Normalize focus score
-            focus_rewards = focus_rewards / 10
 
         if not hasattr(videos, 'imagebind_version'):
             print("`videos` object does not have `imagebind_version` attribute, using original model")
@@ -515,19 +566,12 @@ async def main():
         '''
         youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v1)
 
-        if youtube_rewards is None and focus_rewards is None:
-            print("YouTube and Focus rewards are empty, returning None")
+        if youtube_rewards is None:
+            print("YouTube rewards are empty, returning None")
             return None
         
-        if youtube_rewards is None: 
-            total_rewards: float = focus_rewards
-        elif focus_rewards is None: 
-            total_rewards: float = youtube_rewards
+        total_rewards: float = youtube_rewards
         
-        if youtube_rewards is not None and focus_rewards is not None:
-            total_rewards: float = youtube_rewards * YOUTUBE_REWARDS_PERCENT + focus_rewards * FOCUS_REWARDS_PERCENT
-            
-        print(f"Youtube Rewards: {youtube_rewards}, Focus Rewards: {focus_rewards}")
         print(f"Total Rewards: {total_rewards}")
         print(f"Returning score={total_rewards} for validator={uid} in {time.time() - start_time:.2f}s")
 
@@ -795,10 +839,12 @@ async def main():
     
     server_task = asyncio.create_task(run_server())
     try:
+        # Wait for the server to start
         await asyncio.gather(
-            resync_metagraph(),
-            resync_dataset(),
             server_task,
+            resync_metagraph(),
+            cache_max_focus_tao(),
+            resync_dataset(),
         )
     except asyncio.CancelledError:
         server_task.cancel()

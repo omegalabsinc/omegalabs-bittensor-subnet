@@ -63,6 +63,124 @@ By harnessing the power of the Bittensor network and a global community of miner
   - If a miner submits too frequently, the validator may increase the file threshold accumulation limit.
   - If the API needs to shut down for any reason, it will submit the remaining validated entries.
 
+## SN24: Focus Videos Submission
+
+We're excited to introduce a new feature in the SN24 ecosystem: the Focus Video submission and reward process. This system creates a robust marketplace for task-completion videos, leveraging the strengths of the Bittensor network. Here's how it works:
+
+### The Players
+1. Ω Focus users: Individuals who complete tasks and record their work
+2. SN24 miners: Network participants who can purchase Focus videos
+3. SN24 validators: Entities that validate and score submissions
+4. Ω Brain: Ω Focus's backend API that processes submissions
+
+### The Process
+
+#### 1. Task Completion and Recording
+Ω Focus users create tasks for themselves within the app. They then complete these tasks while screen recording their work via the app.
+
+#### 2. Submission and Initial Processing
+Once a task is completed, the user's screen recording and task metadata are uploaded to Ω Brain. This backend system processes the recording, extracting metadata and combining partial clips if necessary.
+
+#### 3. Scoring
+Ω Brain forwards the processed video to the SN24 validator API. The validator scores the submission based on predefined criteria. To learn more about the scoring algorithm, check out [this section](#scoring-algorithm) below.
+
+#### 4. User Notification and Marketplace Listing
+The Ω Focus user receives their score and an estimate of the potential TAO reward. They can then choose to submit their video to the SN24 Focus Videos marketplace.
+
+#### 5. Miner Purchase
+SN24 miners can browse and purchase videos from the marketplace. To make a purchase, a miner notifies the SN24 validator API of their intent. The API informs the miner of the TAO amount to transfer to the Ω Focus user's wallet. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/focus_app_v1_integration/purchase_focus_video.py)
+
+#### 6. Transaction Verification
+Once the miner transfers the TAO, they provide the transaction's block hash to the SN24 validator API. The API then verifies this transaction on the Bittensor chain's public ledger. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/cron/confirm_purchase.py#L55)
+
+#### 7. Miner Scoring and Reimbursement
+SN24 validators, while sending their YouTube scraping requests to miners, also check with the validator API to see if miners have purchased Focus Videos. Miners' scores are adjusted based on these purchases. Via validators increasing the miners' scores for purchasing videos from the marketplace, the Bittensor chain effectively then reimburses miners for their Focus Video purchases over the following 24-hour period. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/omega/base/validator.py#L322-L326)
+
+#### 8. Impact on Miner Scores
+Focus Video scores currently make up 2.5% of a miner's total SN24 score. We plan to increase this percentage as the system proves successful.
+
+#### 9. Video Availability for External Buyers
+Once a Focus Video submission is marked as COMPLETED (which happens when a miner transfers TAO to the Ω Focus user), the video becomes available for purchase by external data buyers, such as AI research labs. (Note: This feature will be implemented in the future.)
+
+### Benefits
+- Users are incentivized to complete and record valuable tasks
+- Miners can improve their scores by purchasing high-quality Focus Videos
+- The network gains a new source of verified, high-quality data
+- External entities will gain access to a marketplace of task-completion videos
+
+We believe this system will create a vibrant ecosystem within SN24, driving value for all participants while generating useful data for the broader AI community. We're starting with a conservative 2.5% score impact for Focus Videos, but we're excited to see how this new feature develops and grows within our network.
+
+```mermaid
+flowchart TD
+    A["👤 Ω Focus User"] -->|"1️⃣ Complete task & record"| B
+    B["🧠 Ω Brain"] -->|"2️⃣ Process video"| C
+    C{"🛡️ SN24 Validator API"}
+    C -->|"3️⃣ Score submission"| A
+    A -->|"4️⃣ List video"| E["🎥 Focus Videos Marketplace"]
+    F["⛏️ SN24 Miner"] -->|"5️⃣ Purchase video"| E
+    F -->|"6️⃣ Transfer TAO"| G["💰 User Wallet"]
+    F -.->|"7️⃣ Provide tx hash"| C
+    C -.->|"8️⃣ Verify transaction"| I
+    I["🔍 SN24 Validator"] -.->|"9️⃣ Check purchases & set weights"| H{"⛓️ Bittensor Chain"}
+    H -.->|"🔟 Reimburse miners"| F
+
+    classDef user fill:#30336b,stroke:#333,stroke-width:2px,color:white;
+    classDef brain fill:#eeac99,stroke:#333,stroke-width:2px,color:white;
+    classDef api fill:#e06377,stroke:#333,stroke-width:2px,color:white;
+    classDef market fill:#c83349,stroke:#333,stroke-width:2px,color:white;
+    classDef miner fill:#5b9aa0,stroke:#333,stroke-width:2px,color:white;
+    classDef validator fill:#f0932b,stroke:#333,stroke-width:2px,color:white;
+    classDef chain fill:#6ab04c,stroke:#333,stroke-width:2px,color:white;
+    classDef external fill:#61c0bf,stroke:#333,stroke-width:2px,color:white;
+
+    class A user;
+    class B brain;
+    class C api;
+    class D,E market;
+    class F miner;
+    class G user;
+    class H chain;
+    class I validator;
+    class J external;
+```
+
+### Scoring Algorithm
+
+A task completion video's final score is a geometric average of five components:
+
+#### gemini based scores
+1. task_gemini_score: Gemini's evaluation of the task's quality, based on the task overview and how it feeds into the community's goals and its relevance to teaching AI systems ([prompt](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/services/focus_scoring_prompts.py#L2))
+2. completion_gemini_score: Gemini's evaluation of how well the task was completed and how relevant the video content is to the task and the community's goals ([prompt](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/services/focus_scoring_prompts.py#L88))
+
+#### embeddding based scores
+3. task_uniqueness_score: Uniqueness of the task based on embedding similarity of the task overview with existing tasks in the system
+4. description_uniqueness_score: Uniqueness of the video description based on embedding similarity of the detailed video description with existing video annotations in the system
+5. video_uniqueness_score: Uniqueness of the video content based on embedding similarity of the video with existing videos in the system
+
+Each component contributes equally to the final score. We chose to use a geometric average to ensure that no individual component dominates the final score.
+
+You can dig into the code implementation [here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/services/scoring_service.py#L240).
+
+### Why so Complicated?
+
+Anyone experienced with Bittensor is probably asking themselves right now: why is this video submission process so convoluted? Why not just have Ω Focus users be miners and be compensated directly via the Bittensor chain's emissions each epoch? There are a few reasons:
+
+1. Bittensor’s emissions system awards miners constantly (every epoch), and miners who do not perform well are eventually deregistered and must buy in again (optimized for consistently high performance and throughput). We see Ω Focus users completing tasks and submitting their screen recordings with irregular schedules (some days you do awesome work, some days you rest). With less consistent schedules, we don’t want temporarily inactive users to be deregistered (and subsequently have to re-register to start earning again).
+2. Therefore, Ω Labs and SN24 miners acts as intermediaries. Ω Focus users complete tasks and submit their recordings on an arbitrary schedule while SN24 miners are consistently buying up available screen recordings and submitting them to SN24 validators for verification.
+3. Once smart contracts are available on Bittensor, as Const mentioned recently, we will definitely move over to emitting rewards directly to Focus users in a fully decentralized manner.
+
+### Hmmm, this doesn't feel like it's fully decentralized
+
+Yes, we acknowledge that. Even while Smart Contracts are not available on Bittensor, there is still room for us to decentralize the scoring and purchase verification process further. Some next steps here include:
+
+1. Use some decentralized database to store the Focus Video scores, annotations, and purchase status.
+2. Move the scoring to run locally on the validator's machines via opensource video understanding models like Qwen2-VL-72b when it becomes available or by simply having validators make requests to the Gemini API themselves in the meantime.
+3. Creating a public dashboard where anyone in the Bittensor community can view the Focus Videos and their associated scores to judge for themselves the quality of the submissions.
+
+All in all, this is an MVP release and we wanted to just ship something out to get the ball rolling. We are 100% committed to decentralizing the system as much as possible urgently, but also want to emphasize the novel nature of what we're implementing here and appreciate everyone's patience as we make the system more robust and decentralized.
+
+Learn more about the Ω Focus app in [this FAQ](https://focus.omega.inc).
+
 ## Roadmap
 
 ### Phase 1: Foundation (Q1 2024)

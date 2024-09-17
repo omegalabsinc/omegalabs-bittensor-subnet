@@ -34,6 +34,7 @@ from traceback import print_exception
 from omega.base.neuron import BaseNeuron
 from omega.mock import MockDendrite
 from omega.utils.config import add_validator_args
+from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
 
 
 class BaseValidatorNeuron(BaseNeuron):
@@ -66,7 +67,10 @@ class BaseValidatorNeuron(BaseNeuron):
         self.scores = torch.zeros(
             self.metagraph.n, dtype=torch.float32, device=self.device
         )
-
+        self.focus_scores = torch.zeros(
+            self.metagraph.n, dtype=torch.float32, device=self.device
+        )
+        
         # Serve axon to enable external connections.
         if not self.config.neuron.axon_off:
             self.serve_axon()
@@ -209,6 +213,15 @@ class BaseValidatorNeuron(BaseNeuron):
                     self.all_topics = self.load_topics()
                     self.load_topics_start = dt.datetime.now()
 
+                # Check if we should reload the focus videos rewards percentage.
+                if (dt.datetime.now() - self.load_focus_rewards_start) >= dt.timedelta(
+                    hours=1
+                ):
+                    bt.logging.info("Reloading focus videos rewards percent after 1 hour.")
+                    self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
+                    self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
+                    self.load_focus_rewards_start = dt.datetime.now()
+
         # If someone intentionally stops the validator, it'll safely terminate operations.
         except KeyboardInterrupt:
             self.axon.stop()
@@ -270,6 +283,25 @@ class BaseValidatorNeuron(BaseNeuron):
             self.is_running = False
             bt.logging.debug("Stopped")
 
+    def pad_tensors(self, tensor_a, tensor_b):
+        # Ensure both tensors are on the same device
+        device = tensor_a.device
+        tensor_b = tensor_b.to(device)
+
+        if tensor_a.size() != tensor_b.size():
+            max_size = max(tensor_a.size(0), tensor_b.size(0))
+
+            if tensor_a.size(0) < max_size:
+                padding = torch.zeros(max_size - tensor_a.size(0), device=device)
+                tensor_a = torch.cat((tensor_a, padding))
+                print("tensor a was padded")
+            if tensor_b.size(0) < max_size:
+                padding = torch.zeros(max_size - tensor_b.size(0), device=device)
+                tensor_b = torch.cat((tensor_b, padding))
+                print("tensor b was padded")
+
+        return tensor_a, tensor_b
+
     def set_weights(self):
         """
         Sets the validator weights to the metagraph hotkeys based on the scores it has received from the miners. The weights determine the trust and incentive level the validator assigns to miner nodes on the network.
@@ -281,10 +313,20 @@ class BaseValidatorNeuron(BaseNeuron):
                 f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
 
+        self.scores, self.focus_scores = self.pad_tensors(self.scores, self.focus_scores)
+
+        bt.logging.debug(f"Normalizing scores with YOUTUBE_REWARDS_PERCENT: {self.YOUTUBE_REWARDS_PERCENT} and FOCUS_REWARDS_PERCENT: {self.FOCUS_REWARDS_PERCENT}")
         # Calculate the average reward for each uid across non-zero values.
         # Replace any NaN values with 0.
-        raw_weights = torch.nn.functional.normalize(self.scores, p=1, dim=0)
+        # Normalize the youtube rewards and scale by the percentage.
+        raw_weights_youtube = torch.nn.functional.normalize(self.scores, p=1, dim=0) * self.YOUTUBE_REWARDS_PERCENT
+        # Normalize the focus rewards and scale by the percentage.
+        raw_weights_focus = torch.nn.functional.normalize(self.focus_scores, p=1, dim=0) * self.FOCUS_REWARDS_PERCENT
+        # Combine the youtube and focus rewards.
+        raw_weights = raw_weights_youtube + raw_weights_focus
 
+        bt.logging.debug("raw_weights_youtube", raw_weights_youtube)
+        bt.logging.debug("raw_weights_focus", raw_weights_focus)
         bt.logging.debug("raw_weights", raw_weights)
         bt.logging.debug("raw_weight_uids", self.metagraph.uids.to("cpu"))
         if raw_weights.shape[0] > self.metagraph.uids.shape[0]:
@@ -354,6 +396,7 @@ class BaseValidatorNeuron(BaseNeuron):
         for uid, hotkey in enumerate(self.hotkeys):
             if hotkey != self.metagraph.hotkeys[uid]:
                 self.scores[uid] = 0  # hotkey has been replaced
+                self.focus_scores[uid] = 0  # hotkey has been replaced
 
         # Check to see if the metagraph has changed size.
         # If so, we need to add new hotkeys and moving averages.
@@ -365,12 +408,25 @@ class BaseValidatorNeuron(BaseNeuron):
             min_len = min(len(self.hotkeys), len(self.scores))
             new_moving_average[:min_len] = self.scores[:min_len]
             self.scores = new_moving_average
+            self.focus_scores = new_moving_average
 
         # Update the hotkeys.
         self.hotkeys = copy.deepcopy(self.metagraph.hotkeys)
 
     def update_scores(self, rewards: torch.FloatTensor, uids: List[int]):
         """Performs exponential moving average on the scores based on the rewards received from the miners."""
+
+        if len(rewards) == 0:
+            bt.logging.debug("self.update_scores: Rewards are empty, returning early")
+            return
+
+        if len(uids) == 0:
+            bt.logging.debug("self.update_scores: Miner UIDs list is empty, returning early")
+            return
+
+        if len(rewards) != len(uids):
+            bt.logging.exception("self.update_scores: Rewards are not the same size as UIDs list (THIS SHOULD NEVER HAPPEN!)")
+            return
 
         # Check if rewards contains NaN values.
         if torch.isnan(rewards).any():
@@ -399,6 +455,36 @@ class BaseValidatorNeuron(BaseNeuron):
         ) * self.scores.to(self.device)
         bt.logging.debug(f"Updated moving avg scores: {self.scores}")
 
+    def update_focus_scores(self, rewards: torch.FloatTensor, uids: List[int]):
+        """Performs exponential moving average on the focus video scores based on the rewards received from the miners."""
+
+        # Check if rewards contains NaN values.
+        if torch.isnan(rewards).any():
+            bt.logging.warning(f"NaN values detected in rewards: {rewards}")
+            # Replace any NaN values in rewards with 0.
+            rewards = torch.nan_to_num(rewards, 0)
+
+        # Check if `uids` is already a tensor and clone it to avoid the warning.
+        if isinstance(uids, torch.Tensor):
+            uids_tensor = uids.clone().detach()
+        else:
+            uids_tensor = torch.tensor(uids).to(self.device)
+
+        # Compute forward pass rewards, assumes uids are mutually exclusive.
+        # shape: [ metagraph.n ]
+        scattered_rewards: torch.FloatTensor = self.focus_scores.to(self.device).scatter(
+            0, uids_tensor.to(self.device), rewards.to(self.device)
+        ).to(self.device)
+        bt.logging.debug(f"Scattered rewards: {rewards}")
+
+        # Update scores with rewards produced by this step.
+        # shape: [ metagraph.n ]
+        alpha: float = self.config.neuron.moving_average_alpha
+        self.focus_scores: torch.FloatTensor = alpha * scattered_rewards + (
+            1 - alpha
+        ) * self.focus_scores.to(self.device)
+        bt.logging.debug(f"Updated moving avg focus_scores: {self.focus_scores}")
+
     def save_state(self):
         """Saves the state of the validator to a file."""
         bt.logging.info("Saving validator state.")
@@ -408,6 +494,7 @@ class BaseValidatorNeuron(BaseNeuron):
             {
                 "step": self.step,
                 "scores": self.scores,
+                "focus_scores": self.focus_scores,
                 "hotkeys": self.hotkeys,
             },
             self.config.neuron.full_path + "/state.pt",
@@ -425,4 +512,10 @@ class BaseValidatorNeuron(BaseNeuron):
         state = torch.load(self.config.neuron.full_path + "/state.pt", map_location=self.device)
         self.step = state["step"]
         self.scores = state["scores"]
+        if "focus_scores" in state:
+            self.focus_scores = state["focus_scores"]
+        else:
+            state["focus_scores"] = torch.zeros(
+                self.metagraph.n, dtype=torch.float32, device=self.device
+            )
         self.hotkeys = state["hotkeys"]
