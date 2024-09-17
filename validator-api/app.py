@@ -28,7 +28,7 @@ from starlette import status
 from substrateinterface import Keypair
 
 from sqlalchemy.orm import Session
-from validator_api.database import get_db
+from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
     get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected
@@ -392,18 +392,19 @@ async def main():
     async def run_focus_scoring(
         video_id: Annotated[str, Body()],
         focusing_task: Annotated[str, Body()],
-        focusing_description: Annotated[str, Body()],
-        db: Session=Depends(get_db),
+        focusing_description: Annotated[str, Body()]
     ) -> Dict[str, Any]:
         try:
             response = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
             print(f"Score for focus video <{video_id}>: {response.combined_score}")
             minimum_score = 0.1
-            if response.combined_score < minimum_score:
-                rejection_reason = f"This video got a score of {response.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%."
-                mark_video_rejected(db, video_id, rejection_reason=rejection_reason)
-            else:
-                set_focus_video_score(db, video_id, response)
+            # get the db after scoring the video so it's not open for too long
+            with get_db_context() as db:
+                if response.combined_score < minimum_score:
+                    rejection_reason = f"This video got a score of {response.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%."
+                    mark_video_rejected(db, video_id, rejection_reason=rejection_reason)
+                else:
+                    set_focus_video_score(db, video_id, response)
             return { "success": True }
         except Exception as e:
             error_string = f"{str(e)}\n{traceback.format_exc()}"
@@ -417,11 +418,10 @@ async def main():
         video_id: Annotated[str, Body()] = None,
         focusing_task: Annotated[str, Body()] = None,
         focusing_description: Annotated[str, Body()] = None,
-        db: Session=Depends(get_db),
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
         # await run_focus_scoring(video_id, focusing_task, focusing_description, db)
-        background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description, db)
+        background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description)
         return { "success": True }
 
     @app.get("/api/focus/get_list")
