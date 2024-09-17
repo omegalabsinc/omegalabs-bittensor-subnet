@@ -179,7 +179,7 @@ Yes, we acknowledge that. Even while Smart Contracts are not available on Bitten
 
 All in all, this is an MVP release and we wanted to just ship something out to get the ball rolling. We are 100% committed to decentralizing the system as much as possible urgently, but also want to emphasize the novel nature of what we're implementing here and appreciate everyone's patience as we make the system more robust and decentralized.
 
-Learn more about the Ω Focus app in [this FAQ](https://focus-faq.omega.inc).
+Learn more about the Ω Focus app in [this FAQ](https://focus.omega.inc).
 
 ## Roadmap
 
