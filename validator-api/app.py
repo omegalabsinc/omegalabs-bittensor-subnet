@@ -409,7 +409,8 @@ async def main():
         except Exception as e:
             error_string = f"{str(e)}\n{traceback.format_exc()}"
             print(f"Error scoring focus video <{video_id}>: {error_string}")
-            mark_video_rejected(db, video_id, rejection_reason=error_string)
+            with get_db_context() as db:
+                mark_video_rejected(db, video_id, rejection_reason=error_string)
             return { "success": False, "error": error_string }
 
     @app.post("/api/focus/get_focus_score")
