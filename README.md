@@ -63,7 +63,7 @@ By harnessing the power of the Bittensor network and a global community of miner
   - If a miner submits too frequently, the validator may increase the file threshold accumulation limit.
   - If the API needs to shut down for any reason, it will submit the remaining validated entries.
 
-## SN24: Focus Videos Submission
+## SN24: Ω Focus Videos Submission
 
 We're excited to introduce a new feature in the SN24 ecosystem: the Focus Video submission and reward process. This system creates a robust marketplace for task-completion videos, leveraging the strengths of the Bittensor network. Here's how it works:
 
