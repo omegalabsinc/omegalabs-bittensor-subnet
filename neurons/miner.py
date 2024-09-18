@@ -32,7 +32,7 @@ import omega
 
 from omega.base.miner import BaseMinerNeuron
 from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
-from omega.miner_utils import search_and_embed_youtube_videos, embed_focus_videos
+from omega.miner_utils import search_and_embed_youtube_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
 from omega.constants import VALIDATOR_TIMEOUT
@@ -62,13 +62,6 @@ class Miner(BaseMinerNeuron):
         self.imagebind_v1 = ImageBind(v2=False)
         self.imagebind_v2 = ImageBind(v2=True)
 
-        self.focus_videos_api = (
-            #"https://dev-focus-api.omegatron.ai/"
-            "http://localhost:8000/"
-            if self.config.subtensor.network == "test" else
-            "https://focus-api.omegatron.ai/"
-        )
-
     async def forward(
         self, synapse: omega.protocol.Videos
     ) -> omega.protocol.Videos:
@@ -94,24 +87,6 @@ class Miner(BaseMinerNeuron):
             bt.logging.info(f"–––––– SCRAPING SUCCEEDED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
         else:
             bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
-
-        synapse.focus_metadata = []
-        if self.config.neuron.focus_videos:
-            # Retrieve marketplace video list
-            response = requests.post(url=f'{self.focus_videos_api}/market/purchased_list',
-                                    data=json.dumps(self.wallet.hotkey.ss58_address))
-            
-            video_data = response.json()
-            if response.status_code == 200:
-                bt.logging.warning(f'{len(video_data)} - {video_data}')
-                if len(video_data) > 0:
-                    bt.logging.info(f"Purchased FocusVideo list: {video_data} sending: {video_data[:synapse.num_focus_videos]}")
-                    synapse.focus_metadata = embed_focus_videos(synapse.query, video_data[:synapse.num_focus_videos], self.imagebind_v1)
-                    bt.logging.info(f"focus metadata {synapse.focus_metadata}")
-                else:
-                    bt.logging.info(f"Failed to retrieve focus video list: No videos found.")
-            else:
-                bt.logging.info(f"Failed to retrieve market list: {response.status_code} - {response.reason}")
 
         return synapse
 
@@ -214,54 +189,10 @@ class Miner(BaseMinerNeuron):
         that says `save_state() not implemented`.
         """
         pass
-    
-    
-    def get_video_list(self):
-        response = requests.post(f"{self.focus_videos_api}/market/get_list")
-        if response.status_code == 200:
-            return response.json()
-        else:
-            bt.logging.warning(f"Fetching available video list failed: {response.status_code} - {response.reason}")
-    
-    def purchase_focus_video(self, video_id: str):
-        response = requests.post(f"{self.focus_videos_api}/market/purchase", data=json.dumps({
-            'video_id': video_id,
-            'miner_hotkey': self.wallet.hotkey.ss58_address
-        }))
-        res_data = response.json()
-        if response.status_code == 200 and res_data['status'] == 'success':
-            bt.logging.info(f'Purchased new video: <{res_data["address"]}>')
-            return res_data['address']
-        else:
-            bt.logging.warning(f'Purchasing failed. {response.status_code} - {response.reason}')
-            return None
-    
-    async def check_consume_and_commit(self):
-        if not self.config.neuron.focus_videos:
-            return
-        
-        try:
-            sub = bt.subtensor(config = self.config)
-            commitStr = sub.get_commitment(self.config.netuid, self.uid)
-            newIpfsUrlResponse = requests.post(url=f'{self.focus_videos_api}/ipfs_url/get',
-                                    data=json.dumps(self.wallet.hotkey.ss58_address))
-            newIpfsUrl = newIpfsUrlResponse.json().get('url')                    
-            if not commitStr == newIpfsUrl:
-                sub.commit(wallet=self.wallet, netuid=self.config.netuid, data=newIpfsUrl)
-                bt.logging.info(f"commited new url {newIpfsUrl}")
-        except Exception as e:
-            bt.logging.error(e)
 
 # This is the main function, which runs the miner.
 if __name__ == "__main__":
     with Miner() as miner:
-        last_action_time = time.time()
         while True:
             bt.logging.info("Miner running...", time.time())
             time.sleep(5)
-            
-            current_time = time.time()
-            if current_time - last_action_time >= 30:
-                asyncio.run(miner.check_consume_and_commit())
-                last_action_time = current_time
-            

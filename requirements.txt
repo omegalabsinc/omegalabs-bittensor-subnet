@@ -19,3 +19,4 @@ numpy==1.26.4
 python-dotenv==1.0.1
 google-generativeai
 boto3
+tabulate
