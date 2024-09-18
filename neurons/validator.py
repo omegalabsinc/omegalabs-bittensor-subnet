@@ -62,8 +62,8 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
 )
-from omega import video_utils
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
+from omega import video_utils, unstuff
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -549,7 +549,7 @@ class Validator(BaseValidatorNeuron):
             if videos.miner_imagebind_version is None:
                 bt.logging.info("miner imagebind_version is None, using original model")
             elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
-                bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
+                bt.logging.info(f"miner imagebind_version is {videos.miner_imagebind_version}, using original model")
             else:
                 bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
                 imagebind = self.imagebind_v2
@@ -639,7 +639,7 @@ class Validator(BaseValidatorNeuron):
             # Filter out "stuffed" descriptions.
             pre_filter_metadata_length = len(metadata)
             stuffed = [
-                is_stuffed(meta.description)
+                unstuff.is_stuffed(meta.description)
                 for meta in metadata
             ]
             if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
@@ -681,12 +681,14 @@ class Validator(BaseValidatorNeuron):
             for idx in range(len(description_relevance_scores)):
                 unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
                 if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+                    bt.logging.debug(f"Very few tokens, applying {1.0 - DESCRIPTION_LENGTH_WEIGHT} penalty.")
                     description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
                     length_scalers.append(0)
                     continue
                 length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
                 length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
                 length_scalers.append(length_scaler)
+                bt.logging.debug(f"Description length scaling factor = {length_scaler}")
                 description_relevance_scores[idx] -= description_relevance_scores[idx] * DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
 
             # Aggregate scores
