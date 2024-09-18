@@ -80,6 +80,9 @@ class FocusVideoRecord(Base):
         Index('ix_focus_videos_task_id', 'task_id'),
     )
 
+    def get_duration(self) -> float:
+        return float(self.video_details.get("duration", 0.0))
+
 class FocusVideoBase(BaseModel):
     video_id: str
     task_id: str

@@ -60,7 +60,7 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        actual_reward_tao = await estimate_tao(video_record.video_score)
+        actual_reward_tao = await estimate_tao(video_record.video_score, video_record.get_duration())
         print(f"Expected reward TAO: {video_record.expected_reward_tao}, actual reward TAO: {actual_reward_tao}")
         if actual_reward_tao == 0:
             raise HTTPException(422, detail="Max reward TAO is 0")
