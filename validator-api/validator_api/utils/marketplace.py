@@ -2,7 +2,7 @@ import time
 from typing import Tuple
 import requests
 import bittensor as bt
-from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, MAX_FOCUS_POINTS, MAX_FOCUS_POINTS_PER_HOUR
+from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, MAX_FOCUS_POINTS, MAX_FOCUS_POINTS_PER_HOUR, FIXED_TAO_USD_ESTIMATE
 from validator_api.utils import run_with_retries, run_async
 
 async def get_subtensor_and_metagraph() -> Tuple[bt.subtensor, bt.metagraph]:
@@ -73,9 +73,9 @@ async def get_max_focus_tao() -> float:
     return max_focus_tao
 
 async def get_dollars_available_today() -> float:
+    """ Use a fixed TAO - USD estimate to keep consistent for the sake of miner rewards """
     max_focus_tao = await get_max_focus_tao()
-    tao_price = await get_tao_price()
-    return max_focus_tao * tao_price
+    return max_focus_tao * FIXED_TAO_USD_ESTIMATE
 
 async def get_max_focus_points_available_today() -> float:
     # 1 point = 1 dollar
@@ -87,7 +87,7 @@ async def estimate_tao(productive_score: float, video_duration: float):
         max_focus_points_for_video = video_duration / 3600 * MAX_FOCUS_POINTS_PER_HOUR
         actual_focus_points_for_video = max_focus_points_for_video * float(productive_score)
         max_focus_points_available_today = await get_max_focus_points_available_today()
-        tao = actual_focus_points_for_video / max_focus_points_available_today * float(max_focus_tao)
+        tao = min(actual_focus_points_for_video / max_focus_points_available_today, 1.0) * float(max_focus_tao)
         return round(tao, 5)
     except Exception as e:
         print(e)
