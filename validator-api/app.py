@@ -75,8 +75,8 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-# imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
-imagebind_v1 = ImageBind(disable_lora=True)
+imagebind_v1 = ImageBind(v2=False)
+imagebind_v2 = ImageBind(v2=True)
 
 focus_scoring_service = FocusScoringService()
 
@@ -311,7 +311,7 @@ async def main():
         topic_query = upload_data.topic_query
 
         start_time = time.time()
-        video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query, imagebind_v1)
+        video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query)
         print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         
         if upload_data.miner_hotkey is not None:
@@ -547,6 +547,7 @@ async def main():
         
         start_time = time.time()
 
+        imagebind = imagebind_v1
         if not hasattr(videos, 'imagebind_version'):
             print("`videos` object does not have `imagebind_version` attribute, using original model")
         elif videos.imagebind_version is None:
@@ -555,17 +556,8 @@ async def main():
             print(f"imagebind_version is {videos.imagebind_version}, using original model")
         else:
             print(f"imagebind_version is {IMAGEBIND_VERSION}, using new model")
-        
-        '''
-        ## Commented segment to support Imagebind v1 and Imagebind v2
-        
-        # handle youtube video metadata
-        if videos.imagebind_version is not None and videos.imagebind_version == IMAGEBIND_VERSION:
-            youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v1)
-        else:
-            youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v2)
-        '''
-        youtube_rewards = await score.score_and_upload_videos(videos, imagebind_v1)
+            imagebind = imagebind_v2
+        youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
 
         if youtube_rewards is None:
             print("YouTube rewards are empty, returning None")
@@ -590,7 +582,7 @@ async def main():
         async def check_score(
             videos: Videos,
         ) -> dict:
-            detailed_score = await score.score_videos_for_testing(videos, imagebind_v1)
+            detailed_score = await score.score_videos_for_testing(videos, imagebind_v2)
             return detailed_score
 
     @app.get("/api/topic")

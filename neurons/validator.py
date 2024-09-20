@@ -60,11 +60,11 @@ from omega.constants import (
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
+    STUFFED_DESCRIPTION_PUNISHMENT,
     FOCUS_MIN_SCORE,
 )
-from omega import video_utils
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER, IMAGEBIND_VERSION
-import omega.imagebind_desc_mlp as imagebind_desc_mlp
+from omega import video_utils, unstuff
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -118,20 +118,19 @@ class Validator(BaseValidatorNeuron):
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
 
+        self.imagebind_v1 = None
+        self.imagebind_v2 = None
+        
         self.load_focus_rewards_start = dt.datetime.now()
         self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
         self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
-
-        # self.imagebind_v2 = None
-        self.imagebind_v1 = None ## Commented segment to support Imagebind v1 and Imagebind v2
 
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
                 bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
                 self.decentralization = True
-
-                # self.imagebind_v2 = ImageBind(disable_lora=False) ## Commented segment to support Imagebind v1 and Imagebind v2
-                self.imagebind_v1 = ImageBind(disable_lora=True) 
+                self.imagebind_v1 = ImageBind(v2=False)
+                self.imagebind_v2 = ImageBind(v2=True)
             else:
                 bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
                 self.decentralization = False
@@ -350,19 +349,18 @@ class Validator(BaseValidatorNeuron):
         if embeddings.description is not None:
             embeddings.description = embeddings.description[~is_too_similar]
         return embeddings
-    
-    def filter_embeddings_by_mlp_results(self, embeddings: Embeddings, description_mlp_results: List[int]) -> Embeddings:
-        """Filter the embeddings based on the description MLP results."""
-        valid_indices = [i for i, result in enumerate(description_mlp_results) if result > 1]
-        valid_indices = torch.tensor(valid_indices, dtype=torch.long)
-        if embeddings.video is not None:
-            embeddings.video = embeddings.video[valid_indices]
-        if embeddings.audio is not None:
-            embeddings.audio = embeddings.audio[valid_indices]
-        if embeddings.description is not None:
-            embeddings.description = embeddings.description[valid_indices]
-        return embeddings
 
+    def filter_stuffed_embeddings(self, embeddings: Embeddings, stuffed: List[Tuple[bool, float]]) -> Embeddings:
+        """Filter the embeddings based on whether they are too similar to the query."""
+        stuffed = torch.tensor([s for s, _ in stuffed])
+        if embeddings.video is not None:
+            embeddings.video = embeddings.video[~stuffed]
+        if embeddings.audio is not None:
+            embeddings.audio = embeddings.audio[~stuffed]
+        if embeddings.description is not None:
+            embeddings.description = embeddings.description[~stuffed]
+        return embeddings
+    
     async def deduplicate_videos(self, embeddings: Embeddings) -> Videos:
         # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
         video_tensor = embeddings.video
@@ -430,7 +428,7 @@ class Validator(BaseValidatorNeuron):
 
         return random_metadata, random_video
 
-    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata], imagebind) -> bool:
+    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata], imagebind: ImageBind) -> bool:
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
@@ -491,15 +489,14 @@ class Validator(BaseValidatorNeuron):
             if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
                 return FAKE_VIDEO_PUNISHMENT
             
-            '''
-            Commented segment to support Imagebind v1 and Imagebind v2
-            # if videos.miner_imagebind_version is None:
-            #     bt.logging.info("miner imagebind_version is None, using original model")
-            # elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
-            #     bt.logging.info(f"miner imagebind_version is {videos.vali_imagebind_version}, using original model")
-            # else:
-            #     bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
-            '''
+            imagebind = self.imagebind_v1
+            if videos.miner_imagebind_version is None:
+                bt.logging.info("miner imagebind_version is None, using original model")
+            elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+                bt.logging.info(f"miner imagebind_version is {videos.miner_imagebind_version}, using original model")
+            else:
+                bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
+                imagebind = self.imagebind_v2
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
@@ -516,54 +513,18 @@ class Validator(BaseValidatorNeuron):
 
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
-                '''
-                ## Commented segment to support Imagebind v1 and Imagebind v2
-                # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-                #     passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
-                # else:
-                #     passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v2)
-                '''
-                passed_check = await self.random_youtube_check(random_meta_and_vid, self.imagebind_v1)
+                passed_check = await self.random_youtube_check(random_meta_and_vid, imagebind)
 
                 # punish miner if not passing
                 if not passed_check:
                     return FAKE_VIDEO_PUNISHMENT
-                
-                '''
-                ## Commented segment to support Imagebind v1 and Imagebind v2
-                # create query embeddings for relevance scoring
-                # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-                #     query_emb = await self.imagebind_v1.embed_text_async([videos.query])
-                # else:
-                #     query_emb = await self.imagebind_v2.embed_text_async([videos.query])
-                '''
-                query_emb = await self.imagebind_v1.embed_text_async([videos.query])
+                query_emb = await imagebind.embed_text_async([videos.query])
 
-
-            
-            '''
-            ## Commented segment to support Imagebind v1 and Imagebind v2
-            # if videos.miner_imagebind_version is not None and videos.miner_imagebind_version == IMAGEBIND_VERSION:
-            #     # generate embeddings
-            #     embeddings = Embeddings(
-            #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
-            #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
-            #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
-            #     )
-            # else:
-            #     # generate embeddings
-            #     embeddings = Embeddings(
-            #         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v2.device),
-            #         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v2.device),
-            #         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v2.device),
-            #     )
-            '''
             embeddings = Embeddings(
-                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind_v1.device),
-                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind_v1.device),
-                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind_v1.device),
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(imagebind.device),
+                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(imagebind.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(imagebind.device),
             )
-
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
             metadata_is_similar = await self.deduplicate_videos(embeddings)
@@ -619,26 +580,26 @@ class Validator(BaseValidatorNeuron):
             if len(metadata) == 0:
                 return MIN_SCORE
 
+            # Filter out "stuffed" descriptions.
             pre_filter_metadata_length = len(metadata)
-            # Compute description scores using the imagebind_desc_mlp model
-            description_mlp_results = [imagebind_desc_mlp.get_desc_embedding_score(embedding) for embedding in embeddings.description]
-            bt.logging.debug(f"description_mlp_results: {description_mlp_results}")
-            # filter out metadata that have description scores of 1
-            metadata = [metadata for metadata, desc_mlp_result in zip(metadata, description_mlp_results) if desc_mlp_result > 1]
-            # filter out embeddings that have description scores of 1
-            embeddings = self.filter_embeddings_by_mlp_results(embeddings, description_mlp_results)
-            # filter out description scores that are 1
-            filtered_description_mlp_results = [desc_mlp_result for desc_mlp_result in description_mlp_results if desc_mlp_result > 1]
+            stuffed = [
+                unstuff.is_stuffed(meta.description)
+                for meta in metadata
+            ]
+            if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
+                bt.logging.warning("Stuffed description found with high confidence, penalizing the miner.")
+                return STUFFED_DESCRIPTION_PUNISHMENT
+            metadata = [
+                metadata[idx]
+                for idx in range(len(metadata))
+                if not stuffed[idx][0]
+            ]
             if len(metadata) < pre_filter_metadata_length:
-                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that had poor descriptions.")
-
-            # return minimum score if no unique videos were found
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions.")
             if len(metadata) == 0:
                 return MIN_SCORE
+            embeddings = self.filter_stuffed_embeddings(embeddings, stuffed)
 
-            # compute our final novelty score - 6/3/24: NO LONGER USING NOVELTY SCORE IN SCORING
-            #novelty_score = self.compute_final_novelty_score(true_novelty_scores)
-            
             # Compute relevance scores
             video_description_relevance_scores = F.cosine_similarity(
                 embeddings.video, embeddings.description
@@ -660,51 +621,36 @@ class Validator(BaseValidatorNeuron):
             ]
 
             # Scale description scores by number of unique tokens.
-            # for idx in range(len(description_relevance_scores)):
-            #     unique_token_count = len(set(TOKENIZER(metadata[idx].description)))
-            #     if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
-            #         description_relevance_scores[idx] = description_relevance_scores[idx] * (1.0 - DESCRIPTION_LENGTH_WEIGHT)
-            #         continue
-            #     length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
-            #     length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
-            #     description_relevance_scores[idx] = description_relevance_scores[idx] * length_scaler
-
-            description_mlp_scores = []
-            # Apply penalties and store the penalized scores
-            for desc_score, desc_mlp_score in zip(video_description_relevance_scores, filtered_description_mlp_results):
-                if desc_mlp_score == 4 or desc_mlp_score == 5:
-                    # score of 4 or 5 is "good", reward with 40% or 50% description relevance score boost, respectfully
-                    bt.logging.info("Good description detected, thank you honest miner.")
-                    rewarded_score = (desc_mlp_score * 0.1) * desc_score
-                    description_mlp_scores.append(rewarded_score)
-                elif desc_mlp_score == 2:
-                    # score of 2 is "poor", penalize with 50% description relevance score penalty
-                    bt.logging.info("Poor description detected, please do better.")
-                    description_mlp_scores.append(desc_score * -0.5)
-                elif desc_mlp_score == 1:
-                    # score of 1 is "bad", penalize full description relevance score penalty
-                    bt.logging.info("Bad description detected, omitting submission.")
-                else:
-                    # score of 3 is "OK", no reward or penalty
-                    bt.logging.info("This description is OK, but please improve.")
-                    description_mlp_scores.append(0)
+            length_scalers = []
+            for idx in range(len(description_relevance_scores)):
+                unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
+                if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+                    bt.logging.debug(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
+                    description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+                    length_scalers.append(0)
+                    continue
+                length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+                length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+                length_scalers.append(length_scaler)
+                bt.logging.debug(f"Description length scaling factor = {length_scaler}")
+                description_relevance_scores[idx] -= description_relevance_scores[idx] * DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
 
             # Aggregate scores
             score = (
-                ((sum(description_relevance_scores) + sum(description_mlp_scores)) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
+                (sum(description_relevance_scores) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
                 (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
             ) / 2 / videos.num_videos
-            
-            # Set final score, giving minimum if necessary
             score = max(score, MIN_SCORE)
 
             # Log all our scores
             bt.logging.info(f'''
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
-                description_relevance_scores: {description_relevance_scores},
-                query_relevance_scores: {query_relevance_scores},
-                description_mlp_scores: {description_mlp_scores},
-                score: {score}
+                video cosine sim: {video_description_relevance_scores},
+                audio cosine sim: {audio_description_relevance_scores},
+                description relevance scores: {description_relevance_scores},
+                query relevance scores: {query_relevance_scores},
+                length scalers: {length_scalers},
+                total score: {score}
             ''')
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics

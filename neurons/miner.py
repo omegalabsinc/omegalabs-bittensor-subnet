@@ -59,8 +59,8 @@ class Miner(BaseMinerNeuron):
         else:
             raise ValueError("Invalid query augment")
         
-        self.imagebind_v1 = ImageBind(disable_lora=True)
-        # self.imagebind_v2 = ImageBind(disable_lora=False)
+        self.imagebind_v1 = ImageBind(v2=False)
+        self.imagebind_v2 = ImageBind(v2=True)
 
     async def forward(
         self, synapse: omega.protocol.Videos
@@ -72,8 +72,7 @@ class Miner(BaseMinerNeuron):
         start = time.time()
         if synapse.vali_imagebind_version is not None and synapse.vali_imagebind_version == IMAGEBIND_VERSION:
             synapse.video_metadata = search_and_embed_youtube_videos(
-                # self.augment(synapse.query), synapse.num_videos, self.imagebind_v2
-                self.augment(synapse.query), synapse.num_videos, self.imagebind_v1
+                self.augment(synapse.query), synapse.num_videos, self.imagebind_v2
             )
             synapse.miner_imagebind_version = IMAGEBIND_VERSION
         else:

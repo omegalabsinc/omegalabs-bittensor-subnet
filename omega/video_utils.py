@@ -145,16 +145,16 @@ def download_youtube_video(
         # Quick check to see if miner passed an "unplayable" (sign-in required, paid video, etc.).
         fake_video = False
         try:
-            result = requests.get(video_url)
+            result = requests.get(video_url, proxies={"https": proxy})
             json_match = re.search(r"ytInitialPlayerResponse\s*=\s*(\{(?:.*?)\})\s*;\s*<", result.text)
             if json_match:
                 player_info = json.loads(json_match.group(1))
                 status = player_info.get('playabilityStatus', {}).get('status', 'ok')
-                # unacceptable_statuses = ('UNPLAYABLE', 'LOGIN_REQUIRED')
-                unacceptable_statuses = ('UNPLAYABLE', )
+                unacceptable_statuses = ('UNPLAYABLE', 'LOGIN_REQUIRED')
                 if status in unacceptable_statuses or (status == 'ERROR' and player_info['playabilityStatus'].get('reason', '').lower() == 'video unavailable'):
-                    fake_video = True
-                    print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
+                    if "sign in to confirm you’re not a bot" not in result.text.lower():
+                        fake_video = True
+                        print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
         except Exception as fake_check_exc:
             print(f"Error sanity checking playability: {fake_check_exc}")
         if fake_video:
