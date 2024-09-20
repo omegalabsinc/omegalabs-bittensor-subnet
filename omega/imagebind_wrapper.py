@@ -12,7 +12,7 @@ import torch
 
 from omega import video_utils
 
-IMAGEBIND_VERSION = "2.0"
+IMAGEBIND_VERSION = "2.0.1"
 BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
 V2_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".checkpoints", "videobind.pth")
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
