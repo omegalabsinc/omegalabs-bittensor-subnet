@@ -625,7 +625,7 @@ class Validator(BaseValidatorNeuron):
             for idx in range(len(description_relevance_scores)):
                 unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
                 if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
-                    bt.logging.debug(f"Very few tokens, applying {1.0 - DESCRIPTION_LENGTH_WEIGHT} penalty.")
+                    bt.logging.debug(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
                     description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
                     length_scalers.append(0)
                     continue

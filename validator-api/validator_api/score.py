@@ -357,7 +357,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     for idx in range(len(description_relevance_scores)):
         unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
         if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
-            print(f"Very few tokens, applying {1.0 - DESCRIPTION_LENGTH_WEIGHT} penalty.")
+            print(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
             description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
             length_scalers.append(0)
             continue
