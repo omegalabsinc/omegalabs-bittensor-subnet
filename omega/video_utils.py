@@ -152,8 +152,9 @@ def download_youtube_video(
                 status = player_info.get('playabilityStatus', {}).get('status', 'ok')
                 unacceptable_statuses = ('UNPLAYABLE',)
                 if status in unacceptable_statuses or (status == 'ERROR' and player_info['playabilityStatus'].get('reason', '').lower() == 'video unavailable'):
-                    fake_video = True
-                    print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
+                    if "sign in to confirm you’re not a bot" not in result.text.lower():
+                        fake_video = True
+                        print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
         except Exception as fake_check_exc:
             print(f"Error sanity checking playability: {fake_check_exc}")
         if fake_video:
