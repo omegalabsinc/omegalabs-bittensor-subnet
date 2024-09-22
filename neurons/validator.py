@@ -222,7 +222,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=self.num_videos, vali_imagebind_version=IMAGEBIND_VERSION)
+        input_synapse = Videos(query=query, num_videos=self.num_videos, vali_imagebind_version=None)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
         responses = await self.dendrite(
             # Send the query to selected miner axons in the network.
