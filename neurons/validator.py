@@ -490,13 +490,14 @@ class Validator(BaseValidatorNeuron):
                 return FAKE_VIDEO_PUNISHMENT
             
             imagebind = self.imagebind_v1
-            if videos.miner_imagebind_version is None:
-                bt.logging.info("miner imagebind_version is None, using original model")
-            elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
-                bt.logging.info(f"miner imagebind_version is {videos.miner_imagebind_version}, using original model")
-            else:
-                bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
-                imagebind = self.imagebind_v2
+            # XXX - Force v1 while v2 is being fixed.
+            #if videos.miner_imagebind_version is None:
+            #    bt.logging.info("miner imagebind_version is None, using original model")
+            #elif videos.miner_imagebind_version != IMAGEBIND_VERSION:
+            #    bt.logging.info(f"miner imagebind_version is {videos.miner_imagebind_version}, using original model")
+            #else:
+            #    bt.logging.info(f"miner imagebind_version is {IMAGEBIND_VERSION}, using new model")
+            #    imagebind = self.imagebind_v2
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[:input_synapse.num_videos]
