@@ -355,17 +355,19 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     # Scale description scores by number of unique tokens.
     length_scalers = []
     for idx in range(len(description_relevance_scores)):
-        unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
-        if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
-            print(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
-            description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
-            length_scalers.append(0)
-            continue
-        length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
-        length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
-        length_scalers.append(length_scaler)
-        print(f"Description length scaling factor = {length_scaler}")
-        description_relevance_scores[idx] -= description_relevance_scores[idx] * DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
+        # XXX - Disabled for now while v2 is being fixed.
+        length_scalers.append(1.0)
+        #unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
+        #if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
+        #    print(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
+        #    description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
+        #    length_scalers.append(0)
+        #    continue
+        #length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+        #length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+        #length_scalers.append(length_scaler)
+        #print(f"Description length scaling factor = {length_scaler}")
+        #description_relevance_scores[idx] -= description_relevance_scores[idx] * DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
 
     # Aggregate scores
     score = (
