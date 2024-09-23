@@ -26,7 +26,7 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
 )
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER, IMAGEBIND_VERSION
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
 
@@ -355,7 +355,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     # Scale description scores by number of unique tokens.
     length_scalers = []
     for idx in range(len(description_relevance_scores)):
-        unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
+        unique_token_count = len(set(LENGTH_TOKENIZER(metadata[idx].description).nonzero()))
         if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
             print(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
             description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)

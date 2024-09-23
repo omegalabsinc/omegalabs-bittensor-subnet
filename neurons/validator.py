@@ -64,7 +64,7 @@ from omega.constants import (
     FOCUS_MIN_SCORE,
 )
 from omega import video_utils, unstuff
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER, IMAGEBIND_VERSION
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -130,7 +130,7 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
                 self.decentralization = True
                 self.imagebind_v1 = ImageBind(v2=False)
-                self.imagebind_v2 = ImageBind(v2=True)
+                self.imagebind_v2 = ImageBind(v2=True, imagebind=self.imagebind_v1.imagebind)
             else:
                 bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
                 self.decentralization = False
@@ -623,7 +623,7 @@ class Validator(BaseValidatorNeuron):
             # Scale description scores by number of unique tokens.
             length_scalers = []
             for idx in range(len(description_relevance_scores)):
-                unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
+                unique_token_count = len(set(LENGTH_TOKENIZER(metadata[idx].description).nonzero()))
                 if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
                     bt.logging.debug(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
                     description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)

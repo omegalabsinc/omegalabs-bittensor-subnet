@@ -60,7 +60,7 @@ class Miner(BaseMinerNeuron):
             raise ValueError("Invalid query augment")
         
         self.imagebind_v1 = ImageBind(v2=False)
-        self.imagebind_v2 = ImageBind(v2=True)
+        self.imagebind_v2 = ImageBind(v2=True, imagebind=self.imagebind_v1.imagebind)
 
     async def forward(
         self, synapse: omega.protocol.Videos
