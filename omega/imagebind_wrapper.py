@@ -16,7 +16,7 @@ from omega import video_utils
 BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
 LENGTH_TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH, context_length=1024)
-TOKEN_CHUNK_SIZE = 75
+TOKEN_CHUNK_SIZE = 74
 
 class Embeddings(BaseModel):
     class Config:
@@ -70,11 +70,14 @@ def split_text_by_token_limit(text, tokenizer, max_tokens=TOKEN_CHUNK_SIZE):
 
     def split_by_tokens(text):
         tokens = tokenizer(text)
+        tokens = tokens[tokens != 0][1:-1].tolist()
+        chunks = np.array_split(all_tokens, int(len(all_tokens) / max_tokens) or 1)
         segments = []
-        for i in range(0, len(tokens), max_tokens):
-            segment_tokens = tokens[i:i + max_tokens]
-            segment_text = tokenizer.decode(segment_tokens)
-            segments.append(segment_text)
+        for segment_tokens in chunks:
+            try:
+                segments.append(tokenizer.decode(segment_tokens))
+            except:
+                ...
         return segments
 
     return recursive_split(text, ['\n', '.', '!', '?', ',', ' '])
