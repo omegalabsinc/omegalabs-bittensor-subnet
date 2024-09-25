@@ -739,7 +739,21 @@ async def main():
             return data        
         except mysql.connector.Error as err:
             raise HTTPException(status_code=500, detail=f"Error fetching leaderboard miner data from MySQL database: {err}")
-
+        
+    @app.get("/api/leaderboard-focus-data")
+    async def get_leaderboard_focus_data():
+        try:
+            connection = connect_to_db()
+            query = "SELECT * FROM focus_kpi_snapshots ORDER BY snapshot_date ASC"
+            cursor = connection.cursor(dictionary=True)
+            cursor.execute(query)
+            data = cursor.fetchall()
+            
+            cursor.close()
+            connection.close()
+            return data        
+        except mysql.connector.Error as err:
+            raise HTTPException(status_code=500, detail=f"Error fetching focus kpi data from MySQL database: {err}")
     ################ END LEADERBOARD ################
 
     ################ START DASHBOARD ################

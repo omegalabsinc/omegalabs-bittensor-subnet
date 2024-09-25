@@ -337,6 +337,13 @@
             </svg>
         </div>
         <h1>OMEGA Leaderboard</h1>
+        <div v-if="focusVideoData" class="chart-card">
+            <h2 class="chart-title">Focus Video Metadata Over Time</h2>
+            <div class="chart-container">
+                <canvas ref="focusVideoChart"></canvas>
+            </div>
+        </div>
+
         <div v-if="datasetSizeData" class="chart-card">
             <h2 class="chart-title">OMEGA Multimodal Dataset Size Over Time</h2>
             <div class="chart-container">
@@ -398,7 +405,9 @@
                 sortOrder: 1,
                 datasetSizeData: null,
                 chartCreated: false,
-                minerCharts: {}
+                minerCharts: {},
+                focusVideoData: null,
+                focusVideoChartCreated: false,
             },
             computed: {
                 filteredMiners() {
@@ -501,10 +510,9 @@
                                     x: {
                                         type: 'time',
                                         time: {
-                                            parser: 'yyyy-MM-dd',
-                                            unit: 'day',
+                                            unit: 'month',
                                             displayFormats: {
-                                                day: 'MMM d, yyyy'
+                                                day: 'MMM yyyy'
                                             }
                                         },
                                         title: {
@@ -521,7 +529,10 @@
                                             font: {
                                                 size: 12
                                             },
-                                            source: 'data'
+                                            source: 'data',
+                                            maxRotation: 0,
+                                            autoSkip: true,
+                                            maxTicksLimit: 12
                                         }
                                     },
                                     y: {
@@ -802,11 +813,205 @@
                             }
                         }
                     });
-                }
+
+                },
+                fetchFocusVideoData() {
+                    console.log('Fetching focus video data...');
+                    axios.get('/api/leaderboard-focus-data')
+                        .then(response => {
+                            console.log('Focus video data received:', response.data);
+                            const data = response.data;
+                            
+                            // Process the data
+                            this.focusVideoData = {
+                                labels: data.map(item => item.snapshot_date),
+                                datasets: [
+                                    {
+                                        label: 'Total Wallets',
+                                        borderColor: '#98C379', // Green
+                                        backgroundColor: '#98C379',
+                                        data: data.map(item => ({
+                                            x: item.snapshot_date,
+                                            y: item.total_wallets
+                                        })),
+                                        yAxisID: 'y'
+                                    },
+                                    {
+                                        label: 'Total Videos Purchased',
+                                        borderColor: '#61AFEF', // Blue
+                                        backgroundColor: '#61AFEF',
+                                        data: data.map(item => ({
+                                            x: item.snapshot_date,
+                                            y: item.total_videos_purchased
+                                        })),
+                                        yAxisID: 'y'
+                                    },
+                                    {
+                                        label: 'Total TAO Balance',
+                                        borderColor: '#C678DD', // Purple
+                                        backgroundColor: '#C678DD',
+                                        data: data.map(item => ({
+                                            x: item.snapshot_date,
+                                            y: item.total_tao_balance
+                                        })),
+                                        yAxisID: 'y1'
+                                    },
+                                    {
+                                        label: 'Total TAO Revenue',
+                                        borderColor: '#E06C75', // Red
+                                        backgroundColor: '#E06C75',
+                                        data: data.map(item => ({
+                                            x: item.snapshot_date,
+                                            y: item.total_tao_revenue
+                                        })),
+                                        yAxisID: 'y1'
+                                    }
+                                ]
+                            };
+                            
+                            this.$nextTick(() => {
+                                this.createOrUpdateFocusVideoChart();
+                            });
+                        })
+                        .catch(error => {
+                            console.error('There was an error fetching the focus video data:', error);
+                        });
+                },
+                createOrUpdateFocusVideoChart() {
+                    const canvas = this.$refs.focusVideoChart;
+                    if (canvas && this.focusVideoData && !this.focusVideoChartCreated) {
+                        const ctx = canvas.getContext('2d');
+
+                        this.focusVideoChart = new Chart(ctx, {
+                            type: 'line',
+                            data: this.focusVideoData,
+                            options: {
+                                responsive: true,
+                                maintainAspectRatio: false,
+                                scales: {
+                                    x: {
+                                        type: 'time',
+                                        time: {
+                                            unit: 'month',
+                                            displayFormats: {
+                                                month: 'MMM yyyy'
+                                            }
+                                        },
+                                        title: {
+                                            display: true,
+                                            text: 'DATE (UTC)',
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 14,
+                                                weight: 'bold'
+                                            }
+                                        },
+                                        ticks: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            },
+                                            maxRotation: 0,
+                                            autoSkip: true,
+                                            maxTicksLimit: 12
+                                        }
+                                    },
+                                    y: {
+                                        type: 'linear',
+                                        display: true,
+                                        position: 'left',
+                                        title: {
+                                            display: true,
+                                            text: 'COUNT',
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 14,
+                                                weight: 'bold'
+                                            }
+                                        },
+                                        ticks: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            },
+                                            callback: function(value) {
+                                                return value.toLocaleString();
+                                            }
+                                        }
+                                    },
+                                    y1: {
+                                        type: 'linear',
+                                        display: true,
+                                        position: 'right',
+                                        title: {
+                                            display: true,
+                                            text: 'TAO',
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 14,
+                                                weight: 'bold'
+                                            }
+                                        },
+                                        ticks: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            },
+                                            callback: function(value) {
+                                                return value.toFixed(6);
+                                            }
+                                        },
+                                        grid: {
+                                            drawOnChartArea: false
+                                        }
+                                    },
+                                },
+                                plugins: {
+                                    legend: {
+                                        labels: {
+                                            color: '#E0E0E0',
+                                            font: {
+                                                size: 12
+                                            }
+                                        }
+                                    },
+                                    tooltip: {
+                                        callbacks: {
+                                            title: function(tooltipItems) {
+                                                return tooltipItems[0].label + ' (UTC)';
+                                            },
+                                            label: function(context) {
+                                                let label = context.dataset.label || '';
+                                                if (label) {
+                                                    label += ': ';
+                                                }
+                                                if (context.parsed.y !== null) {
+                                                    if (label.includes('TAO')) {
+                                                        label += context.parsed.y.toFixed(6);
+                                                    } else {
+                                                        label += context.parsed.y.toLocaleString();
+                                                    }
+                                                }
+                                                return label;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        });
+                        this.focusVideoChartCreated = true;
+                    } else if (this.focusVideoChart && this.focusVideoData) {
+                        this.focusVideoChart.data = this.focusVideoData;
+                        this.focusVideoChart.update();
+                    } else {
+                        console.log('Unable to create or update focus video chart. Canvas:', !!canvas, 'Data:', !!this.focusVideoData, 'Chart created:', this.focusVideoChartCreated);
+                    }
+                },
             },
             mounted() {
                 this.fetchData();
                 this.fetchDatasetSizeData();
+                this.fetchFocusVideoData();
             }
         });
     </script>
