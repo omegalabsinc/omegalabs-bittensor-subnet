@@ -322,3 +322,18 @@ def mark_video_rejected(db: Session, video_id: str, rejection_reason: str):
     video_record.rejection_reason = rejection_reason
     db.add(video_record)
     db.commit()
+
+def mark_video_submitted(db: Session, video_id: str):
+    # Mark video as "SUBMITTED" if in the "PURCHASE_PENDING" state.
+    video_record = db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id,
+        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
+        FocusVideoRecord.deleted_at.is_(None)
+    ).first()
+    if video_record is None:
+        raise HTTPException(404, detail="Focus video not found or not in the correct state: PURCHASE_PENDING")
+
+    video_record.processing_state = FocusVideoStateInternal.SUBMITTED
+    video_record.updated_at = datetime.utcnow()
+    db.add(video_record)
+    db.commit()

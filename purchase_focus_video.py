@@ -84,7 +84,27 @@ GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
 
-subtensor = bt.subtensor(network=SUBTENSOR_NETWORK)
+#subtensor = bt.subtensor(network=SUBTENSOR_NETWORK)
+
+def initialize_subtensor():
+    global subtensor
+    try:
+        subtensor = bt.subtensor(network=SUBTENSOR_NETWORK)
+        print(f"{GREEN}Subtensor initialized successfully.{RESET}")
+    except Exception as e:
+        print(f"{RED}Error initializing subtensor: {str(e)}{RESET}")
+        raise
+
+def get_subtensor():
+    global subtensor
+    try:
+        # Try to use the existing subtensor
+        subtensor.get_block()
+    except Exception as e:
+        if "EOF occurred in violation of protocol" in str(e) or not subtensor:
+            print(f"{RED}Subtensor connection error detected. Re-initializing subtensor.{RESET}")
+            initialize_subtensor()
+    return subtensor
 
 def list_videos():
     videos_response = requests.get(
@@ -129,15 +149,24 @@ def display_videos(videos_data):
     
     print(table)
 
-def purchase_video(video_id=None):
+def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_path=None):
     if not video_id:
         video_id = input(f"{CYAN}Enter focus video id: {RESET}")
 
-    name = input(f"{CYAN}Enter wallet name (default: Coldkey): {RESET}") or "Coldkey"
-    hotkey = input(f"{CYAN}Enter wallet hotkey name (default: Hotkey): {RESET}") or "Hotkey"
-    path = input(f"{CYAN}Enter wallet path (default: ~/.bittensor/wallets/): {RESET}") or "~/.bittensor/wallets/"
-
-    wallet = btcli_wallet(name=name, hotkey=hotkey, path=path)
+    if wallet_name is not None:
+        name = wallet_name
+    else:
+        name = input(f"{CYAN}Enter wallet name (default: Coldkey): {RESET}") or "Coldkey"
+    if wallet_hotkey is not None:
+        hotkey_name = wallet_hotkey
+    else:
+        hotkey_name = input(f"{CYAN}Enter wallet hotkey name (default: Hotkey): {RESET}") or "Hotkey"
+    if wallet_path is not None:
+        path = wallet_path
+    else:
+        path = input(f"{CYAN}Enter wallet path (default: ~/.bittensor/wallets/): {RESET}") or "~/.bittensor/wallets/"
+    
+    wallet = btcli_wallet(name=name, hotkey=hotkey_name, path=path)
     try:
         hotkey = wallet.get_hotkey()
     except Exception as e:
@@ -163,98 +192,194 @@ def purchase_video(video_id=None):
         print(f"{RED}Error purchasing video {video_id}: {purchase_data['message']}{RESET}")
         return
     
-    transfer_address_to = purchase_data["address"]
-    transfer_amount = purchase_data["amount"]
+    try:
+        transfer_address_to = purchase_data["address"]
+        transfer_amount = purchase_data["amount"]
 
-    print(f"Initiating transfer of {transfer_amount} TAO for video {video_id}...")
-    
-    transfer_balance = bt.Balance.from_tao(transfer_amount)
-    
-    success, block_hash, err_msg = subtensor._do_transfer(
-        wallet,
-        transfer_address_to,
-        transfer_balance,
-        wait_for_finalization=True,
-        wait_for_inclusion=True,
+        print(f"Initiating transfer of {transfer_amount} TAO for video {video_id}...")
+        
+        transfer_balance = bt.Balance.from_tao(transfer_amount)
+
+        subtensor = get_subtensor()
+        
+        success, block_hash, err_msg = subtensor._do_transfer(
+            wallet,
+            transfer_address_to,
+            transfer_balance,
+            wait_for_finalization=True,
+            wait_for_inclusion=True,
+        )
+        if success:
+            print(f"{GREEN}Transfer finalized. Block Hash: {block_hash}{RESET}")
+            save_purchase_info(video_id, miner_hotkey, block_hash, "purchased", transfer_amount)
+            verify_result = verify_purchase(video_id, miner_hotkey, block_hash)
+            if not verify_result:
+                print(f"{RED}There was an error verifying your purchase after successfully transferring TAO. Please try the 'Verify Purchase' option immediately and contact an admin if you are unable to successfully verify.{RESET}")
+        else:
+            print(f"{RED}Failed to complete transfer for video {video_id}.{RESET}")
+            revert_pending_purchase(video_id)
+            repurchase_input(video_id, name, hotkey_name, path)
+
+    except Exception as e:
+        print(f"{RED}Error transferring TAO tokens: {str(e)}{RESET}")
+        if "EOF occurred in violation of protocol" in str(e):
+            print(f"{RED}Subtensor connection error detected. Re-initializing subtensor.{RESET}")
+            initialize_subtensor()
+        revert_pending_purchase(video_id)
+        repurchase_input(video_id, name, hotkey_name, path)
+
+def revert_pending_purchase(video_id):
+    print(f"Reverting Pending Purchasing of video {video_id}...")
+    revert_response = requests.post(
+        API_BASE + "/api/focus/revert-pending-purchase",
+        json={"video_id": video_id},
+        headers={"Content-Type": "application/json"},
+        timeout=60
     )
-    if success:
-        print(f"{GREEN}Transfer finalized. Block Hash: {block_hash}{RESET}")
-        save_purchase_info(video_id, block_hash, "purchased", transfer_amount)
-        verify_purchase(video_id, miner_hotkey, block_hash)
-    else:
-        print(f"{RED}Failed to complete transfer for video {video_id}.{RESET}")
+    if revert_response.status_code != 200:
+        print(f"{RED}Error reverting pending purchase of video {video_id}: {revert_response.status_code}{RESET}")
+        return
+    if revert_response.status_code == 200:
+        print(f"{GREEN}Pending purchase of video {video_id} reverted successfully.{RESET}")
+    return
 
-def verify_purchase(video_id, miner_hotkey, block_hash):
-    if block_hash:
-        print(f"Verifying purchase for video {video_id} on block hash {block_hash} ...")
+def repurchase_input(video_id, wallet_name=None, wallet_hotkey=None, wallet_path=None):
+    repurchase = input(f"{CYAN}Do you want to repurchase video {video_id}? (y/n): {RESET}").lower()
+    if repurchase == 'y':
+        purchase_video(video_id, wallet_name, wallet_hotkey, wallet_path)
+    elif repurchase != 'n':
+        print(f"{RED}Invalid input. Please enter 'y' or 'n'.{RESET}")
+        repurchase_input(video_id, wallet_name, wallet_hotkey, wallet_path)
 
-        retries = 3
-        for attempt in range(retries):
-            try:
-                verify_response = requests.post(
-                    API_BASE + "/api/focus/verify-purchase",
-                    json={"miner_hotkey": miner_hotkey, "video_id": video_id, "block_hash": block_hash},
-                    headers={"Content-Type": "application/json"},
-                    timeout=90
-                )
-                print(f"Purchase verification response for video {video_id}:", verify_response.text)
-                if verify_response.status_code == 200:
-                    print(f"{GREEN}Purchase verified successfully!{RESET}")
-                    save_purchase_info(video_id, block_hash, "verified")
-                    return True
-                
-                if attempt < retries - 1:
-                    print(f"{CYAN}Attempt #{attempt + 1} to verify purchase failed. Retrying in 2 seconds...{RESET}")
-                    time.sleep(2)
-            except Exception as e:
-                if attempt < retries - 1:
-                    print(f"{CYAN}Attempt #{attempt + 1} to verify purchase failed. Retrying in 2 seconds...{RESET}")
-                    print(f"{RED}Error: {str(e)}{RESET}")
-                    time.sleep(2)
-                else:
-                    print(f"{RED}All {retries} attempts failed. Unable to verify purchase.{RESET}")
-                    return False
-
-def display_saved_orders():
+def display_saved_orders(for_verification=False):
     purchases_file = os.path.expanduser("~/.omega/focus_videos.json")
     if not os.path.exists(purchases_file):
         print(f"{RED}No saved orders found.{RESET}")
-        return
+        return None
 
     with open(purchases_file, 'r') as f:
         purchases = json.load(f)
 
     if not purchases:
         print(f"{RED}No saved orders found.{RESET}")
-        return
+        return None
 
-    # Sort purchases by most recent first
-    # Assuming 'created_at' field exists, if not, we'll need to add it when saving purchase info
     purchases.sort(key=lambda x: x.get('created_at', ''), reverse=True)
 
     print(f"\n{CYAN}Saved Orders:{RESET}")
     
     table_data = []
-    for purchase in purchases:
+    for idx, purchase in enumerate(purchases, 1):
         created_at = purchase.get('created_at', 'N/A')
         if created_at != 'N/A':
             created_at = datetime.fromisoformat(created_at.replace('Z', '+00:00')).strftime("%Y-%m-%d %H:%M:%S")
         
         table_data.append([
+            idx,
             purchase['video_id'],
             purchase['state'],
             purchase.get('amount', 'N/A'),
-            f"{float(purchase['amount']) / 0.9:.5f}",
-            purchase['block_hash'],
+            f"{float(purchase.get('amount', 0)) / 0.9:.5f}",
+            purchase.get('miner_hotkey', 'N/A')[:5] + '...' + purchase.get('miner_hotkey', 'N/A')[-5:],
+            purchase['block_hash'][:5] + '...' + purchase['block_hash'][-5:],
             created_at
         ])
     
-    headers = ["Video ID", "Purchase State", "Cost (TAO)", "Estimated Reward (TAO)", "Block Hash", "Purchase Date"]
+    headers = ["#", "Video ID", "Purchase State", "Cost (TAO)", "Estimated Reward (TAO)", "Purchasing Hotkey", "Block Hash", "Purchase Date"]
     table = tabulate(table_data, headers=headers, tablefmt="pretty")
     
     print(table)
+    return purchases
 
-def save_purchase_info(video_id, block_hash, state, amount=None):
+def select_order_for_verification():
+    purchases = display_saved_orders()
+
+    while True:
+        if purchases:
+            print(f"*** NOTE: A purchase is finalized when the purchase state is 'verified'. ***")
+            choice = input(f"{CYAN}Enter the number of the order to verify, 'm' for manual input, or 'n' to cancel: {RESET}").lower()
+        else:
+            choice = 'm'
+
+        if choice == 'n':
+            return None, None, None
+        elif choice == 'm':
+            video_id = input(f"{CYAN}Enter video ID: {RESET}")
+            miner_hotkey = input(f"{CYAN}Enter miner hotkey: {RESET}")
+            block_hash = input(f"{CYAN}Enter block hash: {RESET}")
+            return video_id, miner_hotkey, block_hash
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(purchases):
+                selected = purchases[idx]
+                return selected['video_id'], selected.get('miner_hotkey', ''), selected['block_hash']
+            else:
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
+        else:
+            print(f"{RED}Invalid input. Please try again.{RESET}")
+
+def select_order_for_full_display(purchases):
+    while True:
+        choice = input(f"{CYAN}Enter the number of the order to see full details, or 'n' to return to menu: {RESET}").lower()
+        
+        if choice == 'n':
+            return
+        elif choice.isdigit():
+            idx = int(choice) - 1
+            if 0 <= idx < len(purchases):
+                selected = purchases[idx]
+                # Display full details
+                print(f"\n{CYAN}Order Details:{RESET}")
+                print(f"Video ID: {selected['video_id']}")
+                print(f"Purchase State: {selected['state']}")
+                print(f"Cost (TAO): {selected.get('amount', 'N/A')}")
+                print(f"Estimated Reward (TAO): {float(selected.get('amount', 0)) / 0.9:.5f}")
+                print(f"Purchasing Hotkey: {selected.get('miner_hotkey', 'N/A')}")
+                print(f"Block Hash: {selected['block_hash']}")
+                print(f"Purchase Date: {selected.get('created_at', 'N/A')}")
+                return
+            else:
+                print(f"{RED}Invalid selection. Please try again.{RESET}")
+        else:
+            print(f"{RED}Invalid input. Please try again.{RESET}")
+
+def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None):
+    if not all([video_id, miner_hotkey, block_hash]):
+        video_id, miner_hotkey, block_hash = select_order_for_verification()
+        if not all([video_id, miner_hotkey, block_hash]):
+            print(f"{CYAN}Verification cancelled.{RESET}")
+            return
+
+    print(f"Verifying purchase for video {video_id} on block hash {block_hash} ...")
+
+    retries = 3
+    for attempt in range(retries):
+        try:
+            verify_response = requests.post(
+                API_BASE + "/api/focus/verify-purchase",
+                json={"miner_hotkey": miner_hotkey, "video_id": video_id, "block_hash": block_hash},
+                headers={"Content-Type": "application/json"},
+                timeout=90
+            )
+            print(f"Purchase verification response for video {video_id}:", verify_response.text)
+            if verify_response.status_code == 200:
+                print(f"{GREEN}Purchase verified successfully!{RESET}")
+                save_purchase_info(video_id, miner_hotkey, block_hash, "verified")
+                return True
+            
+            if attempt < retries - 1:
+                print(f"{CYAN}Attempt #{attempt + 1} to verify purchase failed. Retrying in 2 seconds...{RESET}")
+                time.sleep(2)
+        except Exception as e:
+            if attempt < retries - 1:
+                print(f"{CYAN}Attempt #{attempt + 1} to verify purchase failed. Retrying in 2 seconds...{RESET}")
+                print(f"{RED}Error: {str(e)}{RESET}")
+                time.sleep(2)
+            else:
+                print(f"{RED}All {retries} attempts failed. Unable to verify purchase.{RESET}")
+                return False
+
+def save_purchase_info(video_id, hotkey, block_hash, state, amount=None):
     purchases_file = os.path.expanduser("~/.omega/focus_videos.json")
     os.makedirs(os.path.dirname(purchases_file), exist_ok=True)
     
@@ -267,6 +392,7 @@ def save_purchase_info(video_id, block_hash, state, amount=None):
     for purchase in purchases:
         if purchase['video_id'] == video_id:
             purchase['state'] = state
+            purchase['miner_hotkey'] = hotkey
             purchase['block_hash'] = block_hash
             if amount is not None:
                 purchase['amount'] = amount
@@ -275,6 +401,7 @@ def save_purchase_info(video_id, block_hash, state, amount=None):
         # If the video_id doesn't exist, create a new entry
         new_purchase = {
             "video_id": video_id,
+            "miner_hotkey": hotkey,
             "block_hash": block_hash,
             "state": state,
             "created_at": datetime.now().isoformat()  # Add creation timestamp
@@ -289,10 +416,11 @@ def save_purchase_info(video_id, block_hash, state, amount=None):
     print(f"{GREEN}Purchase information {'updated' if state == 'verified' else 'saved'} to {purchases_file}{RESET}")
 
 def main():
+    initialize_subtensor()
     while True:
         print(f"\n{CYAN}Welcome to the OMEGA Focus Videos Purchase System{RESET}")
-        print("1. View Focus Videos")
-        print("2. Purchase Focus Video")
+        print("1. View + Purchase Focus Videos")
+        print("2. Manually Purchase Focus Video")
         print("3. Verify Purchase")
         print("4. Display Order History")
         print("5. Exit")
@@ -315,12 +443,10 @@ def main():
         elif choice == '2':
             purchase_video()
         elif choice == '3':
-            video_id = input(f"{CYAN}Enter video ID: {RESET}")
-            miner_hotkey = input(f"{CYAN}Enter miner hotkey: {RESET}")
-            block_hash = input(f"{CYAN}Enter block hash: {RESET}")
-            verify_purchase(video_id, miner_hotkey, block_hash)
+            verify_purchase()
         elif choice == '4':
-            display_saved_orders()
+            purchases = display_saved_orders()
+            select_order_for_full_display(purchases)
         elif choice == '5':
             print(f"{GREEN}Thank you for using the OMEGA Focus Videos Purchase System. Goodbye!{RESET}")
             break

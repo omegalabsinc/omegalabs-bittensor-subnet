@@ -31,7 +31,7 @@ from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
-    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected
+    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected, mark_video_submitted
 )
 from validator_api.utils.marketplace import get_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
@@ -160,6 +160,9 @@ class FocusScoreResponse(BaseModel):
     video_id: str
     video_score: float
     video_details: dict
+
+class VideoPurchaseRevert(BaseModel):
+    video_id: str
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -460,6 +463,13 @@ async def main():
             }
         else:
             return availability
+        
+    @app.post("/api/focus/revert-pending-purchase")
+    async def revert_pending_purchase(
+        video: VideoPurchaseRevert,
+        db: Session=Depends(get_db),
+    ):
+        return mark_video_submitted(db, video.video_id)
         
     @app.post("/api/focus/verify-purchase")
     async def verify_purchase(
