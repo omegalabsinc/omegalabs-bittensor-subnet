@@ -84,8 +84,6 @@ GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
 
-#subtensor = bt.subtensor(network=SUBTENSOR_NETWORK)
-
 def initialize_subtensor():
     global subtensor
     try:
