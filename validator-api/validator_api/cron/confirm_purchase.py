@@ -115,7 +115,7 @@ async def confirm_transfer(
 
 
 DELAY_SECS = 30  # 30s
-RETRIES = 10  # 30s x 10 retries = 300s = 5 mins
+RETRIES = 6  # 30s x 10 retries = 180s = 3 mins
 
 async def confirm_video_purchased(
     video_id: str,
@@ -126,7 +126,7 @@ async def confirm_video_purchased(
     """
 
     current_time = datetime.utcnow()
-    print(f"BACKGROUND TASK | {current_time} | Checking if video_id <{video_id}> has been marked as purchased ...")
+    print(f"BACKGROUND TASK | {current_time} | Checking if video_id <{video_id}> has been marked as purchased or reverted back to SUBMITTED ...")
     try:
         for i in range(0, RETRIES):
             await asyncio.sleep(DELAY_SECS)
@@ -142,7 +142,10 @@ async def confirm_video_purchased(
                         return False
                     
                     if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
-                        print(f"Video <{video_id}> has been marked as PURCHASED.")
+                        print(f"Video <{video_id}> has been marked as PURCHASED. Stopping background task.")
+                        return True
+                    elif video is not None and video.processing_state == FocusVideoStateInternal.SUBMITTED:
+                        print(f"Video <{video_id}> has been marked as SUBMITTED. Stopping background task.")
                         return True
 
                     print(f"Video <{video_id}> has NOT been marked as PURCHASED. Retrying in {DELAY_SECS} seconds...")
