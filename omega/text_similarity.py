@@ -15,4 +15,4 @@ def get_text_similarity_score(text_0, text_1):
     embeddings = outputs.last_hidden_state[:, 0]
     embeddings = F.normalize(embeddings, p=2, dim=1)
     scores = (embeddings[:1] @ embeddings[1:].T) * 100
-    return min(1.0, scores.tolist()[0][0] / 100)
+    return min(1.0, (scores.tolist()[0][0] / 100) ** 2)
