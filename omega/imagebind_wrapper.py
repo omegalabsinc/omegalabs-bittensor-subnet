@@ -72,7 +72,7 @@ def split_text_by_token_limit(text, tokenizer, max_tokens=TOKEN_CHUNK_SIZE):
     def split_by_tokens(text):
         tokens = tokenizer(text)
         tokens = tokens[tokens != 0][1:-1].tolist()
-        chunks = np.array_split(all_tokens, int(len(all_tokens) / max_tokens) or 1)
+        chunks = np.array_split(tokens, int(len(tokens) / max_tokens) or 1)
         return [
             tokenizer.decode(segment_tokens)
             for segment_tokens in chunks
