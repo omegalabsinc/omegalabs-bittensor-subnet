@@ -65,6 +65,7 @@ from omega.constants import (
 )
 from omega import video_utils, unstuff
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER, IMAGEBIND_VERSION
+from omega.text_similarity import get_text_similarity_score
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -607,9 +608,21 @@ class Validator(BaseValidatorNeuron):
             audio_description_relevance_scores = F.cosine_similarity(
                 embeddings.audio, embeddings.description
             ).tolist()
-            query_relevance_scores = F.cosine_similarity(
+            video_query_relevance_scores = F.cosine_similarity(
                 embeddings.video, query_emb
             ).tolist()
+            audio_query_relevance_scores = F.cosine_similarity(
+                embeddings.audio, query_emb
+            ).tolist()
+
+            # Query relevance score now includes video cosim, audio cosim, and text cosim using higher quality text-only model.
+            query_relevance_scores = [
+                sum([
+                    video_query_relevance_scores[idx],
+                    audio_query_relevance_scores[idx],
+                    get_text_similarity_score(metadata[idx].description, videos.query),
+                ]) / 3
+            ]
 
             # Combine audio & visual description scores, weighted towards visual.
             description_relevance_scores = [
