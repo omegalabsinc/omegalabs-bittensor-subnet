@@ -71,13 +71,12 @@ def split_text_by_token_limit(text, tokenizer, max_tokens=TOKEN_CHUNK_SIZE):
 
     def split_by_tokens(text):
         tokens = tokenizer(text)
-        tokens = tokens[tokens != 0][1:-1]
-        segments = []
-        for i in range(0, len(tokens), max_tokens):
-            segment_tokens = tokens[i:i + max_tokens]
-            segment_text = tokenizer.decode(segment_tokens)
-            segments.append(segment_text)
-        return segments
+        tokens = tokens[tokens != 0][1:-1].tolist()
+        chunks = np.array_split(all_tokens, int(len(all_tokens) / max_tokens) or 1)
+        return [
+            tokenizer.decode(segment_tokens)
+            for segment_tokens in chunks
+        ]
 
     return recursive_split(text, ['\n', '.', '!', '?', ',', ' '])
 
