@@ -4,7 +4,7 @@ from omega.protocol import Videos
 import time
 import requests
 
-imagebind = ImageBind()
+imagebind = ImageBind(v2=True)
 start = time.time()
 query = "wine and winemaking"
 num_videos = 8

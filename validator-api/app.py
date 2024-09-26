@@ -76,7 +76,7 @@ focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
 imagebind_v1 = ImageBind(v2=False)
-imagebind_v2 = ImageBind(v2=True, imagebind=imagebind_v1.imagebind)
+imagebind_v2 = ImageBind(v2=True)
 
 focus_scoring_service = FocusScoringService()
 

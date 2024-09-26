@@ -131,7 +131,7 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.info(f"Running with decentralization enabled, thank you Bittensor Validator!")
                 self.decentralization = True
                 self.imagebind_v1 = ImageBind(v2=False)
-                self.imagebind_v2 = ImageBind(v2=True, imagebind=self.imagebind_v1.imagebind)
+                self.imagebind_v2 = ImageBind(v2=True)
             else:
                 bt.logging.warning(f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
                 self.decentralization = False
