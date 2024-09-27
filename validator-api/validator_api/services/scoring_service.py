@@ -23,7 +23,7 @@ from validator_api.utils import run_async, run_with_retries
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 
-TWENTY_FIVE_MINUTES = 1500  # in seconds
+FOURTY_FIVE_MINUTES = 2700  # in seconds
 
 def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
     return db.query(FocusVideoRecord).filter(
@@ -115,18 +115,21 @@ class FocusScoringService:
 
     async def make_gemini_request_with_retries(self, system_prompt: str, user_prompt: str, video_id: str, OutputClassSchema: BaseModel) -> str:
         num_retries = 3
-        for _ in range(num_retries):
+        for retry_idx in range(num_retries):
             try:
                 start = time.time()
                 output = await self.make_gemini_request(system_prompt, user_prompt, video_id, OutputClassSchema)
                 print(f"Got gemini output in {time.time() - start} seconds for {OutputClassSchema.__name__}")
                 return output
             except json.JSONDecodeError as e:
-                print(f"Error parsing JSON from Gemini response for {OutputClassSchema.__name__}, trying again: {e}")
-                time.sleep(1)
+                print(f"Error parsing JSON from Gemini response for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})")
+                await asyncio.sleep(1)
             except ValidationError as e:
-                print(f"Error turning parsed JSON into Pydantic object for {OutputClassSchema.__name__}, trying again: {e}")
-                time.sleep(1)
+                print(f"Error turning parsed JSON into Pydantic object for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})")
+                await asyncio.sleep(1)
+            except Exception as e:
+                print(f"Error making Gemini request for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})")
+                await asyncio.sleep(6)
         raise Exception(f"Failed to turn Gemini response into JSON and then into Pydantic object for {OutputClassSchema.__name__} after {num_retries} attempts")
 
     async def make_gemini_request(self, system_prompt: str, user_prompt: str, video_id: str, OutputClassSchema: BaseModel) -> GenerativeModel:
@@ -201,15 +204,15 @@ Additionally, here is a detailed description of the video content:
         with get_db_context() as db:
             video_metadata = get_video_metadata(db, video_id)
 
-        if video_metadata is None:
-            raise ValueError(f"Focus video not found: {video_id}")
+            if video_metadata is None:
+                raise ValueError(f"Focus video not found: {video_id}")
 
-        video_duration_seconds = video_metadata.video_details.get("duration")
-        if video_duration_seconds is None:
-            print(f"Video duration not found for video: {video_id}")
-            video_duration_seconds = 120
+            video_duration_seconds = video_metadata.video_details.get("duration")
+            if video_duration_seconds is None:
+                print(f"Video duration not found for video: {video_id}")
+                video_duration_seconds = 120
 
-        return video_duration_seconds
+            return video_duration_seconds
 
     async def get_video_embedding(self, video_id: str, video_duration_seconds: int) -> List[float]:
         async def _internal_async():
@@ -237,6 +240,19 @@ Additionally, here is a detailed description of the video content:
             return response.data[0].embedding
         return await run_with_retries(_internal_async)
 
+    async def embed_and_get_task_uniqueness_score(self, task_overview: str) -> float:
+        embedding = await self.get_text_embedding(task_overview)
+        return embedding, await self.get_task_uniqueness_score(embedding)
+
+    async def embed_and_get_video_uniqueness_score(self, video_id: str, video_duration_seconds: int):
+        embedding = await self.get_video_embedding(video_id, video_duration_seconds)
+        return embedding, await self.get_video_uniqueness_score(embedding)
+
+    async def get_detailed_video_description_embedding_score(self, video_id, task_overview):
+        detailed_video_description = await self.get_detailed_video_description(video_id, task_overview)
+        embedding = await self.get_text_embedding(detailed_video_description)
+        return detailed_video_description, embedding, await self.get_description_uniqueness_score(embedding)
+
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
         The combined_score is an average of five components:
@@ -253,46 +269,45 @@ Additionally, here is a detailed description of the video content:
         Final score: each component contributes equally to the final score.
         """
         video_duration_seconds = self.get_video_duration_seconds(video_id)
-        if video_duration_seconds > TWENTY_FIVE_MINUTES:
+        if video_duration_seconds > FOURTY_FIVE_MINUTES:
             raise ValueError(f"Video duration is too long: {video_duration_seconds} seconds")
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
-        task_overview_embedding = await self.get_text_embedding(task_overview)  # uses openai to get embedding
-
-        task_score_breakdown: TaskScoreBreakdown = await self.get_task_score_from_gemini(task_overview)  # uses gemini to score task
-        task_gemini_score = task_score_breakdown.final_score
-        task_uniqueness_score = await self.get_task_uniqueness_score(task_overview_embedding)  # uses pinecone embedding similarity
         
-        # NOTE: we could choose to not include the detailed breakdown in the completion score, in which cause we could run them in parallel and save some user latency
-        video_annotations = await asyncio.gather(
-            self.get_detailed_video_description(video_id, task_overview),  # uses gemini to get detailed description
-            self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None)  # use gemini to get breakdown of task score
+        # NOTE: we could choose to include the detailed breakdown in the completion score, which
+        # would likely make the completion score more accurate, but would add a lot of latency
+        (
+            (task_overview_embedding, task_uniqueness_score),
+            task_score_breakdown,
+            (video_description, video_description_embedding, video_description_uniqueness_score),
+            completion_score_breakdown,
+            (video_embedding, video_uniqueness_score),
+        ) = await asyncio.gather(
+            self.embed_and_get_task_uniqueness_score(task_overview),  # uses openai to get embedding
+            self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
+            self.get_detailed_video_description_embedding_score(video_id, task_overview),  # uses gemini to get detailed description
+            self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None),  # use gemini to get breakdown of task score
+            self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
-        detailed_video_description: DetailedVideoDescription = video_annotations[0]
-        completion_score_breakdown: CompletionScoreBreakdown = video_annotations[1]
+        task_gemini_score = task_score_breakdown.final_score
         completion_gemini_score = completion_score_breakdown.final_score
 
-        detailed_video_description_embedding = await self.get_text_embedding(detailed_video_description.model_dump_json())
-        description_uniqueness_score = await self.get_description_uniqueness_score(detailed_video_description_embedding)
-        video_embedding = await self.get_video_embedding(video_id, video_duration_seconds)
-        video_uniqueness_score = await self.get_video_uniqueness_score(video_embedding)
-
         # combined_score = (task_gemini_score + task_uniqueness_score + completion_gemini_score + description_uniqueness_score + video_uniqueness_score) / 5
-        combined_score = (task_gemini_score * task_uniqueness_score * completion_gemini_score * description_uniqueness_score * video_uniqueness_score) ** (1/5)
+        combined_score = (task_gemini_score * task_uniqueness_score * completion_gemini_score * video_description_uniqueness_score * video_uniqueness_score) ** (1/5)
 
         return VideoScore(
             task_score=task_gemini_score,
             task_uniqueness_score=task_uniqueness_score,
             video_completion_score=completion_gemini_score,
-            description_uniqueness_score=description_uniqueness_score,
+            description_uniqueness_score=video_description_uniqueness_score,
             video_uniqueness_score=video_uniqueness_score,
             combined_score=combined_score,
             task_overview=task_overview,
             task_overview_embedding=task_overview_embedding,
             task_score_breakdown=task_score_breakdown,
             completion_score_breakdown=completion_score_breakdown,
-            detailed_video_description=detailed_video_description,
-            detailed_video_description_embedding=detailed_video_description_embedding,
+            detailed_video_description=video_description,
+            detailed_video_description_embedding=video_description_embedding,
             video_embedding=video_embedding
         )
 

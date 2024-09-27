@@ -397,23 +397,39 @@ async def main():
         focusing_task: Annotated[str, Body()],
         focusing_description: Annotated[str, Body()]
     ) -> Dict[str, Any]:
+
+        score_details = None
+
         try:
-            response = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
-            print(f"Score for focus video <{video_id}>: {response.combined_score}")
+            score_details = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
+            print(f"Score for focus video <{video_id}>: {score_details.combined_score}")
             minimum_score = 0.1
             # get the db after scoring the video so it's not open for too long
             with get_db_context() as db:
-                if response.combined_score < minimum_score:
-                    rejection_reason = f"This video got a score of {response.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%."
-                    mark_video_rejected(db, video_id, rejection_reason=rejection_reason)
+                if score_details.combined_score < minimum_score:
+                    rejection_reason = f"""This video got a score of {score_details.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%.
+Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
+                    mark_video_rejected(
+                        db,
+                        video_id,
+                        rejection_reason,
+                        score_details=score_details,
+                    )
                 else:
-                    set_focus_video_score(db, video_id, response)
+                    set_focus_video_score(db, video_id, score_details)
             return { "success": True }
+
         except Exception as e:
             error_string = f"{str(e)}\n{traceback.format_exc()}"
             print(f"Error scoring focus video <{video_id}>: {error_string}")
             with get_db_context() as db:
-                mark_video_rejected(db, video_id, rejection_reason=error_string)
+                mark_video_rejected(
+                    db,
+                    video_id,
+                    "Error scoring video",
+                    score_details=score_details,
+                    exception_string=traceback.format_exc()
+                )
             return { "success": False, "error": error_string }
 
     @app.post("/api/focus/get_focus_score")
@@ -424,7 +440,6 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
-        # await run_focus_scoring(video_id, focusing_task, focusing_description, db)
         background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description)
         return { "success": True }
 

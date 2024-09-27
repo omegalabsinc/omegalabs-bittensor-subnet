@@ -65,7 +65,7 @@ class FocusVideoRecord(Base):
     processing_state = Column(Enum(FocusVideoStateInternal), nullable=False, default=FocusVideoStateInternal.PROCESSING)
     video_score = Column(Float, nullable=True)
     video_details = Column(MediumEncryptedJSON, nullable=True)
-    rejection_reason = Column(String(DB_STRING_LENGTH), nullable=True)
+    rejection_reason = Column(String(1000), nullable=True)
     expected_reward_tao = Column(Float, nullable=True)
     earned_reward_tao = Column(Float, nullable=True)
     miner_uid = Column(Integer, nullable=True)

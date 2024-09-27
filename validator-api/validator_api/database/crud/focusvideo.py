@@ -310,13 +310,33 @@ def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore)
     db.add(video_record)
     db.commit()
 
-def mark_video_rejected(db: Session, video_id: str, rejection_reason: str):
+def mark_video_rejected(
+    db: Session,
+    video_id: str,
+    rejection_reason: str,
+    score_details: Optional[VideoScore]=None,
+    exception_string: Optional[str]=None,
+):
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
     ).first()
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
+
+    video_details = { **video_record.video_details }
+
+    if score_details:
+        video_details = {
+            **video_details,
+            **json.loads(score_details.model_dump_json()),
+        }
+
+    if exception_string:
+        video_details["exception"] = exception_string
+
+    if score_details or exception_string:
+        video_record.video_details = video_details
 
     video_record.processing_state = FocusVideoStateInternal.REJECTED
     video_record.rejection_reason = rejection_reason
