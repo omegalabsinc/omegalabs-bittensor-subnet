@@ -3,6 +3,7 @@ from typing import List, Optional
 import json
 import random
 import time
+from math import prod
 
 from openai import AsyncClient
 from pydantic import BaseModel, Field, ValidationError
@@ -110,6 +111,8 @@ class FocusScoringService:
         self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-task-overview-index")
         self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-video-description-index")
         self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-completion-video-index")
+        # [gemini task score, task uniqueness score, completion score, description uniqueness score, video uniqueness score]
+        self.coefficients = [0.23, 0.16, 0.29, 0.14, 0.18]
 
     # Gemini API call related functions
 
@@ -250,7 +253,7 @@ Additionally, here is a detailed description of the video content:
 
     async def get_detailed_video_description_embedding_score(self, video_id, task_overview):
         detailed_video_description = await self.get_detailed_video_description(video_id, task_overview)
-        embedding = await self.get_text_embedding(detailed_video_description)
+        embedding = await self.get_text_embedding(detailed_video_description.model_dump_json())
         return detailed_video_description, embedding, await self.get_description_uniqueness_score(embedding)
 
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
@@ -292,8 +295,19 @@ Additionally, here is a detailed description of the video content:
         task_gemini_score = task_score_breakdown.final_score
         completion_gemini_score = completion_score_breakdown.final_score
 
-        # combined_score = (task_gemini_score + task_uniqueness_score + completion_gemini_score + description_uniqueness_score + video_uniqueness_score) / 5
-        combined_score = (task_gemini_score * task_uniqueness_score * completion_gemini_score * video_description_uniqueness_score * video_uniqueness_score) ** (1/5)
+        scores_array = [
+            task_gemini_score,
+            task_uniqueness_score,
+            completion_gemini_score,
+            video_description_uniqueness_score,
+            video_uniqueness_score,
+        ]
+
+        # geometric mean of the scores
+        combined_score = prod([
+            score ** coefficient
+            for score, coefficient in zip(scores_array, self.coefficients)
+        ]) ** (1 / len(self.coefficients))
 
         return VideoScore(
             task_score=task_gemini_score,
