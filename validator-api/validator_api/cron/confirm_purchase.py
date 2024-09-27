@@ -101,11 +101,11 @@ async def confirm_transfer(
                 if "Broken pipe" in str(e) or "EOF occurred in violation of protocol" in str(e) or "[SSL: BAD_LENGTH]" in str(e):
                     print(f"Connection to subtensor was lost. Re-initializing subtensor and retrying in {SUBTENSOR_DELAY_SECS} seconds...")
                     subtensor = bt.subtensor(network=config.NETWORK)
-                    time.sleep(SUBTENSOR_DELAY_SECS)
+                    await asyncio.sleep(SUBTENSOR_DELAY_SECS)
                 else:
                     print(f"Attempt #{attempt + 1} to sub.get_hotkey_owner() and check_payment() failed. Retrying in {SUBTENSOR_DELAY_SECS} seconds...")
                     print(f"Error: {str(e)}")
-                    time.sleep(SUBTENSOR_DELAY_SECS)
+                    await asyncio.sleep(SUBTENSOR_DELAY_SECS)
             else:
                 print(f"All {SUBTENSOR_RETRIES} attempts failed. Unable to retrieve miner coldkey and confirm payment.")
                 print(f"Final error: {str(e)}")
