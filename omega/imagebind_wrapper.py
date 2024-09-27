@@ -207,24 +207,33 @@ class ImageBind:
 
     @torch.no_grad()
     def embed_text(self, texts: List[str]) -> torch.Tensor:
-        return torch.stack([
-            self.generate_text_embeddings(text)
-            for text in texts
-        ])
+        return_value = None
+        for text in texts:
+            emb = self.generate_text_embeddings(text)
+            if not return_value:
+                return_value = emb
+            else:
+                return_value = torch.cat((return_value, emb))
+        return return_value
 
     @torch.no_grad()
     async def embed_async(self, descriptions: List[str], video_files: List[BinaryIO]) -> Embeddings:
-        inputs = self.get_inputs(descriptions, video_files)  # cannot be async
-        embeddings = await run_async(self.imagebind, inputs)
-        text_embeddings = torch.stack([
-            await run_async(self.generate_text_embeddings, text)
-            for text in descriptions
-        ])
-        return Embeddings(
-            video=embeddings[ModalityType.VISION],
-            audio=embeddings[ModalityType.AUDIO],
-            description=text_embeddings,
-        )
+        return_value = None
+        for idx in range(len(descriptions)):
+            inputs = self.get_inputs(video_files[idx])  # cannot be async
+            embeddings = await run_async(self.imagebind, inputs)
+            text_embeddings = await run_async(self.generate_text_embeddings, descriptions[idx])
+            if not return_value:
+                return_value = Embeddings(
+                    video=embeddings[ModalityType.VISION],
+                    audio=embeddings[ModalityType.AUDIO],
+                    description=text_embeddings,
+                )
+            else:
+                return_value.video = torch.cat((return_value.video, embeddings[ModalityType.VISION]))
+                return_value.audio = torch.cat((return_value.audio, embeddings[ModalityType.AUDIO]))
+                return_value.description = torch.cat((return_value.description, text_embeddings))
+        return return_value
 
     async def embed_text_async(self, texts: List[str]) -> torch.Tensor:
         return await run_async(self.embed_text, texts)
