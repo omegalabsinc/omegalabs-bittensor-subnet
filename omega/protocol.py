@@ -45,29 +45,6 @@ class VideoMetadata(BaseModel):
         )
 
 
-class FocusVideoMetadata(BaseModel):
-    """
-    A model class representing FocusVideo metadata.
-    """
-    video_id: str
-    video_link: str
-    focus_task_id: str
-    focus_task_str: str
-    score: float
-    creator: str
-    miner_hotkey: str
-    video_emb: typing.List[float]
-    description_emb: typing.List[float]
-
-    def __repr_args__(self):
-        parent_args = super().__repr_args__()
-        exclude_args = ['video_emb']
-        return (
-            [(a, v) for a, v in parent_args if a not in exclude_args] +
-            [(a, ["..."]) for a in exclude_args]
-        )
-
-
 class Videos(bt.Synapse):
     """
     A synapse class representing a video scraping request and response.
@@ -76,17 +53,11 @@ class Videos(bt.Synapse):
     - query: the input query for which to find relevant videos
     - num_videos: the number of videos to return
     - video_metadata: a list of video metadata objects
-    - focus_metadata: a list of focus video metadata objects
-    - imagebind_version: the version of the imagebind model used to generate the embeddings
     """
 
     query: str
     num_videos: int
-    num_focus_videos: typing.Optional[int] = None
     video_metadata: typing.Optional[typing.List[VideoMetadata]] = None
-    focus_metadata: typing.Optional[typing.List[FocusVideoMetadata]] = None
-    vali_imagebind_version: typing.Optional[str] = None
-    miner_imagebind_version: typing.Optional[str] = None
 
     def deserialize(self) -> typing.List[VideoMetadata]:
         assert self.video_metadata is not None
@@ -99,7 +70,7 @@ class Videos(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_videos", "num_focus_videos", "video_metadata", "focus_metadata", "vali_imagebind_version", "miner_imagebind_version"})
+            include={"query", "num_videos", "video_metadata"})
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Videos") -> "Videos":
@@ -109,10 +80,6 @@ class Videos(bt.Synapse):
         return Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
-            num_focus_videos=input_synapse.num_focus_videos,
             video_metadata=self.video_metadata[:input_synapse.num_videos],
-            focus_metadata=self.focus_metadata,
-            vali_imagebind_version=input_synapse.vali_imagebind_version,
-            miner_imagebind_version=self.miner_imagebind_version,
             axon=self.axon
         )

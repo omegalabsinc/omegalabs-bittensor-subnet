@@ -8,7 +8,7 @@ from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
 
-from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
+from omega.protocol import Videos, VideoMetadata
 from omega import video_utils, unstuff
 from omega.constants import (
     MAX_VIDEO_LENGTH, 
@@ -26,7 +26,7 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
 )
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER, IMAGEBIND_VERSION
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER
 from omega.text_similarity import get_text_similarity_score
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
@@ -354,6 +354,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
             audio_query_relevance_scores[idx],
             get_text_similarity_score(metadata[idx].description, videos.query),
         ]) / 3
+        for idx in range(len(video_query_relevance_scores))
     ]
 
     # Combine audio & visual description scores, weighted towards visual.

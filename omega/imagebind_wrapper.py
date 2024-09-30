@@ -18,7 +18,6 @@ V2_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".checkpoints
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
 LENGTH_TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH, context_length=1024)
 TOKEN_CHUNK_SIZE = 74
-IMAGEBIND_VERSION = "2.0.2"
 
 class Embeddings(BaseModel):
     class Config:

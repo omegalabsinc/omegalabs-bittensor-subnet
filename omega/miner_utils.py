@@ -4,7 +4,7 @@ from typing import List, Tuple
 
 import bittensor as bt
 
-from omega.protocol import VideoMetadata, FocusVideoMetadata
+from omega.protocol import VideoMetadata
 from omega.imagebind_wrapper import ImageBind
 from omega.constants import MAX_VIDEO_LENGTH, FIVE_MINUTES
 from omega import video_utils
