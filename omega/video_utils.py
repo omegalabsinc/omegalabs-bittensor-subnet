@@ -150,7 +150,7 @@ def download_youtube_video(
             if json_match:
                 player_info = json.loads(json_match.group(1))
                 status = player_info.get('playabilityStatus', {}).get('status', 'ok')
-                unacceptable_statuses = ('UNPLAYABLE', 'LOGIN_REQUIRED')
+                unacceptable_statuses = ('UNPLAYABLE',)
                 if status in unacceptable_statuses or (status == 'ERROR' and player_info['playabilityStatus'].get('reason', '').lower() == 'video unavailable'):
                     if "sign in to confirm you’re not a bot" not in result.text.lower():
                         fake_video = True
