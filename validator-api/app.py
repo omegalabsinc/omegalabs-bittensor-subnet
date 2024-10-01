@@ -41,8 +41,8 @@ from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
-from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
-from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
+from omega.protocol import Videos, VideoMetadata
+from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
 from validator_api.config import (
@@ -75,8 +75,7 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-imagebind_v1 = ImageBind(v2=False)
-imagebind_v2 = ImageBind(v2=True)
+imagebind = ImageBind(v2=True)
 
 focus_scoring_service = FocusScoringService()
 
@@ -148,11 +147,6 @@ class VideoMetadataUpload(BaseModel):
     query_relevance_scores: List[float]
     topic_query: str
     novelty_score: Optional[float] = None
-    total_score: Optional[float] = None
-    miner_hotkey: Optional[str] = None
-    
-class FocusMetadataUpload(BaseModel):
-    metadata: List[FocusVideoMetadata]
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
 
@@ -571,17 +565,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         uid = metagraph.hotkeys.index(hotkey)
         
         start_time = time.time()
-
-        imagebind = imagebind_v1
-        if not hasattr(videos, 'imagebind_version'):
-            print("`videos` object does not have `imagebind_version` attribute, using original model")
-        elif videos.imagebind_version is None:
-            print("imagebind_version is None, using original model")
-        elif videos.imagebind_version != IMAGEBIND_VERSION:
-            print(f"imagebind_version is {videos.imagebind_version}, using original model")
-        else:
-            print(f"imagebind_version is {IMAGEBIND_VERSION}, using new model")
-            imagebind = imagebind_v2
+        
         youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
 
         if youtube_rewards is None:
@@ -607,7 +591,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         async def check_score(
             videos: Videos,
         ) -> dict:
-            detailed_score = await score.score_videos_for_testing(videos, imagebind_v2)
+            detailed_score = await score.score_videos_for_testing(videos, imagebind)
             return detailed_score
 
     @app.get("/api/topic")

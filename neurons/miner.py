@@ -31,7 +31,7 @@ import bittensor as bt
 import omega
 
 from omega.base.miner import BaseMinerNeuron
-from omega.imagebind_wrapper import ImageBind, IMAGEBIND_VERSION
+from omega.imagebind_wrapper import ImageBind
 from omega.miner_utils import search_and_embed_youtube_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
@@ -59,8 +59,7 @@ class Miner(BaseMinerNeuron):
         else:
             raise ValueError("Invalid query augment")
         
-        self.imagebind_v1 = ImageBind(v2=False)
-        self.imagebind_v2 = ImageBind(v2=True)
+        self.imagebind = ImageBind(v2=True)
 
     async def forward(
         self, synapse: omega.protocol.Videos
@@ -70,16 +69,10 @@ class Miner(BaseMinerNeuron):
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         
         start = time.time()
-        if synapse.vali_imagebind_version is not None and synapse.vali_imagebind_version == IMAGEBIND_VERSION:
-            synapse.video_metadata = search_and_embed_youtube_videos(
-                self.augment(synapse.query), synapse.num_videos, self.imagebind_v2
-            )
-            synapse.miner_imagebind_version = IMAGEBIND_VERSION
-        else:
-            synapse.video_metadata = search_and_embed_youtube_videos(
-                self.augment(synapse.query), synapse.num_videos, self.imagebind_v1
-            )
-            synapse.miner_imagebind_version = "1.0"
+
+        synapse.video_metadata = search_and_embed_youtube_videos(
+            self.augment(synapse.query), synapse.num_videos, self.imagebind
+        )
         
         time_elapsed = time.time() - start
         

@@ -8,7 +8,7 @@ from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
 
-from omega.protocol import Videos, VideoMetadata, FocusVideoMetadata
+from omega.protocol import Videos, VideoMetadata
 from omega import video_utils, unstuff
 from omega.constants import (
     MAX_VIDEO_LENGTH, 
@@ -26,7 +26,8 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
 )
-from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, TOKENIZER_V2, IMAGEBIND_VERSION
+from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER
+from omega.text_similarity import get_text_similarity_score
 from validator_api import config
 from validator_api.dataset_upload import dataset_uploader
 
@@ -339,9 +340,22 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     audio_description_relevance_scores = F.cosine_similarity(
         embeddings.audio, embeddings.description
     ).tolist()
-    query_relevance_scores = F.cosine_similarity(
+    video_query_relevance_scores = F.cosine_similarity(
         embeddings.video, query_emb
     ).tolist()
+    audio_query_relevance_scores = F.cosine_similarity(
+        embeddings.audio, query_emb
+    ).tolist()
+
+    # Query relevance score now includes video cosim, audio cosim, and text cosim using higher quality text-only model.
+    query_relevance_scores = [
+        sum([
+            video_query_relevance_scores[idx],
+            audio_query_relevance_scores[idx],
+            get_text_similarity_score(metadata[idx].description, videos.query),
+        ]) / 3
+        for idx in range(len(video_query_relevance_scores))
+    ]
 
     # Combine audio & visual description scores, weighted towards visual.
     description_relevance_scores = [
@@ -355,7 +369,9 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     # Scale description scores by number of unique tokens.
     length_scalers = []
     for idx in range(len(description_relevance_scores)):
-        unique_token_count = len(set(TOKENIZER_V2(metadata[idx].description).nonzero()))
+        unique_tokens = LENGTH_TOKENIZER(metadata[idx].description)
+        unique_tokens = set(unique_tokens[unique_tokens != 0][1:-1].tolist())
+        unique_token_count = len(unique_tokens)
         if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
             print(f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
             description_relevance_scores[idx] *= (1.0 - DESCRIPTION_LENGTH_WEIGHT)
