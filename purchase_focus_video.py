@@ -67,11 +67,13 @@ import time
 import json
 from tabulate import tabulate
 from datetime import datetime
+import multiprocessing
+import sys
 
 parser = argparse.ArgumentParser(description='Interact with the OMEGA Focus Videos API.')
 args = parser.parse_args()
 
-SUBTENSOR_NETWORK = None # "test" or None
+SUBTENSOR_NETWORK = "None" # "test" or None
 
 API_BASE = (
     "https://dev-validator.api.omega-labs.ai"
@@ -85,24 +87,13 @@ RED = "\033[91m"
 RESET = "\033[0m"
 
 def initialize_subtensor():
-    global subtensor
     try:
         subtensor = bt.subtensor(network=SUBTENSOR_NETWORK)
-        print(f"{GREEN}Subtensor initialized successfully.{RESET}")
+        #print(f"{GREEN}Subtensor initialized successfully.{RESET}")
+        return subtensor
     except Exception as e:
         print(f"{RED}Error initializing subtensor: {str(e)}{RESET}")
         raise
-
-def get_subtensor():
-    global subtensor
-    try:
-        # Try to use the existing subtensor
-        subtensor.get_block()
-    except Exception as e:
-        if "EOF occurred in violation of protocol" in str(e) or not subtensor:
-            print(f"{RED}Subtensor connection error detected. Re-initializing subtensor.{RESET}")
-            initialize_subtensor()
-    return subtensor
 
 def list_videos():
     videos_response = requests.get(
@@ -147,6 +138,53 @@ def display_videos(videos_data):
     
     print(table)
 
+
+class TransferTimeout(Exception):
+    pass
+
+def reset_terminal():
+    # Try multiple methods to reset the terminal
+    os.system('stty sane')
+    os.system('reset')
+    sys.stdout.write('\033[0m')
+    sys.stdout.flush()
+
+def transfer_operation(wallet, transfer_address_to, transfer_balance, result_queue):
+    try:
+        subtensor = initialize_subtensor()
+        success, block_hash, err_msg = subtensor._do_transfer(
+            wallet,
+            transfer_address_to,
+            transfer_balance,
+            wait_for_finalization=True,
+            wait_for_inclusion=True,
+        )
+        result_queue.put((success, block_hash, err_msg))
+    except Exception as e:
+        result_queue.put((False, None, str(e)))
+
+def transfer_with_timeout(wallet, transfer_address_to, transfer_balance):
+    result_queue = multiprocessing.Queue()
+    
+    transfer_process = multiprocessing.Process(
+        target=transfer_operation,
+        args=(wallet, transfer_address_to, transfer_balance, result_queue)
+    )
+    
+    transfer_process.start()
+    transfer_process.join(timeout=150)  # 2m 30s = 150 seconds
+    
+    if transfer_process.is_alive():
+        transfer_process.terminate()
+        transfer_process.join()
+        reset_terminal()
+        print("\nTransfer operation timed out after 2 minutes 30 seconds. Exiting.")
+    
+    if not result_queue.empty():
+        return result_queue.get()
+    else:
+        return False, None, "Transfer process exited without result"
+
 def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_path=None):
     if not video_id:
         video_id = input(f"{CYAN}Enter focus video id: {RESET}")
@@ -174,6 +212,7 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
     miner_hotkey = hotkey.ss58_address
     
     print(f"Purchasing video {video_id}...")
+    print(f"{RED}You will only have 2 minutes and 30 seconds to complete the transfer of TAO tokens, otherwise the purchase will be reverted.{RESET}")
     purchase_response = requests.post(
         API_BASE + "/api/focus/purchase", 
         json={"video_id": video_id, "miner_hotkey": miner_hotkey}, 
@@ -197,9 +236,18 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
         print(f"Initiating transfer of {transfer_amount} TAO for video {video_id}...")
         
         transfer_balance = bt.Balance.from_tao(transfer_amount)
-
-        subtensor = get_subtensor()
         
+
+        try:
+            success, block_hash, err_msg = transfer_with_timeout(wallet, transfer_address_to, transfer_balance)
+        except TransferTimeout:
+            print(f"\n{RED}Transfer operation timed out after 2 minutes and 30 seconds. Aborting purchase.{RESET}")
+            reset_terminal()
+            revert_pending_purchase(video_id)
+            repurchase_input(video_id, name, hotkey_name, path)
+            return
+        
+        """
         success, block_hash, err_msg = subtensor._do_transfer(
             wallet,
             transfer_address_to,
@@ -207,6 +255,8 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
             wait_for_finalization=True,
             wait_for_inclusion=True,
         )
+        """
+
         if success:
             print(f"{GREEN}Transfer finalized. Block Hash: {block_hash}{RESET}")
             save_purchase_info(video_id, miner_hotkey, block_hash, "purchased", transfer_amount)
@@ -414,7 +464,6 @@ def save_purchase_info(video_id, hotkey, block_hash, state, amount=None):
     print(f"{GREEN}Purchase information {'updated' if state == 'verified' else 'saved'} to {purchases_file}{RESET}")
 
 def main():
-    initialize_subtensor()
     while True:
         print(f"\n{CYAN}Welcome to the OMEGA Focus Videos Purchase System{RESET}")
         print("1. View + Purchase Focus Videos")
@@ -452,4 +501,14 @@ def main():
             print(f"{RED}Invalid choice. Please try again.{RESET}")
 
 if __name__ == "__main__":
-    main()
+    try:
+        multiprocessing.freeze_support()
+        main()
+    except KeyboardInterrupt:
+        print("\nScript interrupted by user. Exiting.")
+        reset_terminal()
+        sys.exit(0)
+    except Exception as e:
+        print(f"\nAn unexpected error occurred: {str(e)}")
+        reset_terminal()
+        sys.exit(1)
