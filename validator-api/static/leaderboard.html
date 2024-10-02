@@ -900,7 +900,7 @@
                                             x: item.snapshot_date,
                                             y: item.total_wallets
                                         })),
-                                        yAxisID: 'y'
+                                        yAxisID: 'y2'
                                     },
                                     {
                                         label: 'Total Tasks Done',
@@ -970,7 +970,7 @@
                                         },
                                         title: {
                                             display: true,
-                                            text: 'DATE (UTC)',
+                                            text: 'DATE',
                                             color: '#E0E0E0',
                                             font: {
                                                 size: 14,
@@ -987,9 +987,27 @@
                                             maxTicksLimit: 12
                                         }
                                     },
+                                    y2: {
+                                        type: 'linear',
+                                        display: false, // Hide/Show the y2-axis
+                                        position: 'left',
+                                        title: {
+                                            display: false,
+                                            text: 'TOTAL WALLETS'
+                                        },
+                                        ticks: {
+                                            color: '#98C379',
+                                            callback: function(value) {
+                                                return value >= 1000 ? value / 1000 + 'K' : value;
+                                            }
+                                        },
+                                        grid: {
+                                            drawOnChartArea: false
+                                        }
+                                    },
                                     y: {
                                         type: 'linear',
-                                        display: true,
+                                        display: false, // Hide/Show the y-axis
                                         position: 'left',
                                         title: {
                                             display: true,
@@ -1029,7 +1047,7 @@
                                                 size: 12
                                             },
                                             callback: function(value) {
-                                                return value.toFixed(6);
+                                                return value.toFixed(2);
                                             }
                                         },
                                         grid: {
