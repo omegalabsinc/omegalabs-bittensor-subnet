@@ -25,6 +25,8 @@ from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 
 FOURTY_FIVE_MINUTES = 2700  # in seconds
+FOCUS_VIDEO_MIN_SCORE = 0.05
+FOCUS_VIDEO_MAX_SCORE = 1.0
 
 def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
     return db.query(FocusVideoRecord).filter(
@@ -305,7 +307,7 @@ Additionally, here is a detailed description of the video content:
 
         # geometric mean of the scores
         combined_score = prod([
-            score ** coefficient
+            min(FOCUS_VIDEO_MAX_SCORE, max(score, FOCUS_VIDEO_MIN_SCORE)) ** coefficient
             for score, coefficient in zip(scores_array, self.coefficients)
         ]) ** (1 / len(self.coefficients))
 
