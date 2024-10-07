@@ -5,7 +5,7 @@ import random
 import time
 from math import prod
 
-from openai import AsyncClient
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 import vertexai
@@ -109,7 +109,7 @@ class FocusScoringService:
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         }
         self.temperature = 1.3
-        self.openai_client = AsyncClient(api_key=OPENAI_API_KEY)
+        self.openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-task-overview-index")
         self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-video-description-index")
         self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-completion-video-index")
@@ -238,10 +238,10 @@ Additionally, here is a detailed description of the video content:
 
     async def get_text_embedding(self, text: str) -> List[float]:
         async def _internal_async():
-            response = await self.openai_client.embeddings.create(
+            response = await asyncio.wait_for(self.openai_client.embeddings.create(
                 input=text,
                 model="text-embedding-3-large"
-            )
+            ), timeout=10)
             return response.data[0].embedding
         return await run_with_retries(_internal_async)
 
