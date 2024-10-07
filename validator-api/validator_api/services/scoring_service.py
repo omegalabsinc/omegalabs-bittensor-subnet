@@ -3,9 +3,8 @@ from typing import List, Optional
 import json
 import random
 import time
-from math import prod
 
-from openai import AsyncClient
+from openai import AsyncOpenAI
 from pydantic import BaseModel, Field, ValidationError
 from sqlalchemy.orm import Session
 import vertexai
@@ -74,9 +73,9 @@ class CompletionScoreBreakdown(BaseModel):
 class VideoScore(BaseModel):
     # task and video scores
     task_score: float
-    task_uniqueness_score: float
+    task_uniqueness_score: Optional[float]
     video_completion_score: float
-    description_uniqueness_score: float
+    description_uniqueness_score: Optional[float]
     video_uniqueness_score: float
     combined_score: float
 
@@ -87,8 +86,8 @@ class VideoScore(BaseModel):
     detailed_video_description: DetailedVideoDescription
 
     # embeddings
-    task_overview_embedding: List[float]
-    detailed_video_description_embedding: List[float]
+    task_overview_embedding: Optional[List[float]]
+    detailed_video_description_embedding: Optional[List[float]]
     video_embedding: List[float]
 
 def get_s3_path(video_id: str) -> str:
@@ -109,7 +108,7 @@ class FocusScoringService:
             HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         }
         self.temperature = 1.3
-        self.openai_client = AsyncClient(api_key=OPENAI_API_KEY)
+        self.openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-task-overview-index")
         self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-video-description-index")
         self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-completion-video-index")
@@ -236,17 +235,24 @@ Additionally, here is a detailed description of the video content:
             return embeddings.video_embeddings[0].embedding
         return await run_with_retries(_internal_async)
 
-    async def get_text_embedding(self, text: str) -> List[float]:
+    async def get_text_embedding(self, text: str) -> Optional[List[float]]:
         async def _internal_async():
-            response = await self.openai_client.embeddings.create(
+            response = await asyncio.wait_for(self.openai_client.embeddings.create(
                 input=text,
                 model="text-embedding-3-large"
-            )
+            ), timeout=10)
             return response.data[0].embedding
-        return await run_with_retries(_internal_async)
+
+        try:
+            return await run_with_retries(_internal_async)
+        except Exception as e:
+            print(f"Error getting text embedding: {e}")
+            return None
 
     async def embed_and_get_task_uniqueness_score(self, task_overview: str) -> float:
         embedding = await self.get_text_embedding(task_overview)
+        if embedding is None:
+            return None, None
         return embedding, await self.get_task_uniqueness_score(embedding)
 
     async def embed_and_get_video_uniqueness_score(self, video_id: str, video_duration_seconds: int):
@@ -256,6 +262,8 @@ Additionally, here is a detailed description of the video content:
     async def get_detailed_video_description_embedding_score(self, video_id, task_overview):
         detailed_video_description = await self.get_detailed_video_description(video_id, task_overview)
         embedding = await self.get_text_embedding(detailed_video_description.model_dump_json())
+        if embedding is None:
+            return detailed_video_description, None, None
         return detailed_video_description, embedding, await self.get_description_uniqueness_score(embedding)
 
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
@@ -306,10 +314,16 @@ Additionally, here is a detailed description of the video content:
         ]
 
         # geometric mean of the scores
-        combined_score = prod([
-            min(FOCUS_VIDEO_MAX_SCORE, max(score, FOCUS_VIDEO_MIN_SCORE)) ** coefficient
-            for score, coefficient in zip(scores_array, self.coefficients)
-        ]) ** (1 / len(self.coefficients))
+        combined_score = 1.0
+        coefficient_sum = 0.0
+        assert len(scores_array) == len(self.coefficients)
+        for score, coefficient in zip(scores_array, self.coefficients):
+            if score is None:
+                continue
+            adjusted_score = min(FOCUS_VIDEO_MAX_SCORE, max(score, FOCUS_VIDEO_MIN_SCORE))
+            combined_score *= adjusted_score ** coefficient
+            coefficient_sum += coefficient
+        combined_score = combined_score ** (1 / coefficient_sum)
 
         return VideoScore(
             task_score=task_gemini_score,
