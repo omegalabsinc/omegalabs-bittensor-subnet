@@ -347,6 +347,11 @@
             font-size: 1.5rem;
             font-weight: bold;
         }
+
+        .focus-metric-value-usd {
+            font-size: 1.0rem;
+            color: #aaaaaa;
+        }
     </style>
 </head>
 <body>
@@ -381,11 +386,11 @@
                 </div>
                 <div class="focus-metric">
                     <div class="focus-metric-title">TOTAL TAO BALANCE</div>
-                    <div class="focus-metric-value">{{ totalTaoBalance.toFixed(3) }}</div>
+                    <div class="focus-metric-value">{{ totalTaoBalance.toFixed(3) }} <span class="focus-metric-value-usd">(${{ totalTaoBalanceUSD }} USD)</span></div>
                 </div>
                 <div class="focus-metric">
                     <div class="focus-metric-title">TOTAL TAO REVENUE</div>
-                    <div class="focus-metric-value">{{ totalTaoRevenue.toFixed(3) }}</div>
+                    <div class="focus-metric-value">{{ totalTaoRevenue.toFixed(3) }} <span class="focus-metric-value-usd">(${{ totalTaoRevenueUSD }} USD)</span></div>
                 </div>
             </div>
             <div class="chart-container">
@@ -471,6 +476,7 @@
                 totalTaoBalance: 0.0,
                 totalTaoRevenue: 0.0,
                 focusVideoChartCreated: false,
+                taoPrice: 0,
             },
             computed: {
                 filteredMiners() {
@@ -482,6 +488,12 @@
                         if(a[this.sortKey] > b[this.sortKey]) return 1 * modifier;
                         return 0;
                     });
+                },
+                totalTaoBalanceUSD() {
+                    return (this.totalTaoBalance * this.taoPrice).toFixed(2);
+                },
+                totalTaoRevenueUSD() {
+                    return (this.totalTaoRevenue * this.taoPrice).toFixed(2);
                 }
             },
             watch: {
@@ -1067,7 +1079,7 @@
                                     tooltip: {
                                         callbacks: {
                                             title: function(tooltipItems) {
-                                                return tooltipItems[0].label + ' (UTC)';
+                                                return tooltipItems[0].label.replace(', 12:00:00 a.m.', '');
                                             },
                                             label: function(context) {
                                                 let label = context.dataset.label || '';
@@ -1076,7 +1088,7 @@
                                                 }
                                                 if (context.parsed.y !== null) {
                                                     if (label.includes('TAO')) {
-                                                        label += context.parsed.y.toFixed(6);
+                                                        label += context.parsed.y.toFixed(3);
                                                     } else {
                                                         label += context.parsed.y.toLocaleString();
                                                     }
@@ -1096,11 +1108,21 @@
                         console.log('Unable to create or update focus video chart. Canvas:', !!canvas, 'Data:', !!this.focusVideoData, 'Chart created:', this.focusVideoChartCreated);
                     }
                 },
+                fetchTaoPrice() {
+                    axios.post('https://focus-api.omegatron.ai/market/get_tao_price')
+                        .then(response => {
+                            this.taoPrice = response.data;
+                        })
+                        .catch(error => {
+                            console.error('Error fetching TAO price:', error);
+                        });
+                },
             },
             mounted() {
                 this.fetchData();
                 this.fetchDatasetSizeData();
                 this.fetchFocusVideoData();
+                this.fetchTaoPrice();
             }
         });
     </script>
