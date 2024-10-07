@@ -7,8 +7,7 @@ import json
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
 from validator_api.database.models import User
-from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao
-from validator_api.config import MAX_FOCUS_POINTS
+from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore
 
@@ -268,7 +267,7 @@ class MinerPurchaseStats(BaseModel):
     max_focus_points: float
     focus_points_percentage: float
 
-def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseStats:
+async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseStats:
     # Get videos purchased by miner in the last 24 hours
     purchased_videos_records = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.miner_hotkey == miner_hotkey,
@@ -284,12 +283,13 @@ def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseSta
     total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
 
     # Calculate percentage
-    focus_points_percentage = total_focus_points / MAX_FOCUS_POINTS if MAX_FOCUS_POINTS > 0 else 0
+    max_focus_points = await get_max_focus_points_available_today()
+    focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
 
     return MinerPurchaseStats(
         purchased_videos=purchased_videos,
         total_focus_points=total_focus_points,
-        max_focus_points=MAX_FOCUS_POINTS,
+        max_focus_points=max_focus_points,
         focus_points_percentage=focus_points_percentage
     )
 

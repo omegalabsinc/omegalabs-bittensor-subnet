@@ -505,7 +505,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         miner_hotkey: str,
         db: Session = Depends(get_db)
     ) -> MinerPurchaseStats:
-        return get_miner_purchase_stats(db, miner_hotkey)
+        return await get_miner_purchase_stats(db, miner_hotkey)
 
     @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
     async def miner_purchase_scores(
@@ -513,7 +513,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         db: Session = Depends(get_db)
     ) -> Dict[str, MinerPurchaseStats]:
         return {
-            hotkey: get_miner_purchase_stats(db, hotkey)
+            hotkey: await get_miner_purchase_stats(db, hotkey)
             for hotkey in miner_hotkey_list.split(',')
         }
     

@@ -2,7 +2,7 @@ import time
 from typing import Tuple
 import requests
 import bittensor as bt
-from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, MAX_FOCUS_POINTS, MAX_FOCUS_POINTS_PER_HOUR, FIXED_TAO_USD_ESTIMATE
+from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, MAX_FOCUS_POINTS_PER_HOUR, FIXED_TAO_USD_ESTIMATE
 from validator_api.utils import run_with_retries, run_async
 
 async def get_subtensor_and_metagraph() -> Tuple[bt.subtensor, bt.metagraph]:
