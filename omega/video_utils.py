@@ -116,10 +116,6 @@ def download_youtube_video(
         "noprogress": True,
         "match_filter": skip_live,
         "merge_output_format": "mp4",
-        "postprocessors": [{
-            "key": "FFmpegVideoConvertor",
-            "preferedformat": "mp4",
-        }],
     }
 
     if start is not None and end is not None:
