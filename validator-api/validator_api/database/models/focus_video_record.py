@@ -1,14 +1,12 @@
 from datetime import datetime
 import uuid
-from typing import Optional, Dict, Any
-from typing_extensions import Self
+from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Column, String, DateTime, ForeignKey, Index, Float, Enum, Integer
-from sqlalchemy.orm import relationship
+from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Enum, Integer
 
 from validator_api.database import Base
-from validator_api.database.encrypted_json import MediumEncryptedJSON
+from sqlalchemy.dialects.postgresql import JSONB
 from validator_api.config import DB_STRING_LENGTH
 
 import enum
@@ -61,10 +59,11 @@ class FocusVideoRecord(Base):
 
     video_id = Column(String(DB_STRING_LENGTH), primary_key=True, default=lambda: str(uuid.uuid4()), nullable=False)
     task_id = Column(String(DB_STRING_LENGTH), nullable=False)
-    user_email = Column(String(DB_STRING_LENGTH), ForeignKey('users.email'), nullable=False)
+    user_id = Column(String, ForeignKey('users.id'), nullable=False)
+    user_email = Column(String, ForeignKey('users.email'), nullable=False)
     processing_state = Column(Enum(FocusVideoStateInternal), nullable=False, default=FocusVideoStateInternal.PROCESSING)
     video_score = Column(Float, nullable=True)
-    video_details = Column(MediumEncryptedJSON, nullable=True)
+    video_details = Column(JSONB, nullable=True)
     rejection_reason = Column(String(1000), nullable=True)
     expected_reward_tao = Column(Float, nullable=True)
     earned_reward_tao = Column(Float, nullable=True)
@@ -74,11 +73,6 @@ class FocusVideoRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
-
-    __table_args__ = (
-        Index('ix_focus_videos_user_email', 'user_email'),
-        Index('ix_focus_videos_task_id', 'task_id'),
-    )
 
     def get_duration(self) -> float:
         return float(self.video_details.get("duration", 0.0))

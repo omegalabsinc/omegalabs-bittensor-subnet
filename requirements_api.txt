@@ -10,3 +10,4 @@ typing_extensions
 bcrypt
 uuid
 google-cloud-aiplatform==1.65.0
+psycopg2==2.9.9

@@ -1,3 +1,4 @@
 cache
 .checkpoints
 *.env
+.git
