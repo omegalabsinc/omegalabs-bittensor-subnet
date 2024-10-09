@@ -6,9 +6,7 @@ import validator_api.config as config
 from sqlalchemy.orm import Session
 
 from validator_api.database import get_db_context
-from validator_api.database.models import User
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoStateInternal
-from validator_api.database.crud.user import update_user_tao_balance_from_email
 
 import bittensor as bt
 
@@ -90,10 +88,6 @@ async def confirm_transfer(
                 video.earned_reward_tao = amount
                 db.add(video)
                 db.commit()
-                try:
-                    await update_user_tao_balance_from_email(db, video.user_email)
-                except Exception as e:
-                    print(f"Error in updating user tao balance: {e}")
                 return True
 
         except Exception as e:

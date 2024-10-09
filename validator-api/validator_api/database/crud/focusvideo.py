@@ -6,7 +6,7 @@ from typing import List, Optional
 import json
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
-from validator_api.database.models import User
+from validator_api.database.models.user import UserRecord
 from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore
@@ -245,7 +245,7 @@ def get_video_owner_coldkey(db: Session, video_id: str) -> str:
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
 
-    user_record = db.query(User).filter(User.email == video_record.user_email,).first()
+    user_record = db.query(UserRecord).filter(UserRecord.email == video_record.user_email,).first()
     if user_record is None:
         raise HTTPException(404, detail="User not found")
 

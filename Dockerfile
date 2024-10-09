@@ -7,7 +7,7 @@ RUN apt-get -y update && apt-get install -y software-properties-common && \
     add-apt-repository ppa:deadsnakes/ppa && \
     apt-get -y update && apt-get install -y \
     python3.10 python3.10-distutils python3.10-venv python3.10-dev \
-    git libsndfile1 build-essential ffmpeg \
+    git libsndfile1 build-essential ffmpeg libpq-dev \
     pkg-config libmysqlclient-dev && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
