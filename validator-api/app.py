@@ -75,7 +75,7 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-# imagebind = ImageBind(v2=True)
+imagebind = ImageBind(v2=True)
 
 focus_scoring_service = FocusScoringService()
 
@@ -860,7 +860,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             server_task,
             resync_metagraph(),
             cache_max_focus_tao(),
-            # resync_dataset(),
+            resync_dataset(),
         )
     except asyncio.CancelledError:
         server_task.cancel()
