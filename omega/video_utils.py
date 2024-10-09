@@ -109,7 +109,7 @@ def download_youtube_video(
     
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
     ydl_opts = {
-        "format": "worstvideo[ext=mp4]+worstaudio[ext=mp4]/worst",
+        "format": "139+230",
         "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
         "overwrites": True,
         "quiet": True,
