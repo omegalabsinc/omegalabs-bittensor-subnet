@@ -108,8 +108,12 @@ def download_youtube_video(
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
+
+    # Format information:
+    # 139 m4a   audio only      2 │   4.11MiB  49k https │ audio only         mp4a.40.5   49k 22k [en] low, m4a_dash
+    # 160 mp4   256x144     30    │   1.68MiB  20k https │ avc1.4D400C    20k video only          144p, mp4_dash
     ydl_opts = {
-        "format": "139+230",
+        "format": "139+160",
         "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
         "overwrites": True,
         "quiet": True,
