@@ -1109,7 +1109,7 @@
                     }
                 },
                 fetchTaoPrice() {
-                    axios.post('https://focus-api.omegatron.ai/market/get_tao_price')
+                    axios.get('https://focus-api.omegatron.ai/get_tao_price')
                         .then(response => {
                             this.taoPrice = response.data;
                         })
