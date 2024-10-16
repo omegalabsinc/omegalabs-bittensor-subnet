@@ -73,7 +73,7 @@ import sys
 parser = argparse.ArgumentParser(description='Interact with the OMEGA Focus Videos API.')
 args = parser.parse_args()
 
-SUBTENSOR_NETWORK = "None" # "test" or None
+SUBTENSOR_NETWORK = None # "test" or None
 
 API_BASE = (
     "https://dev-validator.api.omega-labs.ai"
@@ -110,8 +110,8 @@ def list_videos():
     return videos_data
 
 def display_videos(videos_data):
-    if not videos_data:
-        print(f"{RED}No videos available.{RESET}")
+    if not videos_data or len(videos_data) == 0:
+        print(f"\n{RED}No videos available.{RESET}")
         return
 
     print(f"\n{CYAN}Available Focus Videos:{RESET}")
@@ -220,11 +220,13 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
         timeout=60
     )
 
+    purchase_data = purchase_response.json()
     if purchase_response.status_code != 200:
         print(f"{RED}Error purchasing video {video_id}: {purchase_response.status_code}{RESET}")
+        if "detail" in purchase_data:
+            print(f"{RED}Details: {purchase_data['detail']}{RESET}")
         return
     
-    purchase_data = purchase_response.json()
     if "status" in purchase_data and purchase_data["status"] == "error":
         print(f"{RED}Error purchasing video {video_id}: {purchase_data['message']}{RESET}")
         return
@@ -487,6 +489,8 @@ def main():
                         print(f"{RED}Invalid video number.{RESET}")
                 elif purchase_option != 'n':
                     print(f"{RED}Invalid input. Returning to main menu.{RESET}")
+            else:
+                print(f"\n{RED}No videos available for purchase at this time.{RESET}")
         elif choice == '2':
             purchase_video()
         elif choice == '3':
