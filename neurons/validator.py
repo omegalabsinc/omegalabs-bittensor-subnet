@@ -579,10 +579,22 @@ class Validator(BaseValidatorNeuron):
             if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
                 bt.logging.warning("Stuffed description found with high confidence, penalizing the miner.")
                 return STUFFED_DESCRIPTION_PUNISHMENT
+
+            # More stuffing.
+            extraneous = [
+                unstuff.check_extraneous_chunks(meta.desc, meta.video_emb, meta.audio_emb, imagebind)
+                for meta in metadata
+            ]
+            if any([really_bad > 5 or low_quality >= 8 for really_bad, low_quality, total in extraneous]):
+                print(f"Extraneous garbage found in many text checks {really_bad=} {low_quality=} {total=}")
+                return {"score": STUFFED_DESCRIPTION_PUNISHMENT}
+
             metadata = [
                 metadata[idx]
                 for idx in range(len(metadata))
                 if not stuffed[idx][0]
+                and extraneous[idx][1] <= 7
+                and extraneous[idx][2] <= 30
             ]
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions.")
