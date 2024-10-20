@@ -11,3 +11,4 @@ bcrypt
 uuid
 google-cloud-aiplatform==1.65.0
 psycopg2==2.9.9
+slowapi==0.1.9

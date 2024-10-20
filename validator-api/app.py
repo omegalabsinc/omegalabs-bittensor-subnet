@@ -53,6 +53,8 @@ from validator_api.config import (
     FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS
 )
 from validator_api.dataset_upload import dataset_uploader
+from validator_api.limiter import limiter
+
 
 ### Constants for OMEGA Metadata Dashboard ###
 HF_DATASET = "omegalabsinc/omega-multimodal"
@@ -438,6 +440,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         return { "success": True }
 
     @app.get("/api/focus/get_list")
+    @limiter.limit("10/minute")
     async def _get_available_focus_video_list(
         db: Session=Depends(get_db)
     ):
@@ -449,6 +452,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
     @app.post("/api/focus/purchase")
+    @limiter.limit("10/minute")
     async def purchase_video(
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body()],
@@ -474,6 +478,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             return availability
         
     @app.post("/api/focus/revert-pending-purchase")
+    @limiter.limit("10/minute")
     async def revert_pending_purchase(
         video: VideoPurchaseRevert,
         db: Session=Depends(get_db),
@@ -481,6 +486,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         return mark_video_submitted(db, video.video_id)
         
     @app.post("/api/focus/verify-purchase")
+    @limiter.limit("10/minute")
     async def verify_purchase(
         miner_hotkey: Annotated[str, Body()],
         video_id: Annotated[str, Body()],
