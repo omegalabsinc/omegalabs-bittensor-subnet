@@ -19,7 +19,7 @@ from traceback import print_exception
 
 import bittensor
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks
+from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks, Request
 from fastapi.security import HTTPBasicCredentials, HTTPBasic
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
@@ -442,6 +442,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     @app.get("/api/focus/get_list")
     @limiter.limit("10/minute")
     async def _get_available_focus_video_list(
+        request: Request,
         db: Session=Depends(get_db)
     ):
         """
@@ -454,6 +455,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     @app.post("/api/focus/purchase")
     @limiter.limit("10/minute")
     async def purchase_video(
+        request: Request,
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body()],
         miner_hotkey: Annotated[str, Body()],
@@ -480,6 +482,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     @app.post("/api/focus/revert-pending-purchase")
     @limiter.limit("10/minute")
     async def revert_pending_purchase(
+        request: Request,
         video: VideoPurchaseRevert,
         db: Session=Depends(get_db),
     ):
@@ -488,6 +491,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("10/minute")
     async def verify_purchase(
+        request: Request,
         miner_hotkey: Annotated[str, Body()],
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
