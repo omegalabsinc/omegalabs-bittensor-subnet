@@ -4,6 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func
 from typing import List, Optional
 import json
+import time
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
 from validator_api.database.models.user import UserRecord
@@ -11,16 +12,31 @@ from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore
 
+available_focus_cache = {
+    'value': None,
+    'timestamp': 0
+}
+
+CACHE_DURATION = 60  # 1 minute in seconds
+
 def get_all_available_focus(
     db: Session
 ):
+    global available_focus_cache
+
+    # Check if cached data is still valid
+    if available_focus_cache['value'] is not None and time.time() - available_focus_cache['timestamp'] < CACHE_DURATION:
+        return available_focus_cache['value']
+
     try:
         # show oldest videos first so that they get rewarded fastest
         items = db.query(FocusVideoRecord).filter_by(
             processing_state=FocusVideoStateInternal.SUBMITTED,
             deleted_at=None,
         ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
-        return [FocusVideoInternal.model_validate(record) for record in items]
+        available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
+        available_focus_cache['timestamp'] = time.time()
+        return available_focus_cache['value']
 
     except Exception as e:
         print(e)
