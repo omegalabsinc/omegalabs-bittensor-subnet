@@ -15,8 +15,8 @@ DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_POR
 
 engine = create_engine(
     DATABASE_URL,
-    pool_size=10,  # bumped up from default of 5
-    max_overflow=10,  # bumped up from default of 10
+    pool_size=15,  # bumped up from default of 5
+    max_overflow=20,  # bumped up from default of 10
     pool_timeout=15,  # bumped down from default of 30
     pool_pre_ping=True,  # Good practice for most scenarios
     pool_recycle=3600,  # Recycle connections after 1 hour
