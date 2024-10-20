@@ -440,7 +440,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         return { "success": True }
 
     @app.get("/api/focus/get_list")
-    @limiter.limit("300/minute")
+    @limiter.limit("2000/minute")
     async def _get_available_focus_video_list(
         request: Request,
         db: Session=Depends(get_db)
