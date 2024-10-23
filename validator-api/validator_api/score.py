@@ -320,15 +320,16 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
         print("Stuffed description found with high confidence, penalizing the miner.")
         return {"score": STUFFED_DESCRIPTION_PUNISHMENT}
-
+    
     # More stuffing.
     extraneous = [
-        unstuff.check_extraneous_chunks(meta.desc, meta.video_emb, meta.audio_emb, imagebind)
+        unstuff.check_extraneous_chunks(meta.description, meta.video_emb, meta.audio_emb, imagebind)
         for meta in metadata
     ]
-    if any([really_bad > 5 or low_quality >= 8 for really_bad, low_quality, total in extraneous]):
-        print(f"Extraneous garbage found in many text checks {really_bad=} {low_quality=} {total=}")
-        return {"score": STUFFED_DESCRIPTION_PUNISHMENT}
+    for really_bad, low_quality, total in extraneous:
+        if really_bad > 5 or low_quality >= 8:
+            print(f"Extraneous garbage found in text check {really_bad=} {low_quality=} {total=}")
+            return {"score": STUFFED_DESCRIPTION_PUNISHMENT}
 
     metadata = [
         metadata[idx]
