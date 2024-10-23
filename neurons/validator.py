@@ -582,12 +582,13 @@ class Validator(BaseValidatorNeuron):
 
             # More stuffing.
             extraneous = [
-                unstuff.check_extraneous_chunks(meta.desc, meta.video_emb, meta.audio_emb, imagebind)
+                unstuff.check_extraneous_chunks(meta.description, meta.video_emb, meta.audio_emb, self.imagebind)
                 for meta in metadata
             ]
-            if any([really_bad > 5 or low_quality >= 8 for really_bad, low_quality, total in extraneous]):
-                print(f"Extraneous garbage found in many text checks {really_bad=} {low_quality=} {total=}")
-                return {"score": STUFFED_DESCRIPTION_PUNISHMENT}
+            for really_bad, low_quality, total in extraneous:
+                if really_bad > 5 or low_quality >= 8:
+                    bt.logging.info(f"Extraneous garbage found in text check {really_bad=} {low_quality=} {total=}")
+                    return STUFFED_DESCRIPTION_PUNISHMENT
 
             metadata = [
                 metadata[idx]

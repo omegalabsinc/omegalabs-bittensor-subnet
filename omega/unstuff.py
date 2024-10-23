@@ -31,7 +31,7 @@ def check_extraneous_chunks(description, video_emb, audio_emb, imagebind):
         if len(TOKENIZER(chunk)) >= 5
     ]
     if len(text_chunks) <= 1:
-        return 0.0
+        return 0.0, 0.0, 0.0
     similarities = []
     for text in text_chunks:
         text_emb = imagebind.embed_text([text]).to("cpu")
