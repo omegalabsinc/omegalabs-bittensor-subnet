@@ -586,7 +586,7 @@ class Validator(BaseValidatorNeuron):
                 for meta in metadata
             ]
             for really_bad, low_quality, total in extraneous:
-                if really_bad > 5 or low_quality >= 8:
+                if really_bad > 5 or low_quality >= 16:
                     bt.logging.info(f"Extraneous garbage found in text check {really_bad=} {low_quality=} {total=}")
                     return STUFFED_DESCRIPTION_PUNISHMENT
 
@@ -594,8 +594,8 @@ class Validator(BaseValidatorNeuron):
                 metadata[idx]
                 for idx in range(len(metadata))
                 if not stuffed[idx][0]
-                and extraneous[idx][1] <= 7
-                and extraneous[idx][2] <= 30
+                and extraneous[idx][1] <= 15
+                and extraneous[idx][2] <= 50
             ]
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions.")
