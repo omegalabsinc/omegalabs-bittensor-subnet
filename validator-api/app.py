@@ -453,7 +453,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
     @app.post("/api/focus/purchase")
-    @limiter.limit("300/minute")
+    @limiter.limit("20/minute")
     async def purchase_video(
         request: Request,
         background_tasks: BackgroundTasks,
