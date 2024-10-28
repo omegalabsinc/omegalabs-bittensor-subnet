@@ -20,7 +20,8 @@ available_focus_cache = {
 CACHE_DURATION = 60  # 1 minute in seconds
 
 def get_all_available_focus(
-    db: Session
+    db: Session,
+    with_lock: bool = False
 ):
     global available_focus_cache
 
@@ -33,7 +34,11 @@ def get_all_available_focus(
         items = db.query(FocusVideoRecord).filter_by(
             processing_state=FocusVideoStateInternal.SUBMITTED,
             deleted_at=None,
-        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
+        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10)
+        if with_lock:
+            items = items.with_for_update()
+        items = items.all()
+        
         available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
         available_focus_cache['timestamp'] = time.time()
         return available_focus_cache['value']
@@ -60,14 +65,18 @@ def get_pending_focus(
 async def check_availability(
     db: Session,
     video_id: str,
-    miner_hotkey: str
+    miner_hotkey: str,
+    with_lock: bool = False
 ):
     try:
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
             FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,  # is available for purchase
-        ).first()
+        )
+        if with_lock:
+            video_record = video_record.with_for_update()
+        video_record = video_record.first()
 
         if video_record is None:
             return {
@@ -253,11 +262,15 @@ async def check_video_metadata(
 #     video.task_str = task.focusing_task
 #     return video
 
-def get_video_owner_coldkey(db: Session, video_id: str) -> str:
+def get_video_owner_coldkey(db: Session, video_id: str, with_lock: bool = False) -> str:
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
-    ).first()
+    )
+    if with_lock:
+        video_record = video_record.with_for_update()
+    video_record = video_record.first()
+
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
 
@@ -283,13 +296,17 @@ class MinerPurchaseStats(BaseModel):
     max_focus_points: float
     focus_points_percentage: float
 
-async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseStats:
+async def get_miner_purchase_stats(db: Session, miner_hotkey: str, with_lock: bool = False) -> MinerPurchaseStats:
     # Get videos purchased by miner in the last 24 hours
     purchased_videos_records = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.miner_hotkey == miner_hotkey,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
         FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-    ).all()
+    )
+    if with_lock:
+        purchased_videos_records = purchased_videos_records.with_for_update()
+    purchased_videos_records = purchased_videos_records.all()
+    
     purchased_videos = [
         FocusVideoInternal.model_validate(video_record)
         for video_record in purchased_videos_records
@@ -359,13 +376,17 @@ def mark_video_rejected(
     db.add(video_record)
     db.commit()
 
-def mark_video_submitted(db: Session, video_id: str):
+def mark_video_submitted(db: Session, video_id: str, with_lock: bool = False):
     # Mark video as "SUBMITTED" if in the "PURCHASE_PENDING" state.
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
         FocusVideoRecord.deleted_at.is_(None)
-    ).first()
+    )
+    if with_lock:
+        video_record = video_record.with_for_update()
+    video_record = video_record.first()
+    
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found or not in the correct state: PURCHASE_PENDING")
 

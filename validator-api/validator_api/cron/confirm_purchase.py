@@ -12,9 +12,11 @@ import bittensor as bt
 
 from validator_api.utils.wallet import get_transaction_from_block_hash
 
-def extrinsic_already_confirmed(db: Session, extrinsic_id: str) -> bool:
-    record = db.query(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id).first()
-    return record is not None
+def extrinsic_already_confirmed(db: Session, extrinsic_id: str, with_lock: bool = False) -> bool:
+    record = db.query(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id)
+    if with_lock:
+        record = record.with_for_update()
+    return record.first() is not None
 
 async def check_payment(db: Session, recipient_address: str, sender_address: str, amount: float, block_hash: str = None):
     try:
@@ -32,7 +34,7 @@ async def check_payment(db: Session, recipient_address: str, sender_address: str
                 transfer["to"] == recipient_address and
                 round(float(transfer["amount"]), 5) == round(amount, 5)
             ):
-                if extrinsic_already_confirmed(db, transfer["extrinsicId"]):
+                if extrinsic_already_confirmed(db, transfer["extrinsicId"], True): # run with_lock True
                     continue
                 print(f"Payment of {amount} found from {sender_address} to {recipient_address}")
                 return transfer["extrinsicId"]
@@ -55,7 +57,8 @@ async def confirm_transfer(
     video_owner_coldkey: str,
     video_id: str,
     miner_hotkey: str,
-    block_hash: str = None
+    block_hash: str = None,
+    with_lock: bool = False
 ):
     subtensor = bt.subtensor(network=config.NETWORK)
 
@@ -63,7 +66,10 @@ async def confirm_transfer(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
         FocusVideoRecord.deleted_at.is_(None),
-    ).first()
+    )
+    if with_lock:
+        video = video.with_for_update()
+    video = video.first()
 
     if not video:
         print(f"Video <{video_id}> not found")
@@ -113,6 +119,7 @@ RETRIES = 6  # 30s x 10 retries = 180s = 3 mins
 
 async def confirm_video_purchased(
     video_id: str,
+    with_lock: bool = False
 ):
     """
     The purpose of this function is to set the video back to the SUBMITTED state 
@@ -129,7 +136,10 @@ async def confirm_video_purchased(
                     video = db.query(FocusVideoRecord).filter(
                         FocusVideoRecord.video_id == video_id,
                         FocusVideoRecord.deleted_at.is_(None),
-                    ).first()
+                    )
+                    if with_lock:
+                        video = video.with_for_update()
+                    video = video.first()
 
                     if not video:
                         print(f"Video <{video_id}> not found")

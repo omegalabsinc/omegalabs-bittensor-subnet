@@ -448,7 +448,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         """
         Return all available focus videos
         """
-        return get_all_available_focus(db)
+        return get_all_available_focus(db, True) # run with_lock True
 
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
@@ -465,12 +465,12 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
 
-        availability = await check_availability(db, video_id, miner_hotkey)
+        availability = await check_availability(db, video_id, miner_hotkey, True) # run with_lock True
         print('availability', availability)
         if availability['status'] == 'success':
             amount = availability['price']
-            video_owner_coldkey = get_video_owner_coldkey(db, video_id)
-            background_tasks.add_task(confirm_video_purchased, video_id)
+            video_owner_coldkey = get_video_owner_coldkey(db, video_id, True) # run with_lock True
+            background_tasks.add_task(confirm_video_purchased, video_id, True) # run with_lock True
             return {
                 'status': 'success',
                 'address': video_owner_coldkey,
@@ -486,7 +486,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         video: VideoPurchaseRevert,
         db: Session=Depends(get_db),
     ):
-        return mark_video_submitted(db, video.video_id)
+        return mark_video_submitted(db, video.video_id, True) # run with_lock True
         
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("100/minute")
@@ -497,7 +497,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         block_hash: Annotated[str, Body()],
         db: Session=Depends(get_db),
     ):
-        video_owner_coldkey = get_video_owner_coldkey(db, video_id)
+        video_owner_coldkey = get_video_owner_coldkey(db, video_id, True) # run with_lock True
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:
             return {
@@ -515,7 +515,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         miner_hotkey: str,
         db: Session = Depends(get_db)
     ) -> MinerPurchaseStats:
-        return await get_miner_purchase_stats(db, miner_hotkey)
+        return await get_miner_purchase_stats(db, miner_hotkey, True) # run with_lock True
 
     @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
     async def miner_purchase_scores(
@@ -523,7 +523,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         db: Session = Depends(get_db)
     ) -> Dict[str, MinerPurchaseStats]:
         return {
-            hotkey: await get_miner_purchase_stats(db, hotkey)
+            hotkey: await get_miner_purchase_stats(db, hotkey, True) # run with_lock True
             for hotkey in miner_hotkey_list.split(',')
         }
     
