@@ -97,3 +97,5 @@ GOOGLE_CLOUD_BUCKET_NAME = os.getenv("GOOGLE_CLOUD_BUCKET_NAME")
 
 with open(GOOGLE_APPLICATION_CREDENTIALS, "w") as f:
     f.write(get_secret("prod/gcp_service_user", region_name=AWS_S3_REGION))
+
+SENTRY_DSN = os.getenv("SENTRY_DSN")
