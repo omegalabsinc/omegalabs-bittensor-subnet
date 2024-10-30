@@ -5,6 +5,7 @@ from sqlalchemy import func
 from typing import List, Optional
 import json
 import time
+import asyncio
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
 from validator_api.database.models.user import UserRecord
@@ -17,12 +18,11 @@ available_focus_cache = {
     'timestamp': 0
 }
 
-CACHE_DURATION = 60  # 1 minute in seconds
+CACHE_DURATION = 20  # 1 minute in seconds
 
-def get_all_available_focus(
-    db: Session,
-    with_lock: bool = False
-):
+cache_mutex = asyncio.Lock()
+
+async def get_all_available_focus(db: Session):
     global available_focus_cache
 
     # Check if cached data is still valid
@@ -30,17 +30,16 @@ def get_all_available_focus(
         return available_focus_cache['value']
 
     try:
-        # show oldest videos first so that they get rewarded fastest
-        items = db.query(FocusVideoRecord).filter_by(
-            processing_state=FocusVideoStateInternal.SUBMITTED,
-            deleted_at=None,
-        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10)
-        if with_lock:
-            items = items.with_for_update()
-        items = items.all()
-        
-        available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
-        available_focus_cache['timestamp'] = time.time()
+        async with cache_mutex:
+            # if many threads simultaneously check the cache, only one will update the cache
+            if time.time() - available_focus_cache['timestamp'] > CACHE_DURATION:
+                # show oldest videos first so that they get rewarded fastest
+                items = db.query(FocusVideoRecord).filter_by(
+                    processing_state=FocusVideoStateInternal.SUBMITTED,
+                    deleted_at=None,
+                ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
+                available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
+                available_focus_cache['timestamp'] = time.time()
         return available_focus_cache['value']
 
     except Exception as e:

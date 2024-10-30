@@ -9,6 +9,7 @@ import random
 import json
 from pydantic import BaseModel
 import traceback
+from threading import Lock
 
 from tempfile import TemporaryDirectory
 import huggingface_hub
@@ -42,7 +43,7 @@ from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata
-from omega.imagebind_wrapper import ImageBind
+from validator_api.imagebind_loader import ImageBindLoader
 
 from validator_api import score
 from validator_api.config import (
@@ -77,7 +78,7 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-imagebind = ImageBind(v2=True)
+imagebind_loader = ImageBindLoader()
 
 focus_scoring_service = FocusScoringService()
 
@@ -448,7 +449,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         """
         Return all available focus videos
         """
-        return get_all_available_focus(db, True) # run with_lock True
+        return await get_all_available_focus(db)
 
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
@@ -576,7 +577,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         
         start_time = time.time()
         
-        youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
+        youtube_rewards = await score.score_and_upload_videos(videos, await imagebind_loader.get_imagebind())
 
         if youtube_rewards is None:
             print("YouTube rewards are empty, returning None")
@@ -601,7 +602,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         async def check_score(
             videos: Videos,
         ) -> dict:
-            detailed_score = await score.score_videos_for_testing(videos, imagebind)
+            detailed_score = await score.score_videos_for_testing(videos, await imagebind_loader.get_imagebind())
             return detailed_score
 
     @app.get("/api/topic")
