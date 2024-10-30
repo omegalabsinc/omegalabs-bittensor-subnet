@@ -68,6 +68,8 @@ async def check_availability(
     with_lock: bool = False
 ):
     try:
+        max_focus_tao = await get_max_focus_tao()
+
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
@@ -83,7 +85,7 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        actual_reward_tao = await estimate_tao(video_record.video_score, video_record.get_duration())
+        actual_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), max_focus_tao)
         print(f"Expected reward TAO: {video_record.expected_reward_tao}, actual reward TAO: {actual_reward_tao}")
         if actual_reward_tao == 0:
             raise HTTPException(422, detail="Max reward TAO is 0")
@@ -261,13 +263,11 @@ async def check_video_metadata(
 #     video.task_str = task.focusing_task
 #     return video
 
-def get_video_owner_coldkey(db: Session, video_id: str, with_lock: bool = False) -> str:
+def get_video_owner_coldkey(db: Session, video_id: str) -> str:
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
     )
-    if with_lock:
-        video_record = video_record.with_for_update()
     video_record = video_record.first()
 
     if video_record is None:
@@ -295,15 +295,13 @@ class MinerPurchaseStats(BaseModel):
     max_focus_points: float
     focus_points_percentage: float
 
-async def get_miner_purchase_stats(db: Session, miner_hotkey: str, with_lock: bool = False) -> MinerPurchaseStats:
+async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseStats:
     # Get videos purchased by miner in the last 24 hours
     purchased_videos_records = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.miner_hotkey == miner_hotkey,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
         FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
     )
-    if with_lock:
-        purchased_videos_records = purchased_videos_records.with_for_update()
     purchased_videos_records = purchased_videos_records.all()
     
     purchased_videos = [
@@ -315,7 +313,8 @@ async def get_miner_purchase_stats(db: Session, miner_hotkey: str, with_lock: bo
     total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
 
     # Calculate percentage
-    max_focus_points = await get_max_focus_points_available_today()
+    max_focus_tao = await get_max_focus_tao()
+    max_focus_points = get_max_focus_points_available_today(max_focus_tao)
     focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
 
     return MinerPurchaseStats(

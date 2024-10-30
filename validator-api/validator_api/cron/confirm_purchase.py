@@ -12,10 +12,8 @@ import bittensor as bt
 
 from validator_api.utils.wallet import get_transaction_from_block_hash
 
-def extrinsic_already_confirmed(db: Session, extrinsic_id: str, with_lock: bool = False) -> bool:
+def extrinsic_already_confirmed(db: Session, extrinsic_id: str) -> bool:
     record = db.query(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id)
-    if with_lock:
-        record = record.with_for_update()
     return record.first() is not None
 
 async def check_payment(db: Session, recipient_address: str, sender_address: str, amount: float, block_hash: str = None):
@@ -34,7 +32,7 @@ async def check_payment(db: Session, recipient_address: str, sender_address: str
                 transfer["to"] == recipient_address and
                 round(float(transfer["amount"]), 5) == round(amount, 5)
             ):
-                if extrinsic_already_confirmed(db, transfer["extrinsicId"], True): # run with_lock True
+                if extrinsic_already_confirmed(db, transfer["extrinsicId"]):
                     continue
                 print(f"Payment of {amount} found from {sender_address} to {recipient_address}")
                 return transfer["extrinsicId"]

@@ -31,8 +31,9 @@ from substrateinterface import Keypair
 from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
-    get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
-    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected, mark_video_submitted
+    get_all_available_focus, check_availability, get_video_owner_coldkey,
+    already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
+    set_focus_video_score, mark_video_rejected, mark_video_submitted
 )
 from validator_api.utils.marketplace import get_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
@@ -470,7 +471,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         print('availability', availability)
         if availability['status'] == 'success':
             amount = availability['price']
-            video_owner_coldkey = get_video_owner_coldkey(db, video_id, True) # run with_lock True
+            video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
             background_tasks.add_task(confirm_video_purchased, video_id, True) # run with_lock True
             return {
                 'status': 'success',
@@ -498,7 +499,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         block_hash: Annotated[str, Body()],
         db: Session=Depends(get_db),
     ):
-        video_owner_coldkey = get_video_owner_coldkey(db, video_id, True) # run with_lock True
+        video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:
             return {
@@ -511,20 +512,13 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                 'message': f'Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}'
             }
 
-    @app.get('/api/focus/miner_purchase_score/{miner_hotkey}')
-    async def miner_purchase_score(
-        miner_hotkey: str,
-        db: Session = Depends(get_db)
-    ) -> MinerPurchaseStats:
-        return await get_miner_purchase_stats(db, miner_hotkey, True) # run with_lock True
-
     @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
     async def miner_purchase_scores(
         miner_hotkey_list: str,
         db: Session = Depends(get_db)
     ) -> Dict[str, MinerPurchaseStats]:
         return {
-            hotkey: await get_miner_purchase_stats(db, hotkey, True) # run with_lock True
+            hotkey: await get_miner_purchase_stats(db, hotkey)
             for hotkey in miner_hotkey_list.split(',')
         }
     
