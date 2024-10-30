@@ -18,7 +18,7 @@ available_focus_cache = {
     'timestamp': 0
 }
 
-CACHE_DURATION = 20  # 1 minute in seconds
+CACHE_DURATION = 90  # 1 minute in seconds
 
 cache_mutex = asyncio.Lock()
 
