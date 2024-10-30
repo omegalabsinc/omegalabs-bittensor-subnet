@@ -12,7 +12,6 @@ class UserRecord(Base):
 
     id = Column(String, primary_key=True, nullable=False)
     email = Column(String(DB_STRING_LENGTH), primary_key=True, nullable=False)
-    nick_name = Column(String(DB_STRING_LENGTH_LONG))
     name = Column(String(DB_STRING_LENGTH))
     coldkey = Column(String(DB_STRING_LENGTH))
     hotkey = Column(String(DB_STRING_LENGTH))
@@ -25,7 +24,6 @@ class UserRecord(Base):
 class User(BaseModel):
     id: str
     email: str
-    nick_name: str
     name: str
     tao_balance: float
     tao_check_time: datetime

@@ -5,6 +5,7 @@ from sqlalchemy import func
 from typing import List, Optional
 import json
 import time
+import asyncio
 
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
 from validator_api.database.models.user import UserRecord
@@ -17,11 +18,11 @@ available_focus_cache = {
     'timestamp': 0
 }
 
-CACHE_DURATION = 60  # 1 minute in seconds
+CACHE_DURATION = 90  # 1 minute in seconds
 
-def get_all_available_focus(
-    db: Session
-):
+cache_mutex = asyncio.Lock()
+
+async def get_all_available_focus(db: Session):
     global available_focus_cache
 
     # Check if cached data is still valid
@@ -29,13 +30,16 @@ def get_all_available_focus(
         return available_focus_cache['value']
 
     try:
-        # show oldest videos first so that they get rewarded fastest
-        items = db.query(FocusVideoRecord).filter_by(
-            processing_state=FocusVideoStateInternal.SUBMITTED,
-            deleted_at=None,
-        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
-        available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
-        available_focus_cache['timestamp'] = time.time()
+        async with cache_mutex:
+            # if many threads simultaneously check the cache, only one will update the cache
+            if time.time() - available_focus_cache['timestamp'] > CACHE_DURATION:
+                # show oldest videos first so that they get rewarded fastest
+                items = db.query(FocusVideoRecord).filter_by(
+                    processing_state=FocusVideoStateInternal.SUBMITTED,
+                    deleted_at=None,
+                ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
+                available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
+                available_focus_cache['timestamp'] = time.time()
         return available_focus_cache['value']
 
     except Exception as e:
@@ -60,14 +64,20 @@ def get_pending_focus(
 async def check_availability(
     db: Session,
     video_id: str,
-    miner_hotkey: str
+    miner_hotkey: str,
+    with_lock: bool = False
 ):
     try:
+        max_focus_tao = await get_max_focus_tao()
+
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
             FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,  # is available for purchase
-        ).first()
+        )
+        if with_lock:
+            video_record = video_record.with_for_update()
+        video_record = video_record.first()
 
         if video_record is None:
             return {
@@ -75,7 +85,7 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        actual_reward_tao = await estimate_tao(video_record.video_score, video_record.get_duration())
+        actual_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), max_focus_tao)
         print(f"Expected reward TAO: {video_record.expected_reward_tao}, actual reward TAO: {actual_reward_tao}")
         if actual_reward_tao == 0:
             raise HTTPException(422, detail="Max reward TAO is 0")
@@ -257,7 +267,9 @@ def get_video_owner_coldkey(db: Session, video_id: str) -> str:
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
-    ).first()
+    )
+    video_record = video_record.first()
+
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
 
@@ -289,7 +301,9 @@ async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurch
         FocusVideoRecord.miner_hotkey == miner_hotkey,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
         FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-    ).all()
+    )
+    purchased_videos_records = purchased_videos_records.all()
+    
     purchased_videos = [
         FocusVideoInternal.model_validate(video_record)
         for video_record in purchased_videos_records
@@ -299,7 +313,8 @@ async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurch
     total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
 
     # Calculate percentage
-    max_focus_points = await get_max_focus_points_available_today()
+    max_focus_tao = await get_max_focus_tao()
+    max_focus_points = get_max_focus_points_available_today(max_focus_tao)
     focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
 
     return MinerPurchaseStats(
@@ -359,13 +374,17 @@ def mark_video_rejected(
     db.add(video_record)
     db.commit()
 
-def mark_video_submitted(db: Session, video_id: str):
+def mark_video_submitted(db: Session, video_id: str, with_lock: bool = False):
     # Mark video as "SUBMITTED" if in the "PURCHASE_PENDING" state.
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
         FocusVideoRecord.deleted_at.is_(None)
-    ).first()
+    )
+    if with_lock:
+        video_record = video_record.with_for_update()
+    video_record = video_record.first()
+    
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found or not in the correct state: PURCHASE_PENDING")
 
