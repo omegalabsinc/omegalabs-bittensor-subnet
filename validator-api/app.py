@@ -28,6 +28,8 @@ from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
 
+import sentry_sdk
+
 from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
@@ -52,7 +54,8 @@ from validator_api.config import (
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
     TOPICS_LIST, PROXY_LIST, IS_PROD, 
-    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS
+    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS,
+    SENTRY_DSN
 )
 from validator_api.dataset_upload import dataset_uploader
 from validator_api.limiter import limiter
@@ -82,6 +85,13 @@ security = HTTPBasic()
 imagebind_loader = ImageBindLoader()
 
 focus_scoring_service = FocusScoringService()
+
+print("SENTRY_DSN:", SENTRY_DSN)
+sentry_sdk.init(
+    dsn=SENTRY_DSN,
+    traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
+)
 
 ### Utility functions for OMEGA Metadata Dashboard ###
 def get_timestamp_from_filename(filename: str):
@@ -245,6 +255,10 @@ async def main():
     async def shutdown_event():
         print("Shutdown event fired, attempting dataset upload of current batch.")
         dataset_uploader.submit()
+
+    @app.get("/sentry-debug")
+    async def trigger_error():
+        division_by_zero = 1 / 0
 
     @app.post("/api/get_pinecone_novelty")
     async def get_pinecone_novelty(
