@@ -49,6 +49,7 @@ class ImageBindLoader:
 
     async def _load_imagebind(self) -> None:
         """Internal method to load ImageBind."""
+        print("Loading ImageBind")
         try:
             self._imagebind = ImageBind(v2=True)
         finally:
