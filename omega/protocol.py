@@ -83,3 +83,68 @@ class Videos(bt.Synapse):
             video_metadata=self.video_metadata[:input_synapse.num_videos],
             axon=self.axon
         )
+
+
+
+
+class AudioMetadata(BaseModel):
+    video_id: str
+    description: str
+    views: int
+    start_time: int
+    end_time: int
+    video_emb: typing.List[float]
+    audio_emb: typing.List[float]
+    description_emb: typing.List[float]
+    sampling_rate: int
+    audio_array: typing.List[float]
+    diar_timestamps_start: typing.List[float]
+    diar_timestamps_end: typing.List[float]
+    diar_speakers: typing.List[str]
+
+    def __repr_args__(self):
+        parent_args = super().__repr_args__()
+        exclude_args = ['video_emb', 'audio_emb', 'description_emb', 'audio_array', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
+        return (
+            [(a, v) for a, v in parent_args if a not in exclude_args] +
+            [(a, ["..."]) for a in exclude_args]
+        )
+    
+
+class Audios(bt.Synapse):
+    """
+    A synapse class representing an audio request and response.
+
+    Attributes:
+    - query: the input query for which to find relevant videos
+    - num_videos: the number of videos to return
+    - audio_metadata: an audio metadata object
+    """
+
+    video_id: str
+    audio_metadata: typing.Optional[typing.List[AudioMetadata]] = None
+
+    def deserialize(self) -> typing.List[AudioMetadata]:
+        assert self.audio_metadata is not None
+        return self.audio_metadata
+
+    def to_serializable_dict(self, input_synapse: "Audios") -> dict:
+        """
+        Dumps the Audio object to a serializable dict, but makes sure to use input properties from
+        the input_synapse, while taking the non-null output property audio_metadata from the
+        response (self).
+        """
+        json_str = self.replace_with_input(input_synapse).json(
+            include={"query", "num_videos", "audio_metadata"})
+        return json.loads(json_str)
+
+    def replace_with_input(self, input_synapse: "Audios") -> "Audios":
+        """
+        Replaces the query and num_videos of current synapse with the given input synapse.
+        """
+        return Audios(
+            query=input_synapse.query,
+            num_videos=input_synapse.num_videos,
+            audio_metadata=self.audio_metadata,
+            axon=self.axon
+        )
