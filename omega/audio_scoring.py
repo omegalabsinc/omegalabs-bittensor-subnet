@@ -130,23 +130,6 @@ if __name__ == "__main__":
     speakers = ds['speakers'][0]
 
 
-    # Create a test audio array with a sine wave
-    # duration = 5  # seconds
-    # t = np.linspace(0, duration, int(sr * duration))
-    # frequency = 440  # Hz
-    # test_audio = np.sin(2 * np.pi * frequency * t)
-    
-    # # Add some noise
-    # noise = np.random.normal(0, 0.1, len(test_audio))
-    # test_audio = test_audio + noise
-    
-    # # Normalize
-    # test_audio = test_audio / np.max(np.abs(test_audio))
-    # sr = 16000
-    # timestamps_start = np.array([0.0])
-    # timestamps_end = np.array([5.0])
-    # speakers = np.array(['spk00'])
-
     # # Save test audio to WAV file
     import soundfile as sf
     

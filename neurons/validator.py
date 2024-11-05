@@ -26,6 +26,7 @@ from typing import List, Tuple, Optional, BinaryIO, Dict
 from fastapi import HTTPException
 from pydantic import ValidationError
 import datetime as dt
+import functools
 import random
 import traceback
 import requests
@@ -40,7 +41,7 @@ import wandb
 
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, AudioMetadata, Audios
 from omega.constants import (
     VALIDATOR_TIMEOUT, 
     VALIDATOR_TIMEOUT_MARGIN, 
@@ -62,10 +63,21 @@ from omega.constants import (
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
     FOCUS_MIN_SCORE,
+    MIN_AUDIO_LENGTH_SECONDS,
+    MAX_AUDIO_LENGTH_SECONDS,
+    MIN_AUDIO_LENGTH_SCORE,
+    SPEECH_CONTENT_SCALING_FACTOR,
+    SPEAKER_DOMINANCE_SCALING_FACTOR,
+    BACKGROUND_NOISE_SCALING_FACTOR,
+    AUDIO_LENGTH_SCALING_FACTOR,
+    AUDIO_SCORE_SCALING_FACTOR,
+    DIARIZATION_SCALING_FACTOR
 )
 from omega import video_utils, unstuff
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER
 from omega.text_similarity import get_text_similarity_score
+from omega.diarization_metric import calculate_diarization_metrics
+from omega.audio_scoring import AudioScore
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -85,7 +97,7 @@ class Validator(BaseValidatorNeuron):
 
     def __init__(self, config=None):
         super(Validator, self).__init__(config=config)
-
+        self.audio_score = AudioScore()
         bt.logging.info("load_state()")
         self.load_state()
         self.successfully_started_wandb = False
@@ -837,6 +849,146 @@ class Validator(BaseValidatorNeuron):
         except Exception as e:
             bt.logging.debug(f"Error trying proxy_endpoint: {e}")
             return None
+     
+
+    async def check_audios_and_calculate_rewards(
+            self, 
+            input_synapse: Audios, 
+            audios: Audios
+        ) -> Optional[float]:
+        try:
+            # return minimum score if no videos were found in video_metadata
+            if len(audios.audio_metadata) == 0:
+                return MIN_SCORE
+            # check video_ids for fake videos
+            if any(not video_utils.is_valid_youtube_id(audio.video_id) for audio in audios.audio_metadata):
+                return FAKE_VIDEO_PUNISHMENT
+            
+            # check and filter duplicate metadata
+            metadata = self.metadata_check(audios.audio_metadata)[:input_synapse.num_videos]
+            if len(metadata) < len(audios.audio_metadata):
+                bt.logging.info(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+            
+            # if randomly tripped, flag our random check to pull a video from miner's submissions
+            check_audio = CHECK_PROBABILITY > random.random()
+
+            # pull a random audio and/or description only
+            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_audio)
+            if random_meta_and_vid is None:
+                return FAKE_VIDEO_PUNISHMENT
+            
+            # execute the random check on metadata and video
+            async with GPU_SEMAPHORE:
+                passed_check = await self.random_youtube_check(random_meta_and_vid)
+
+                # punish miner if not passing
+                if not passed_check:
+                    return FAKE_VIDEO_PUNISHMENT
+                query_emb = await self.imagebind.embed_text_async([audios.query])
+            
+            embeddings = Embeddings(
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
+                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
+                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
+            )
+
+            # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+            metadata_is_similar = await self.deduplicate_videos(embeddings)
+            metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
+            if len(metadata) < len(audios.audio_metadata):
+                bt.logging.info(f"Deduplicated {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            # first get local novelty scores
+            local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
+            #bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
+            # second get the novelty scores from the validator api if not already too similar
+            audios_to_check = [
+                (embedding, metadata)
+                for embedding, local_score, metadata in zip(embeddings.video, local_novelty_scores, metadata)
+                if local_score >= DIFFERENCE_THRESHOLD
+            ]
+            # If there are embeddings to check, call get_novelty_scores once
+            if audios_to_check:
+                audios_to_check, metadata_to_check = zip(*audios_to_check)
+                global_novelty_scores = await self.get_novelty_scores(metadata_to_check)
+            else:
+                # If no embeddings to check, return an empty list or appropriate default value
+                global_novelty_scores = []
+
+            if global_novelty_scores is None or len(global_novelty_scores) == 0:
+                bt.logging.error("Issue retrieving global novelty scores, returning None.")
+                return None
+            #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            
+            # calculate true novelty scores between local and global
+            true_novelty_scores = [
+                min(local_score, global_score) for local_score, global_score
+                in zip(local_novelty_scores, global_novelty_scores)
+            ]
+            #bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
+
+            pre_filter_metadata_length = len(metadata)
+            # check scores from index for being too similar
+            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+            # filter out metadata too similar
+            metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+            # filter out embeddings too similar
+            embeddings = self.filter_embeddings(embeddings, is_too_similar)
+            if len(metadata) < pre_filter_metadata_length:
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
+
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            # filter data based on audio length
+            # Filter audios based on length constraints
+            pre_filter_metadata_length = len(metadata)
+            metadata = [
+                meta for meta in metadata 
+                if (len(meta.audio_array) / meta.sampling_rate) >= MIN_AUDIO_LENGTH_SECONDS 
+                and (len(meta.audio_array) / meta.sampling_rate) <= MAX_AUDIO_LENGTH_SECONDS
+            ]
+            
+            if len(metadata) < pre_filter_metadata_length:
+                bt.logging.info(f"Filtered {pre_filter_metadata_length} audios down to {len(metadata)} audios based on length constraints")
+                
+            # Return minimum score if no audios remain after filtering
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            avg_audio_length = sum(len(meta.audio_array) / meta.sampling_rate for meta in metadata) / len(metadata)
+            bt.logging.info(f"Average audio length: {avg_audio_length} seconds")
+
+            # Randomly sample one audio for duration check
+            selected_random_meta = random.choice(metadata)
+            audio_duration = len(selected_random_meta.audio_array) / selected_random_meta.sampling_rate
+            bt.logging.info(f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
+
+            audio_length_score = (MIN_AUDIO_LENGTH_SCORE + (audio_duration - MIN_AUDIO_LENGTH_SECONDS) / (MAX_AUDIO_LENGTH_SECONDS - MIN_AUDIO_LENGTH_SECONDS))/ (MIN_AUDIO_LENGTH_SCORE + 1)
+            audio_quality_scores = self.audio_score.total_score(selected_random_meta.audio_array, selected_random_meta.sampling_rate, selected_random_meta.timestamps_start, selected_random_meta.timestamps_end, selected_random_meta.speakers)
+            audio_quality_total_score = audio_quality_scores["speech_content_score"]*SPEECH_CONTENT_SCALING_FACTOR + audio_quality_scores["speaker_dominance_score"]*SPEAKER_DOMINANCE_SCALING_FACTOR + audio_quality_scores["background_noise_score"]*BACKGROUND_NOISE_SCALING_FACTOR
+            # query score
+            audio_query_score = F.cosine_similarity(
+                selected_random_meta.audio_emb, query_emb
+            ).tolist()
+
+            diarization_score = calculate_diarization_metrics(selected_random_meta.audio_array, selected_random_meta.sampling_rate, selected_random_meta.timestamps_start, selected_random_meta.timestamps_end, selected_random_meta.speakers)
+            der = diarization_score["der"]
+            total_score = DIARIZATION_SCALING_FACTOR*der + AUDIO_LENGTH_SCALING_FACTOR*audio_length_score + AUDIO_SCORE_SCALING_FACTOR*audio_quality_total_score + QUERY_RELEVANCE_SCALING_FACTOR*audio_query_score
+
+            return total_score
+
+
+        except Exception as e:
+            bt.logging.error(f"Error in check_audios_and_calculate_rewards: {e}")
+            return None
+
 
     async def reward(self, input_synapse: Videos, response: Videos) -> float:
         """
