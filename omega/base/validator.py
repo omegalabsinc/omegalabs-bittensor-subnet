@@ -34,7 +34,7 @@ from traceback import print_exception
 from omega.base.neuron import BaseNeuron
 from omega.mock import MockDendrite
 from omega.utils.config import add_validator_args
-from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT
+from omega.constants import FOCUS_REWARDS_PERCENT, YOUTUBE_REWARDS_PERCENT, AUDIO_REWARDS_PERCENT
 
 
 class BaseValidatorNeuron(BaseNeuron):
@@ -219,7 +219,8 @@ class BaseValidatorNeuron(BaseNeuron):
                 ):
                     bt.logging.info("Reloading focus videos rewards percent after 1 hour.")
                     self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
-                    self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
+                    self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - 0.2
+                    # self.AUDIO_REWARDS_PERCENT = 
                     self.load_focus_rewards_start = dt.datetime.now()
 
         # If someone intentionally stops the validator, it'll safely terminate operations.
