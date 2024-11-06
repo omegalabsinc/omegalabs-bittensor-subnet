@@ -1,6 +1,6 @@
 from pyannote.core import Segment, Timeline, Annotation
 from pyannote.metrics.diarization import DiarizationErrorRate
-from diarization_pipeline import CustomDiarizationPipeline
+from omega.diarization_pipeline import CustomDiarizationPipeline
 
 def calculate_diarization_metrics(audio_arr, sr, true_segments):
     """Calculate Diarization Error Rate (DER) and related metrics using pyannote metrics"""

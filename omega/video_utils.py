@@ -8,6 +8,8 @@ import bittensor as bt
 import ffmpeg
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
+import librosa
+import numpy as np
 
 from omega.constants import FIVE_MINUTES
 
@@ -108,6 +110,7 @@ def download_youtube_video(
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
+    
     ydl_opts = {
         "format": "worst",  # Download the worst quality
         "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
@@ -175,3 +178,29 @@ def copy_audio(video_path: str) -> BinaryIO:
         .run(quiet=True)
     )
     return temp_audiofile
+
+def get_audio_array(video_path: str) -> np.ndarray:
+    audio_file = copy_audio(video_path)
+    audio_data, sr = librosa.load(audio_file.name)
+    return audio_data, sr
+
+
+
+if __name__ == "__main__":
+    results = search_videos("Climate Change")
+    pth = download_youtube_video(results[0].video_id)
+    print(pth)
+    print(pth.name)
+    new_pth = copy_audio(pth.name)
+    print(new_pth.name)
+    audio_data, sr = get_audio_array(new_pth.name)
+    print(f"Audio duration: {len(audio_data)/sr:.2f} seconds")
+    print(f"Sample rate: {sr} Hz")
+    # # Read and print audio file contents
+    # with open(new_pth.name, 'rb') as audio_file:
+    #     audio_data = audio_file.read()
+    #     print(f"Audio file size: {len(audio_data)} bytes")
+    
+    # # Clean up temp files
+    # pth.close()
+    # new_pth.close()

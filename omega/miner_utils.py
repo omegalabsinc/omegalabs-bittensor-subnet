@@ -4,11 +4,11 @@ from typing import List, Tuple
 
 import bittensor as bt
 
-from omega.protocol import VideoMetadata
+from omega.protocol import VideoMetadata, AudioMetadata
 from omega.imagebind_wrapper import ImageBind
-from omega.constants import MAX_VIDEO_LENGTH, FIVE_MINUTES
+from omega.constants import MAX_VIDEO_LENGTH, FIVE_MINUTES, MAX_AUDIO_LENGTH_SECONDS, MIN_AUDIO_LENGTH_SECONDS
 from omega import video_utils
-
+from omega.diarization_pipeline import CustomDiarizationPipeline
 
 if os.getenv("OPENAI_API_KEY"):
     from openai import OpenAI
@@ -97,3 +97,67 @@ def search_and_embed_youtube_videos(query: str, num_videos: int, imagebind: Imag
         bt.logging.error(f"Error searching for videos: {e}")
 
     return video_metas
+
+
+
+
+def search_and_diarize_youtube_videos(query: str, num_videos: int, diarization_pipeline: CustomDiarizationPipeline, imagebind: ImageBind) -> List[AudioMetadata]:
+    """
+    Search YouTube for videos matching the given query and return a list of AudioMetadata objects.
+
+    Args:
+        query (str): The query to search for.
+        num_videos (int, optional): The number of videos to return.
+
+    Returns:
+        List[AudioMetadata]: A list of AudioMetadata objects representing the search results.
+    """
+    results = video_utils.search_videos(query, max_results=int(num_videos * 1.5))
+    audio_metas = []
+    try:
+        # take the first N that we need
+        for result in results:
+            start = time.time()
+            download_path = video_utils.download_youtube_video(
+                result.video_id,
+                start=0,
+                end=min(result.length, MAX_AUDIO_LENGTH_SECONDS)  # download the first 5 minutes at most
+            )
+            if download_path:
+                clip_path = None
+                try:
+                    result.length = video_utils.get_video_duration(download_path.name)  # correct the length
+                    bt.logging.info(f"Downloaded video {result.video_id} ({min(result.length, MAX_AUDIO_LENGTH_SECONDS)}) in {time.time() - start} seconds")
+                    start, end = get_relevant_timestamps(query, result, download_path)
+                    description = get_description(result, download_path)
+                    audio_array, sr = video_utils.get_audio_array(download_path.name)
+                    diar_timestamps_start, diar_timestamps_end, diar_speakers = diarization_pipeline(audio_array, sr)
+                    clip_path = video_utils.clip_video(download_path.name, start, end)
+                    bt.logging.info(f"Clip video path: {clip_path}")
+                    embeddings = imagebind.embed([description], [clip_path])
+                    audio_metas.append(AudioMetadata(
+                        video_id=result.video_id,
+                        views=result.views,
+                        start_time=start,
+                        end_time=end,
+                        video_emb=embeddings.video[0].tolist(),
+                        audio_emb=embeddings.audio[0].tolist(),
+                        description_emb=embeddings.description[0].tolist(),
+                        sampling_rate=sr,
+                        audio_array=audio_array.tolist(),
+                        diar_timestamps_start=diar_timestamps_start,
+                        diar_timestamps_end=diar_timestamps_end,
+                        diar_speakers=diar_speakers,
+                    ))
+                finally:
+                    download_path.close()
+                    if clip_path:
+                        clip_path.close()
+            if len(audio_metas) == num_videos:
+                break
+
+    except Exception as e:
+        bt.logging.error(f"Error searching for videos: {e}")
+
+    return audio_metas
+

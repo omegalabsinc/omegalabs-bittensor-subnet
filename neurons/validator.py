@@ -58,6 +58,7 @@ from omega.constants import (
     VIDEO_RELEVANCE_WEIGHT,
     YOUTUBE_REWARDS_PERCENT,
     FOCUS_REWARDS_PERCENT,
+    AUDIO_REWARDS_PERCENT,
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
@@ -125,6 +126,7 @@ class Validator(BaseValidatorNeuron):
         self.focus_rewards_percent_endpoint = f"{api_root}/api/focus/get_rewards_percent"
         self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
+        self.num_audios = 20
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
         # load topics from topics URL (CSV) or fallback to local topics file
@@ -134,8 +136,9 @@ class Validator(BaseValidatorNeuron):
         self.imagebind = None
         
         self.load_focus_rewards_start = dt.datetime.now()
-        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
-        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
+        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent() # 2.5%
+        self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT # 12.5%
+        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT # 85%
 
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
@@ -223,6 +226,7 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        miner_uids = [125]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
@@ -340,6 +344,73 @@ class Validator(BaseValidatorNeuron):
         for no_reward, miner_uid in zip(no_rewards_tensor, no_focus_videos_miner_uids):
             bt.logging.info(f"Scoring miner={miner_uid} with reward={no_reward} for no focus videos")
         """ END FOCUS VIDEOS PROCESSING AND SCORING """
+
+
+        """ START YOUTUBE AUDIO PROCESSING AND SCORING """
+        bt.logging.info("===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
+        # The dendrite client queries the network.
+        query = random.choice(self.all_topics)
+        bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
+        audio_input_synapse = Audios(query=query, num_audios=self.num_audios)
+        axons = [self.metagraph.axons[uid] for uid in miner_uids]
+        audio_responses = await self.dendrite(
+            # Send the query to selected miner axons in the network.
+            axons=axons,
+            synapse=audio_input_synapse,
+            deserialize=False,
+            timeout=self.client_timeout_seconds,
+        )
+        audio_working_miner_uids = []
+        audio_finished_responses = []
+
+        for response in audio_responses:
+            if response.video_metadata is None or not response.axon or not response.axon.hotkey:
+                continue
+
+            uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
+            audio_working_miner_uids.append(uid)
+            audio_finished_responses.append(response)
+
+        if len(audio_working_miner_uids) == 0:
+            bt.logging.info("No miner responses available")
+        
+        # Log the results for monitoring purposes.
+        bt.logging.info(f"Received responses: {audio_responses}")
+        # Adjust the scores based on responses from miners.
+        try:
+            # Check if this validator is running decentralization
+            if not self.decentralization:
+                # if not, use validator API get_rewards system
+                audio_rewards_list = await self.get_rewards(input_synapse=audio_input_synapse, responses=audio_finished_responses)
+            else:
+                # if so, use decentralization logic with local GPU
+                audio_rewards_list = await self.handle_checks_and_rewards_audio(input_synapse=audio_input_synapse, responses=audio_finished_responses)
+        except Exception as e:
+            bt.logging.error(f"Error in handle_checks_and_rewards_audio: {e}")
+            traceback.print_exc()
+            return
+        
+        audio_rewards = []
+        audio_reward_uids = []
+        for r, r_uid in zip(audio_rewards_list, audio_working_miner_uids):
+            if r is not None:
+                audio_rewards.append(r)
+                audio_reward_uids.append(r_uid)
+        audio_rewards = torch.FloatTensor(audio_rewards).to(self.device)
+        self.update_scores(audio_rewards, audio_reward_uids)
+        
+        # give min reward to miners who didn't respond
+        bad_miner_uids = [uid for uid in miner_uids if uid not in audio_working_miner_uids]
+        penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
+        self.update_scores(penalty_tensor, bad_miner_uids)
+
+        for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
+            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+        
+        for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
+            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+
+        """ END YOUTUBE AUDIO PROCESSING AND SCORING """
 
     def metadata_check(self, metadata: List[VideoMetadata]) -> List[VideoMetadata]:
         return [
@@ -751,6 +822,20 @@ class Validator(BaseValidatorNeuron):
         ])
         return rewards
     
+    async def handle_checks_and_reward_audio(
+        self,
+        input_synapse: Audios,
+        responses: List[Audios],
+    ) -> torch.FloatTensor:
+        rewards = await asyncio.gather(*[
+            self.check_audios_and_calculate_rewards(
+                input_synapse,
+                response,
+            )
+            for response in responses
+        ])
+        return rewards
+    
     async def upload_video_metadata(
         self, 
         metadata: List[VideoMetadata], 
@@ -865,7 +950,7 @@ class Validator(BaseValidatorNeuron):
                 return FAKE_VIDEO_PUNISHMENT
             
             # check and filter duplicate metadata
-            metadata = self.metadata_check(audios.audio_metadata)[:input_synapse.num_videos]
+            metadata = self.metadata_check(audios.audio_metadata)[:input_synapse.num_audios]
             if len(metadata) < len(audios.audio_metadata):
                 bt.logging.info(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
             
@@ -887,9 +972,7 @@ class Validator(BaseValidatorNeuron):
                 query_emb = await self.imagebind.embed_text_async([audios.query])
             
             embeddings = Embeddings(
-                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(self.imagebind.device),
                 audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(self.imagebind.device),
-                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(self.imagebind.device),
             )
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
@@ -909,7 +992,7 @@ class Validator(BaseValidatorNeuron):
             # second get the novelty scores from the validator api if not already too similar
             audios_to_check = [
                 (embedding, metadata)
-                for embedding, local_score, metadata in zip(embeddings.video, local_novelty_scores, metadata)
+                for embedding, local_score, metadata in zip(embeddings.audio, local_novelty_scores, metadata)
                 if local_score >= DIFFERENCE_THRESHOLD
             ]
             # If there are embeddings to check, call get_novelty_scores once
@@ -980,8 +1063,20 @@ class Validator(BaseValidatorNeuron):
 
             diarization_score = calculate_diarization_metrics(selected_random_meta.audio_array, selected_random_meta.sampling_rate, selected_random_meta.timestamps_start, selected_random_meta.timestamps_end, selected_random_meta.speakers)
             der = diarization_score["der"]
-            total_score = DIARIZATION_SCALING_FACTOR*der + AUDIO_LENGTH_SCALING_FACTOR*audio_length_score + AUDIO_SCORE_SCALING_FACTOR*audio_quality_total_score + QUERY_RELEVANCE_SCALING_FACTOR*audio_query_score
+            total_score = (
+                DIARIZATION_SCALING_FACTOR * der +
+                AUDIO_LENGTH_SCALING_FACTOR * audio_length_score +
+                AUDIO_SCORE_SCALING_FACTOR * audio_quality_total_score +
+                QUERY_RELEVANCE_SCALING_FACTOR * audio_query_score
+            )
 
+            bt.logging.debug(
+                f"total_score: {total_score}, "
+                f"der: {der}, "
+                f"audio_length_score: {audio_length_score}, "
+                f"audio_quality_total_score: {audio_quality_total_score}, "
+                f"audio_query_score: {audio_query_score}"
+            )
             return total_score
 
 

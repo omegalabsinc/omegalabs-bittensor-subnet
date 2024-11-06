@@ -89,13 +89,11 @@ class Videos(bt.Synapse):
 
 class AudioMetadata(BaseModel):
     video_id: str
-    description: str
     views: int
     start_time: int
     end_time: int
     video_emb: typing.List[float]
     audio_emb: typing.List[float]
-    description_emb: typing.List[float]
     sampling_rate: int
     audio_array: typing.List[float]
     diar_timestamps_start: typing.List[float]
@@ -104,7 +102,7 @@ class AudioMetadata(BaseModel):
 
     def __repr_args__(self):
         parent_args = super().__repr_args__()
-        exclude_args = ['video_emb', 'audio_emb', 'description_emb', 'audio_array', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
+        exclude_args = ['video_emb', 'audio_emb', 'audio_array', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
         return (
             [(a, v) for a, v in parent_args if a not in exclude_args] +
             [(a, ["..."]) for a in exclude_args]
@@ -117,7 +115,7 @@ class Audios(bt.Synapse):
 
     Attributes:
     - query: the input query for which to find relevant videos
-    - num_videos: the number of videos to return
+    - num_audios: the number of audios to return
     - audio_metadata: an audio metadata object
     """
 
@@ -135,16 +133,16 @@ class Audios(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_videos", "audio_metadata"})
+            include={"query", "num_audios", "audio_metadata"})
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Audios") -> "Audios":
         """
-        Replaces the query and num_videos of current synapse with the given input synapse.
+        Replaces the query and num_audios of current synapse with the given input synapse.
         """
         return Audios(
             query=input_synapse.query,
-            num_videos=input_synapse.num_videos,
+            num_audios=input_synapse.num_audios,
             audio_metadata=self.audio_metadata,
             axon=self.axon
         )
