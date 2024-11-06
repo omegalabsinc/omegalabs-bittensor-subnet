@@ -23,7 +23,7 @@ from validator_api.utils import run_async, run_with_retries
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 
-FOURTY_FIVE_MINUTES = 2700  # in seconds
+NINETY_MINUTES = 5400  # in seconds
 FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
 
@@ -282,7 +282,7 @@ Additionally, here is a detailed description of the video content:
         Final score: each component contributes equally to the final score.
         """
         video_duration_seconds = self.get_video_duration_seconds(video_id)
-        if video_duration_seconds > FOURTY_FIVE_MINUTES:
+        if video_duration_seconds > NINETY_MINUTES:
             raise ValueError(f"Video duration is too long: {video_duration_seconds} seconds")
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
