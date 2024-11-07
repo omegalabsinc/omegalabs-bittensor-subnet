@@ -95,6 +95,10 @@ class AudioScore:
     
 
     def total_score(self, audio_arr, sr, timestamps_start, timestamps_end, speakers):
+        audio_arr = np.array(audio_arr)
+        timestamps_start = np.array(timestamps_start)
+        timestamps_end = np.array(timestamps_end)
+        # speakers = torch.tensor(speakers)
         speech_content_score = self.speech_content_score(audio_arr, sr)
         speaker_dominance_score = self.speaker_dominance_score(timestamps_start, timestamps_end, speakers)
         background_noise_score = self.background_noise_score(audio_arr, sr)

@@ -1,9 +1,14 @@
 from pyannote.core import Segment, Timeline, Annotation
 from pyannote.metrics.diarization import DiarizationErrorRate
 from omega.diarization_pipeline import CustomDiarizationPipeline
+import numpy as np
+
+
+
 
 def calculate_diarization_metrics(audio_arr, sr, true_segments):
     """Calculate Diarization Error Rate (DER) and related metrics using pyannote metrics"""
+    audio_arr = np.asarray(audio_arr).astype(np.float32)
     pred_segments = pipeline.process(audio_arr, sr)
     
     # Convert dictionary segments to pyannote Annotation format
@@ -22,7 +27,6 @@ def calculate_diarization_metrics(audio_arr, sr, true_segments):
     metric = DiarizationErrorRate(skip_overlap=True)
     der = metric(reference, hypothesis)
     # optimal_mapping = metric.optimal_mapping(reference, hypothesis)
-
     
     # Get detailed components
     components = metric(reference, hypothesis, detailed=True)
@@ -31,7 +35,7 @@ def calculate_diarization_metrics(audio_arr, sr, true_segments):
     speaker_error_rate = components['confusion'] / components['total']
 
     return {
-        "der": 1 - der.clip(0, 1),
+        "inverse_der": 1 - max(0, min(1, der)),
         "miss_rate": 1 - miss_rate,
         "false_alarm_rate": 1 - false_alarm_rate,
         "speaker_error_rate": 1 - speaker_error_rate
@@ -42,3 +46,4 @@ diarization_model_id = "Revai/reverb-diarization-v2"
 overlap_detection_model_id = "pyannote/overlapped-speech-detection" 
 pipeline = CustomDiarizationPipeline(overlap_detection_model_id=overlap_detection_model_id,
                                     diarization_model_id=diarization_model_id)
+

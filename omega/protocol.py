@@ -92,7 +92,6 @@ class AudioMetadata(BaseModel):
     views: int
     start_time: int
     end_time: int
-    video_emb: typing.List[float]
     audio_emb: typing.List[float]
     sampling_rate: int
     audio_array: typing.List[float]
@@ -102,7 +101,7 @@ class AudioMetadata(BaseModel):
 
     def __repr_args__(self):
         parent_args = super().__repr_args__()
-        exclude_args = ['video_emb', 'audio_emb', 'audio_array', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
+        exclude_args = ['audio_emb', 'audio_array', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
         return (
             [(a, v) for a, v in parent_args if a not in exclude_args] +
             [(a, ["..."]) for a in exclude_args]
@@ -119,7 +118,8 @@ class Audios(bt.Synapse):
     - audio_metadata: an audio metadata object
     """
 
-    video_id: str
+    query: str
+    num_audios: int
     audio_metadata: typing.Optional[typing.List[AudioMetadata]] = None
 
     def deserialize(self) -> typing.List[AudioMetadata]:

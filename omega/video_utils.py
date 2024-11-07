@@ -11,7 +11,7 @@ from yt_dlp import YoutubeDL
 import librosa
 import numpy as np
 
-from omega.constants import FIVE_MINUTES
+from omega.constants import FIVE_MINUTES, TEN_MINUTES
 
 
 def seconds_to_str(seconds):
@@ -71,7 +71,7 @@ def search_videos(query, max_results=8):
                         video_id=entry["id"],
                         title=entry["title"],
                         description=entry.get("description"),
-                        length=(int(entry.get("duration")) if entry.get("duration") else FIVE_MINUTES),
+                        length=(int(entry.get("duration")) if entry.get("duration") else TEN_MINUTES),
                         views=(entry.get("view_count") if entry.get("view_count") else 0),
                     ) for entry in result["entries"]
                 ]
@@ -123,6 +123,9 @@ def download_youtube_video(
     if start is not None and end is not None:
         ydl_opts["download_ranges"] = lambda _, __: [{"start_time": start, "end_time": end}]
 
+
+        # Check if the file is empty (download failed)
+        if os.stat(temp_fileobj.name).st_size == 0:
     if proxy is not None:
         ydl_opts["proxy"] = proxy
 

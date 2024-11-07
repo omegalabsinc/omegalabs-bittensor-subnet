@@ -178,29 +178,3 @@ class CustomDiarizationPipeline:
 
 
 
-# if __name__ == "__main__":
-    # diarization_model_id = "Revai/reverb-diarization-v2"
-    # overlap_detection_model_id = "pyannote/overlapped-speech-detection"
-    # pipeline = CustomDiarizationPipeline(overlap_detection_model_id=overlap_detection_model_id,
-    #                                     diarization_model_id=diarization_model_id)
-
-    # from datasets import load_dataset
-    # import huggingface_hub
-
-
-    # repo_id = "diarizers-community/voxconverse"
-
-    # ds = load_dataset(repo_id, split="test", cache_dir="/workspace/tezuesh/voxconverse/data_cache")
-
-    # ds = next(ds.shuffle().iter(batch_size=64))
-    # audio_arr = ds['audio'][0]['array']
-    # sr = ds['audio'][0]['sampling_rate']
-    # timestamps_start = ds['timestamps_start'][0]
-    # timestamps_end = ds['timestamps_end'][0]
-    # speakers = ds['speakers'][0]
-
-    # pipeline.process(audio_arr, sr)
-
-
-
-
