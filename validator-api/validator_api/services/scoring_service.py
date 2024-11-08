@@ -22,6 +22,7 @@ from validator_api.services import focus_scoring_prompts
 from validator_api.utils import run_async, run_with_retries
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
+from validator_api.database.models.boosted_task import BoostedTask
 
 NINETY_MINUTES = 5400  # in seconds
 FOCUS_VIDEO_MIN_SCORE = 0.05
@@ -77,6 +78,7 @@ class VideoScore(BaseModel):
     video_completion_score: float
     description_uniqueness_score: Optional[float]
     video_uniqueness_score: float
+    boosted_multiplier: Optional[float]
     combined_score: float
 
     # metadata
@@ -89,6 +91,9 @@ class VideoScore(BaseModel):
     task_overview_embedding: Optional[List[float]]
     detailed_video_description_embedding: Optional[List[float]]
     video_embedding: List[float]
+    
+class BoostedTaskIndex(BaseModel):
+    index: int
 
 def get_s3_path(video_id: str) -> str:
     return f"clips/{video_id}.webm"
@@ -266,18 +271,51 @@ Additionally, here is a detailed description of the video content:
             return detailed_video_description, None, None
         return detailed_video_description, embedding, await self.get_description_uniqueness_score(embedding)
 
+    async def get_boosted_multiplier(self, focusing_task: str, focusing_description: str) -> float:
+        """
+        Get boosted tasks from the database "boosted_tasks" table
+        ask Gemini if the task matches any of the boosted tasks
+        return the multiplier for the task if it is boosted, otherwise 1.0
+        """
+        with get_db_context() as db:
+            boosted_tasks = db.query(BoostedTask).all()
+            system_prompt = focus_scoring_prompts.BOOST_SCORING_SYSTEM_PROMPT.format(boosted_tasks="\n".join([f"{idx}. {task.title}: {task.description}" for idx, task in enumerate(boosted_tasks)]))
+            user_prompt = focus_scoring_prompts.BOOST_SCORING_USER_PROMPT.format(
+                focusing_task=focusing_task,
+                focusing_description=focusing_description,
+            )
+            boosted_task_index = await self.make_gemini_request_with_retries(
+                system_prompt=system_prompt,
+                user_prompt=user_prompt,
+                video_id=None,
+                OutputClassSchema=BoostedTaskIndex,
+            )
+            print(f"Boosted task index: {boosted_task_index.index}")
+            if boosted_task_index.index == -1 or boosted_task_index.index >= len(boosted_tasks):
+                return 1.0
+            multiplier = boosted_tasks[boosted_task_index.index].multiplier
+            try:
+                multiplier = float(multiplier)
+            except (TypeError, ValueError):
+                print(f"Invalid task score boost multiplier: {multiplier}, returning 1.0")
+                multiplier = 1.0
+            return multiplier
+    
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
-        The combined_score is an average of five components:
+        The combined_score is an average of five components, plus a final multiplier:
 
         # gemini based scores
         1. task_gemini_score: Gemini's evaluation of the task's quality, based on the task overview and how it feeds into the community's goals and its relevance to teaching AI systems
         2. completion_gemini_score: Gemini's evaluation of how well the task was completed and how relevant the video content is to the task and the community's goals
 
-        # embeddding based scores
+        # embedding based scores
         3. task_uniqueness_score: Uniqueness of the task based on embedding similarity of the task overview
         4. description_uniqueness_score: Uniqueness of the video description based on embedding similarity of the detailed video description
         5. video_uniqueness_score: Uniqueness of the video content based on embedding similarity of the video
+        
+        # score boost: a task may be a boosted task, in which case the score is multiplied by a constant factor
+        6. score_boost: a constant factor that is applied to the final score
         
         Final score: each component contributes equally to the final score.
         """
@@ -295,12 +333,14 @@ Additionally, here is a detailed description of the video content:
             (video_description, video_description_embedding, video_description_uniqueness_score),
             completion_score_breakdown,
             (video_embedding, video_uniqueness_score),
+            boosted_multiplier,
         ) = await asyncio.gather(
             self.embed_and_get_task_uniqueness_score(task_overview),  # uses openai to get embedding
             self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
             self.get_detailed_video_description_embedding_score(video_id, task_overview),  # uses gemini to get detailed description
             self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None),  # use gemini to get breakdown of task score
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
+            self.get_boosted_multiplier(focusing_task, focusing_description),
         )
         task_gemini_score = task_score_breakdown.final_score
         completion_gemini_score = completion_score_breakdown.final_score
@@ -324,6 +364,10 @@ Additionally, here is a detailed description of the video content:
             combined_score *= adjusted_score ** coefficient
             coefficient_sum += coefficient
         combined_score = combined_score ** (1 / coefficient_sum)
+        
+        # apply score boost if it's a boosted task
+        print(f"Boosted multiplier: {boosted_multiplier}")
+        combined_score *= boosted_multiplier
 
         return VideoScore(
             task_score=task_gemini_score,
@@ -331,6 +375,7 @@ Additionally, here is a detailed description of the video content:
             video_completion_score=completion_gemini_score,
             description_uniqueness_score=video_description_uniqueness_score,
             video_uniqueness_score=video_uniqueness_score,
+            boosted_multiplier=boosted_multiplier,
             combined_score=combined_score,
             task_overview=task_overview,
             task_overview_embedding=task_overview_embedding,
