@@ -425,9 +425,10 @@ async def main():
         audio_quality_total_score = upload_data.audio_quality_total_score
         audio_query_score = upload_data.audio_query_score
         topic_query = upload_data.topic_query
+        total_score = upload_data.total_score
 
         start_time = time.time()
-        audio_ids = await score.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, topic_query)
+        audio_ids = await score.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, topic_query, total_score)
         print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         
         if upload_data.miner_hotkey is not None:
@@ -979,7 +980,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
 
     async def run_server():
         print("run_server()")
-        config = uvicorn.Config(app=app, host="0.0.0.0", port=8004)
+        config = uvicorn.Config(app=app, host="0.0.0.0", port=8001)
         server = uvicorn.Server(config)
         await server.serve()
     
