@@ -278,28 +278,34 @@ Additionally, here is a detailed description of the video content:
         return the multiplier for the task if it is boosted, otherwise 1.0
         """
         with get_db_context() as db:
-            boosted_tasks = db.query(BoostedTask).all()
-            system_prompt = focus_scoring_prompts.BOOST_SCORING_SYSTEM_PROMPT.format(boosted_tasks="\n".join([f"{idx}. {task.title}: {task.description}" for idx, task in enumerate(boosted_tasks)]))
-            user_prompt = focus_scoring_prompts.BOOST_SCORING_USER_PROMPT.format(
-                focusing_task=focusing_task,
-                focusing_description=focusing_description,
-            )
-            boosted_task_index = await self.make_gemini_request_with_retries(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
-                video_id=None,
-                OutputClassSchema=BoostedTaskIndex,
-            )
-            # print(f"Boosted task index: {boosted_task_index.index}")
-            if boosted_task_index.index == -1 or boosted_task_index.index >= len(boosted_tasks):
-                return 1.0
-            multiplier = boosted_tasks[boosted_task_index.index].multiplier
-            try:
-                multiplier = float(multiplier)
-            except (TypeError, ValueError):
-                print(f"Invalid task score boost multiplier: {multiplier}, returning 1.0")
-                multiplier = 1.0
-            return multiplier
+            boosted_tasks_records = db.query(BoostedTask).all()
+            # Convert to simple tuples containing just the data we need
+            boosted_tasks = [(task.title, task.description, task.multiplier) for task in boosted_tasks_records]
+        # print(f"Boosted tasks: {boosted_tasks}")
+        system_prompt = focus_scoring_prompts.BOOST_SCORING_SYSTEM_PROMPT.format(
+            boosted_tasks="\n".join([f"{idx}. {title}: {description}" for idx, (title, description, _) in enumerate(boosted_tasks)])
+        )
+        user_prompt = focus_scoring_prompts.BOOST_SCORING_USER_PROMPT.format(
+            focusing_task=focusing_task,
+            focusing_description=focusing_description,
+        )
+        boosted_task_index = await self.make_gemini_request_with_retries(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt,
+            video_id=None,
+            OutputClassSchema=BoostedTaskIndex,
+        )
+        # print(f"Boosted task index: {boosted_task_index.index}")
+        if boosted_task_index.index == -1 or boosted_task_index.index >= len(boosted_tasks):
+            return 1.0
+            
+        multiplier = boosted_tasks[boosted_task_index.index][2]  # Get multiplier from tuple
+        try:
+            multiplier = float(multiplier)
+        except (TypeError, ValueError):
+            print(f"Invalid task score boost multiplier: {multiplier}, returning 1.0")
+            multiplier = 1.0
+        return multiplier
     
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
