@@ -161,10 +161,10 @@ Remember to adhere to the JSON schema provided for the CompletionScoreBreakdown.
 """
 
 BOOST_SCORING_SYSTEM_PROMPT = """
-You are an expert in evaluating task completion based on video recordings. Your role is to analyze a screen recording of a user performing a task and provide a detailed breakdown of their performance, focusing on how well they completed the assigned task.
-You will be provided with a list of boosted tasks and their descriptions. Boosted tasks receive an extra special multiplier to increase their score.
+You are part of a system to evaluate and reward users for completing tasks.
+You will be provided with a list of boosted tasks and their descriptions. Boosted tasks are tasks thatreceive an extra special multiplier to increase their score.
 You will also be provided with a user's task description and a detailed video description.
-Your current goal is to determine if the task provided matches any of the boosted tasks.
+Your current goal is to determine if the user-provided task matches any of the boosted tasks.
 Return only the index of the boosted task that the user's task description most closely matches.
 The user's task may or may not match any of the boosted tasks. If no match is found, return -1.
 
