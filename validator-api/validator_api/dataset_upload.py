@@ -7,7 +7,7 @@ from datasets import Dataset
 from huggingface_hub import HfApi
 import ulid
 
-from omega.protocol import VideoMetadata
+from omega.protocol import VideoMetadata, AudioMetadata
 
 from validator_api import config
 
@@ -87,5 +87,69 @@ class DatasetUploader:
         self.current_batch = self.current_batch[self.desired_batch_size:]
         self.desired_batch_size = get_random_batch_size()
 
+    
 
-dataset_uploader = DatasetUploader()
+class AudioDatasetUploader:
+    def __init__(self):
+        self.current_batch = []
+        self.min_batch_size = 2
+        self.desired_batch_size = get_random_batch_size()
+
+    def add_audios(
+        self, metadata: List[AudioMetadata], audio_ids: List[str],
+        inverse_der: float, audio_length_score: float,
+        audio_quality_total_score: float, audio_query_score: float,
+        query: str, total_score: float
+    ) -> None:
+        curr_time = datetime.now()
+        self.current_batch.extend([
+            {
+                "audio_id": audio_uuid,
+                "youtube_id": audio.video_id,
+                "start_time": audio.start_time,
+                "end_time": audio.end_time,
+                "audio_embed": audio.audio_emb,
+                "diar_timestamps_start": audio.diar_timestamps_start,
+                "diar_timestamps_end": audio.diar_timestamps_end,
+                "diar_speakers": audio.diar_speakers,
+                "inverse_der": inverse_der,
+                "audio_length_score": audio_length_score,
+                "audio_quality_score": audio_quality_total_score,
+                "query_relevance_score": audio_query_score,
+                "total_score": total_score,
+                "query": query,
+                "submitted_at": int(curr_time.timestamp()),
+            }
+            for audio_uuid, audio in zip(audio_ids, metadata)
+        ])
+        print(f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}")
+        if len(self.current_batch) >= self.desired_batch_size:
+            self.submit()
+
+    def submit(self) -> None:
+        if len(self.current_batch) < self.min_batch_size:
+            print(f"Need at least {self.min_batch_size} audios to submit, but have {len(self.current_batch)}")
+            return
+        data = self.current_batch[:self.desired_batch_size]
+        print(f"Uploading batch of {len(self.current_batch)} audios")
+        with BytesIO() as f:
+            dataset = Dataset.from_list(data)
+            num_bytes = dataset.to_parquet(f)
+            try:
+                HF_API.upload_file(
+                    path_or_fileobj=f,
+                    path_in_repo=get_data_path(str(ulid.new())),
+                    repo_id=config.HF_AUDIO_REPO,
+                    repo_type=config.REPO_TYPE,
+                )
+                print(f"Uploaded {num_bytes} bytes to Hugging Face")
+            except Exception as e:
+                print(f"Error uploading to Hugging Face: {e}")
+        self.current_batch = self.current_batch[self.desired_batch_size:]
+        self.desired_batch_size = get_random_batch_size()
+
+
+
+
+audio_dataset_uploader = AudioDatasetUploader()
+video_dataset_uploader = DatasetUploader()

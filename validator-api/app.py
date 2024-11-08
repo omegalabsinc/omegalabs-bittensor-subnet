@@ -41,7 +41,7 @@ from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, AudioMetadata
 from omega.imagebind_wrapper import ImageBind
 
 from validator_api import score
@@ -52,7 +52,7 @@ from validator_api.config import (
     TOPICS_LIST, PROXY_LIST, IS_PROD, 
     FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS
 )
-from validator_api.dataset_upload import dataset_uploader
+from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 from validator_api.limiter import limiter
 
 
@@ -152,6 +152,16 @@ class VideoMetadataUpload(BaseModel):
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
 
+class AudioMetadataUpload(BaseModel):
+    metadata: List[AudioMetadata]
+    inverse_der: float
+    audio_length_score: float
+    audio_quality_total_score: float
+    audio_query_score: float
+    topic_query: str
+    total_score: Optional[float] = None
+    miner_hotkey: Optional[str] = None
+
 class FocusScoreResponse(BaseModel):
     video_id: str
     video_score: float
@@ -225,7 +235,9 @@ async def main():
 
             try:
                 # Sync the metagraph.
+                print("syncing metagraph")
                 metagraph.sync(subtensor=subtensor)
+                print("metagraph synced")
 
                 # Sync latest commune keys
                 if ENABLE_COMMUNE:
@@ -242,13 +254,15 @@ async def main():
     @app.on_event("shutdown")
     async def shutdown_event():
         print("Shutdown event fired, attempting dataset upload of current batch.")
-        dataset_uploader.submit()
+        video_dataset_uploader.submit()
+        audio_dataset_uploader.submit()
 
     @app.post("/api/get_pinecone_novelty")
     async def get_pinecone_novelty(
         metadata: List[VideoMetadata],
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> List[float]:
+        print("get_pinecone_novelty()")
         
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
@@ -280,7 +294,7 @@ async def main():
         upload_data: VideoMetadataUpload,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
-        
+        print("upload_video_metadata()")
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -359,6 +373,109 @@ async def main():
                     avg_desc_relevance,
                     avg_query_relevance,
                     novelty_score,
+                    total_score
+                ))
+                connection.commit()
+                print(f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+                
+            except mysql.connector.Error as err:
+                raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+            finally:
+                if connection:
+                    connection.close()
+        else:
+            print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
+        
+        return True
+
+
+    @app.post("/api/upload_audio_metadata")
+    async def upload_audio_metadata(
+        upload_data: AudioMetadataUpload,
+        hotkey: Annotated[str, Depends(get_hotkey)],
+    ) -> bool:
+        print("upload_audio_metadata()")
+        
+        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Valid hotkey required.",
+            )
+        
+        uid = None
+        is_bittensor = 0
+        is_commune = 0
+        if ENABLE_COMMUNE and hotkey in commune_keys.values():
+            # get uid of commune validator
+            for key_uid, key_hotkey in commune_keys.items():
+                if key_hotkey == hotkey:
+                    uid = key_uid
+                    break
+            validator_chain = "commune"
+            is_commune = 1
+        elif uid is None and hotkey in metagraph.hotkeys:
+            # get uid of bittensor validator
+            uid = metagraph.hotkeys.index(hotkey)
+            validator_chain = "bittensor"
+            is_bittensor = 1
+
+        metadata = upload_data.metadata
+        inverse_der = upload_data.inverse_der
+        audio_length_score = upload_data.audio_length_score
+        audio_quality_total_score = upload_data.audio_quality_total_score
+        audio_query_score = upload_data.audio_query_score
+        topic_query = upload_data.topic_query
+
+        start_time = time.time()
+        audio_ids = await score.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, topic_query)
+        print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        
+        if upload_data.miner_hotkey is not None:
+            # Calculate and upsert leaderboard data
+            datapoints = len(audio_ids)
+            total_score = upload_data.total_score
+            miner_hotkey = upload_data.miner_hotkey
+            
+            try:
+                start_time = time.time()
+                connection = connect_to_db()
+
+                leaderboard_table_name = "miner_audio_leaderboard"
+                if not IS_PROD:
+                    leaderboard_table_name += "_test"
+                query = f"""
+                INSERT INTO {leaderboard_table_name} (
+                    hotkey,
+                    is_bittensor,
+                    is_commune,
+                    datapoints,
+                    avg_der,
+                    avg_length_score,
+                    avg_quality_score,
+                    avg_query_score,
+                    avg_score,
+                    last_updated
+                ) VALUES (
+                    %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+                ) ON DUPLICATE KEY UPDATE
+                    datapoints = datapoints + VALUES(datapoints),
+                    avg_der = ((avg_der * (datapoints - VALUES(datapoints))) + (VALUES(avg_der) * VALUES(datapoints))) / datapoints,
+                    avg_length_score = ((avg_length_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_length_score) * VALUES(datapoints))) / datapoints,
+                    avg_quality_score = ((avg_quality_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_quality_score) * VALUES(datapoints))) / datapoints,
+                    avg_query_score = ((avg_query_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_query_score) * VALUES(datapoints))) / datapoints,
+                    avg_score = ((avg_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_score) * VALUES(datapoints))) / datapoints,
+                    last_updated = NOW();
+                """
+                cursor = connection.cursor()
+                cursor.execute(query, (
+                    miner_hotkey,
+                    is_bittensor,
+                    is_commune,
+                    datapoints,
+                    inverse_der,
+                    audio_length_score,
+                    audio_quality_total_score,
+                    audio_query_score,
                     total_score
                 ))
                 connection.commit()
@@ -809,6 +926,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         page: Optional[int] = 1,
         items_per_page: Optional[int] = 50
     ):
+        print("get_video_metadata()")
         if os.path.exists(CACHE_FILE):
             with open(CACHE_FILE, "r") as f:
                 descriptions = json.load(f)
@@ -855,11 +973,13 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     
     @app.get("/dashboard")
     def dashboard():
+        print("dashboard()")
         return FileResponse('validator-api/static/dashboard.html')
     ################ END DASHBOARD ################
 
     async def run_server():
-        config = uvicorn.Config(app=app, host="0.0.0.0", port=8001)
+        print("run_server()")
+        config = uvicorn.Config(app=app, host="0.0.0.0", port=8004)
         server = uvicorn.Server(config)
         await server.serve()
     

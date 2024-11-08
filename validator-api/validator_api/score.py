@@ -8,7 +8,7 @@ from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
 
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, AudioMetadata, Audios
 from omega import video_utils, unstuff
 from omega.constants import (
     MAX_VIDEO_LENGTH, 
@@ -25,11 +25,24 @@ from omega.constants import (
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
+    DIARIZATION_SCALING_FACTOR,
+    AUDIO_LENGTH_SCALING_FACTOR,
+    AUDIO_QUALITY_SCALING_FACTOR,
+    AUDIO_QUERY_RELEVANCE_SCALING_FACTOR,
+    SPEECH_CONTENT_SCALING_FACTOR,
+    SPEAKER_DOMINANCE_SCALING_FACTOR,
+    BACKGROUND_NOISE_SCALING_FACTOR,
+    MAX_AUDIO_LENGTH_SECONDS,
+    MIN_AUDIO_LENGTH_SECONDS
 )
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER
 from omega.text_similarity import get_text_similarity_score
 from validator_api import config
-from validator_api.dataset_upload import dataset_uploader
+from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
+from omega.audio_scoring import AudioScore
+from omega.diarization_metric import calculate_diarization_metrics
+
+
 
 
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
@@ -128,29 +141,38 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
         print(f"Failed to upload to Pinecone: {e}")
     return video_ids
 
-async def upload_video_metadata(
-    metadata: List[VideoMetadata], 
-    description_relevance_scores: List[float], 
-    query_relevance_scores: List[float], 
-    query: str, 
-) -> None:
-    # generate embeddings from our metadata
-    embeddings = Embeddings(
-        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]),
-        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
-        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
-    )
-    # upload embeddings and metadata to pinecone
-    video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
-    # Schedule upload to HuggingFace
-    dataset_uploader.add_videos(
-        metadata,
-        video_ids,
-        description_relevance_scores,
-        query_relevance_scores,
-        query,
-    )
+
+def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadata]) -> None:
+    video_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
+    try:
+        PINECONE_INDEX.upsert(
+            vectors=sum([
+                [
+                    {
+                        "id": f"{modality_type[:3]}{video_uuid}",
+                        "values": emb.tolist(),
+                        "metadata": {
+                            "youtube_id": audio.video_id,
+                            "modality_type": modality_type,
+                        }
+                    }
+                    for emb, modality_type
+                    in zip(
+                        [embedding_aud],
+                        [AUDIO_TYPE]
+                    )
+                ]
+                for video_uuid, audio, embedding_aud
+                in zip(video_ids, metadata, embeddings.audio)
+            ], []),
+        )
+    except Exception as e:
+        print(f"Failed to upload to Pinecone: {e}")
     return video_ids
+
+
+
+
 
 def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
     """Filter the embeddings based on whether they are too similar to the query."""
@@ -195,6 +217,38 @@ def metadata_check(metadata: List[VideoMetadata]) -> List[VideoMetadata]:
         )
     ]
 
+
+def audio_metadata_check(metadata: List[AudioMetadata]) -> List[AudioMetadata]:
+    return [
+        audio_metadata for audio_metadata in metadata
+        if (
+            audio_metadata.end_time - audio_metadata.start_time <= MAX_VIDEO_LENGTH and
+            audio_metadata.end_time - audio_metadata.start_time >= MIN_VIDEO_LENGTH
+        )
+    ]
+
+def deduplicate_audios(embeddings: Embeddings) -> List[bool]:
+    # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
+    audio_tensor = embeddings.audio
+    num_audios = audio_tensor.shape[0]
+    # cossim = CosineSimilarity(dim=1)
+    is_similar = []
+    for i in range(num_audios):
+        similarity_score = F.cosine_similarity(audio_tensor[[i]], audio_tensor[i + 1:]).max()
+        has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
+        is_similar.append(has_duplicates.item())
+        
+    return is_similar
+
+def compute_novelty_score_among_batch_audio(emb: Embeddings) -> List[float]:
+    audio_tensor = emb.audio
+    num_audios = audio_tensor.shape[0]
+    novelty_scores = []
+    for i in range(num_audios - 1):
+        similarity_score = F.cosine_similarity(audio_tensor[[i]], audio_tensor[i + 1:]).max()
+        novelty_scores.append(1 - similarity_score.item())
+    novelty_scores.append(1.0)  # last video is 100% novel
+    return novelty_scores
 
 def get_proxy_url() -> str:
     return random.choice(config.PROXY_LIST + [None])
@@ -414,7 +468,7 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     if not is_check_only and len(metadata) > 0:
         video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
         # Schedule upload to HuggingFace
-        dataset_uploader.add_videos(
+        video_dataset_uploader.add_videos(
             metadata,
             video_ids,
             description_relevance_scores,
@@ -434,10 +488,175 @@ async def _run_video_scoring(videos: Videos, imagebind: ImageBind, is_check_only
     }
 
 
+async def _run_audio_scoring(audios: Audios, imagebind: ImageBind, is_check_only: bool = False) -> float:
+    """Score audio submissions and optionally upload them.
+    
+    Args:
+        audios: The audio submissions to score
+        imagebind: ImageBind model for embeddings
+        is_check_only: If True, only score without uploading
+        
+    Returns:
+        Either the final score (float) or a dict with detailed scoring info
+    """
+    if len(audios.audio_metadata) == 0:
+        return MIN_SCORE
+
+    # Check for valid YouTube IDs
+    if any(not video_utils.is_valid_youtube_id(audio.video_id) for audio in audios.audio_metadata):
+        return FAKE_VIDEO_PUNISHMENT
+    
+
+    # Check audio metadata and filter out invalid ones
+    metadata = audio_metadata_check(audios.audio_metadata)[:audios.num_audios]
+    print(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+    
+
+    # execute the random check on metadata and video
+    async with GPU_SEMAPHORE:
+        query_emb = await imagebind.embed_text_async([audios.query])
+    
+    embeddings = Embeddings(
+        video=None,
+        audio=torch.stack([torch.tensor(a.audio_emb) for a in metadata]).to(imagebind.device),
+        description=None
+    )
+
+    # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+    metadata_is_similar = await deduplicate_audios(embeddings)
+    metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
+    embeddings = filter_embeddings(embeddings, metadata_is_similar)
+    
+    if len(metadata) < len(audios.audio_metadata):
+        print(f"Deduplicated {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+    
+    if len(metadata) == 0:
+        return MIN_SCORE
+        
+    # first get local novelty scores
+    local_novelty_scores = compute_novelty_score_among_batch_audio(embeddings)
+    pre_filter_metadata_length = len(metadata)
+    # check scores from index for being too similar
+    is_too_similar = [score < DIFFERENCE_THRESHOLD for score in local_novelty_scores]
+    # filter out metadata too similar
+    metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+    # filter out embeddings too similar
+    embeddings = filter_embeddings(embeddings, is_too_similar)
+    if len(metadata) < pre_filter_metadata_length:
+        print(f"Filtering {pre_filter_metadata_length} audios down to {len(metadata)} audios that are too similar to audios in our index.")
+
+    # return minimum score if no unique videos were found
+    if len(metadata) == 0:
+        return MIN_SCORE
+
+    # Filter metadata based on length constraints
+    metadata = [
+        meta for meta in audios.audio_metadata[:audios.num_audios]
+        if (meta.end_time - meta.start_time) >= MIN_AUDIO_LENGTH_SECONDS 
+        and (meta.end_time - meta.start_time) <= MAX_AUDIO_LENGTH_SECONDS
+    ]
+
+    if len(metadata) == 0:
+        return MIN_SCORE
+    
+    total_audio_length = sum((meta.end_time - meta.start_time) for meta in metadata) 
+    print(f"Average audio length: {total_audio_length/len(metadata):.2f} seconds")
+    audio_length_score = total_audio_length/(audios.num_audios*MAX_AUDIO_LENGTH_SECONDS)
+
+    audio_query_score = sum(F.cosine_similarity(
+        embeddings.audio, query_emb
+    ).tolist())/len(metadata)
+    print(f"Audio query score: {audio_query_score}")
+
+    # Randomly sample one audio for duration check
+    selected_random_meta = random.choice(metadata)
+    audio_duration = len(selected_random_meta.audio_array) / selected_random_meta.sampling_rate
+    print(f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
+
+    audio_quality_scores = AudioScore().total_score(
+        selected_random_meta.audio_array,
+        selected_random_meta.sampling_rate,
+        selected_random_meta.diar_timestamps_start,
+        selected_random_meta.diar_timestamps_end,
+        selected_random_meta.diar_speakers
+    )
+    audio_quality_total_score = (
+        audio_quality_scores["speech_content_score"] * SPEECH_CONTENT_SCALING_FACTOR +
+        audio_quality_scores["speaker_dominance_score"] * SPEAKER_DOMINANCE_SCALING_FACTOR +
+        audio_quality_scores["background_noise_score"] * BACKGROUND_NOISE_SCALING_FACTOR
+    )
+
+    miner_diar_segment = {
+                "start": selected_random_meta.diar_timestamps_start,
+                "end": selected_random_meta.diar_timestamps_end,
+                "speakers": selected_random_meta.diar_speakers
+            }
+  
+
+    diarization_score = calculate_diarization_metrics(
+        selected_random_meta.audio_array,
+        selected_random_meta.sampling_rate,
+        miner_diar_segment
+    )
+    inverse_der = diarization_score["inverse_der"]
+    total_score = (
+        DIARIZATION_SCALING_FACTOR * inverse_der +
+        AUDIO_LENGTH_SCALING_FACTOR * audio_length_score +
+        AUDIO_QUALITY_SCALING_FACTOR * audio_quality_total_score +
+        AUDIO_QUERY_RELEVANCE_SCALING_FACTOR * audio_query_score
+    )
+
+    print(f'''
+        is_unique: {[not is_sim for is_sim in is_too_similar]},
+        audio_query_score: {audio_query_score},
+        audio_length_score: {audio_length_score}, 
+        audio_quality_score: {audio_quality_total_score},
+        diarization_score: {inverse_der},
+        total score: {total_score}
+    ''')
+    
+    if not is_check_only and len(metadata) > 0:
+        # Upload metadata and schedule dataset upload
+        audio_ids = await run_async(upload_to_pinecone_audio, embeddings, metadata)
+
+        audio_dataset_uploader.add_audios(
+            metadata,
+            audio_ids,
+            inverse_der,
+            audio_length_score,
+            audio_quality_total_score,
+            audio_query_score,
+            audios.query,
+            total_score,
+        )
+    total_score = max(total_score, MIN_SCORE)
+
+    if total_score > 0.4:
+        print(f"Audios with score > 0.4: {metadata}")
+
+    return {
+        "is_unique": [not is_sim for is_sim in is_too_similar],
+        "audio_query_score": audio_query_score,
+        "audio_length_score": audio_length_score,
+        "audio_quality_score": audio_quality_total_score,
+        "diarization_score": inverse_der,
+        "score": total_score
+    }
+
+
 async def score_videos_for_testing(videos: Videos, imagebind: ImageBind) -> float:
     return await _run_video_scoring(videos, imagebind, is_check_only=True)
 
 
 async def score_and_upload_videos(videos: Videos, imagebind: ImageBind) -> float:
     scores_dict = await _run_video_scoring(videos, imagebind, is_check_only=False)
+    return scores_dict["score"]
+
+
+async def score_audios_for_testing(audios: Audios, imagebind: ImageBind) -> float:
+    return await _run_audio_scoring(audios, imagebind, is_check_only=True)
+
+
+async def score_and_upload_audios(audios: Audios, imagebind: ImageBind) -> float:
+    scores_dict = await _run_audio_scoring(audios, imagebind, is_check_only=False)
     return scores_dict["score"]

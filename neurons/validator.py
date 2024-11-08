@@ -124,6 +124,7 @@ class Validator(BaseValidatorNeuron):
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
+        self.upload_audio_metadata_endpoint = f"{api_root}/api/upload_audio_metadata"
         self.focus_rewards_percent_endpoint = f"{api_root}/api/focus/get_rewards_percent"
         self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
@@ -665,25 +666,25 @@ class Validator(BaseValidatorNeuron):
                 # If no embeddings to check, return an empty list or appropriate default value
                 global_novelty_scores = []
 
-            if global_novelty_scores is None or len(global_novelty_scores) == 0:
-                bt.logging.error("Issue retrieving global novelty scores, returning None.")
-                return None
-            #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            # if global_novelty_scores is None or len(global_novelty_scores) == 0:
+            #     bt.logging.error("Issue retrieving global novelty scores, returning None.")
+            #     return None
+            # #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
             
-            # calculate true novelty scores between local and global
-            true_novelty_scores = [
-                min(local_score, global_score) for local_score, global_score
-                in zip(local_novelty_scores, global_novelty_scores)
-            ]
+            # # calculate true novelty scores between local and global
+            # true_novelty_scores = [
+            #     min(local_score, global_score) for local_score, global_score
+            #     in zip(local_novelty_scores, global_novelty_scores)
+            # ]
             #bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
-            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
-            # filter out metadata too similar
-            metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+            # is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+            # # filter out metadata too similar
+            # metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
             # filter out embeddings too similar
-            embeddings = self.filter_embeddings(embeddings, is_too_similar)
+            # embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
@@ -783,7 +784,7 @@ class Validator(BaseValidatorNeuron):
 
             # Log all our scores
             bt.logging.info(f'''
-                is_unique: {[not is_sim for is_sim in is_too_similar]},
+                is_unique: {[False]*len(metadata)},
                 video cosine sim: {video_description_relevance_scores},
                 audio cosine sim: {audio_description_relevance_scores},
                 description relevance scores: {description_relevance_scores},
@@ -919,6 +920,56 @@ class Validator(BaseValidatorNeuron):
             return True
         except Exception as e:
             bt.logging.debug(f"Error trying upload_video_metadata_endpoint: {e}")
+            return False
+
+
+    async def upload_audio_metadata(
+        self, 
+        metadata: List[AudioMetadata], 
+        inverse_der: float, 
+        audio_length_score: float, 
+        audio_quality_total_score: float, 
+        audio_query_score: float, 
+        query: str, 
+        total_score: float, 
+        miner_hotkey: str
+    ) -> bool:
+        """
+        Queries the validator api to get novelty scores for supplied audios. 
+        Returns a list of float novelty scores for each audio after deduplicating.
+
+        Returns:
+        - List[float]: The novelty scores for the miner's audios.
+        """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
+        try:
+            async with ClientSession() as session:
+                # Serialize the list of AudioMetadata
+                serialized_metadata = [item.dict() for item in metadata]
+                # Construct the JSON payload
+                payload = {
+                    "metadata": serialized_metadata,
+                    "inverse_der": inverse_der,
+                    "audio_length_score": audio_length_score,
+                    "audio_quality_total_score": audio_quality_total_score,
+                    "audio_query_score": audio_query_score,
+                    "topic_query": query,
+                    "total_score": total_score,
+                    "miner_hotkey": miner_hotkey
+                }
+
+                async with session.post(
+                    self.upload_audio_metadata_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+            return True
+        except Exception as e:
+            bt.logging.debug(f"Error trying upload_audio_metadata_endpoint: {e}")
             return False
 
     async def get_novelty_scores(self, metadata: List[VideoMetadata]) -> List[float]:
@@ -1111,6 +1162,14 @@ class Validator(BaseValidatorNeuron):
                 f"audio_quality_total_score: {audio_quality_total_score}, "
                 f"audio_query_score: {audio_query_score}"
             )
+            # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
+            miner_hotkey = audios.axon.hotkey
+            bt.logging.info(f"Uploading audio metadata for miner: {miner_hotkey}")
+            upload_result = await self.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, audios.query, total_score, miner_hotkey)
+            if upload_result:
+                bt.logging.info("Uploading of audio metadata successful.")
+            else:
+                bt.logging.error("Issue uploading audio metadata.")
             return total_score
 
 
