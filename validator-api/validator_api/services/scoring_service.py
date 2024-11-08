@@ -283,7 +283,7 @@ Additionally, here is a detailed description of the video content:
         return the multiplier for the task if it is boosted, otherwise 1.0
         """
         with get_db_context() as db:
-            boosted_tasks_records = db.query(BoostedTask).all()
+            boosted_tasks_records = db.query(BoostedTask).filter(BoostedTask.active == True).all()
             # Convert to Pydantic objects
             boosted_tasks = [BoostedTaskData(
                 title=task.title,
@@ -291,6 +291,7 @@ Additionally, here is a detailed description of the video content:
                 multiplier=task.multiplier
             ) for task in boosted_tasks_records]
         
+        print(f"Boosted tasks: {boosted_tasks}")
         if len(boosted_tasks) == 0:
             return 1.0
 

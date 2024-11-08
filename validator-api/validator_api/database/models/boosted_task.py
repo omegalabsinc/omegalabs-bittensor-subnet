@@ -1,4 +1,4 @@
-from sqlalchemy import Column, String, Float, Integer, DateTime
+from sqlalchemy import Column, String, Float, Integer, DateTime, Boolean
 from validator_api.database import Base
 from datetime import datetime
 
@@ -10,3 +10,4 @@ class BoostedTask(Base):
     title = Column(String(1000), nullable=False)
     description = Column(String(1000), nullable=False)
     multiplier = Column(Float, nullable=False)
+    active = Column(Boolean, nullable=False, default=True)
