@@ -291,7 +291,7 @@ Additionally, here is a detailed description of the video content:
                 multiplier=task.multiplier
             ) for task in boosted_tasks_records]
         
-        print(f"Boosted tasks: {boosted_tasks}")
+        # print(f"Boosted tasks: {boosted_tasks}")
         if len(boosted_tasks) == 0:
             return 1.0
 
@@ -385,7 +385,7 @@ Additionally, here is a detailed description of the video content:
         combined_score = combined_score ** (1 / coefficient_sum)
         
         # apply score boost if it's a boosted task
-        print(f"Boosted multiplier: {boosted_multiplier}")
+        # print(f"Boosted multiplier: {boosted_multiplier}")
         assert boosted_multiplier is not None
         combined_score *= boosted_multiplier
 
