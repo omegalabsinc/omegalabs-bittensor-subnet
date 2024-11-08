@@ -94,6 +94,11 @@ class VideoScore(BaseModel):
     
 class BoostedTaskIndex(BaseModel):
     index: int
+    
+class BoostedTaskData(BaseModel):
+    title: str
+    description: str
+    multiplier: float
 
 def get_s3_path(video_id: str) -> str:
     return f"clips/{video_id}.webm"
@@ -279,11 +284,15 @@ Additionally, here is a detailed description of the video content:
         """
         with get_db_context() as db:
             boosted_tasks_records = db.query(BoostedTask).all()
-            # Convert to simple tuples containing just the data we need
-            boosted_tasks = [(task.title, task.description, task.multiplier) for task in boosted_tasks_records]
-        # print(f"Boosted tasks: {boosted_tasks}")
+            # Convert to Pydantic objects
+            boosted_tasks = [BoostedTaskData(
+                title=task.title,
+                description=task.description,
+                multiplier=task.multiplier
+            ) for task in boosted_tasks_records]
+
         system_prompt = focus_scoring_prompts.BOOST_SCORING_SYSTEM_PROMPT.format(
-            boosted_tasks="\n".join([f"{idx}. {title}: {description}" for idx, (title, description, _) in enumerate(boosted_tasks)])
+            boosted_tasks="\n".join([f"{idx}. {task.title}: {task.description}" for idx, task in enumerate(boosted_tasks)])
         )
         user_prompt = focus_scoring_prompts.BOOST_SCORING_USER_PROMPT.format(
             focusing_task=focusing_task,
@@ -295,11 +304,11 @@ Additionally, here is a detailed description of the video content:
             video_id=None,
             OutputClassSchema=BoostedTaskIndex,
         )
-        # print(f"Boosted task index: {boosted_task_index.index}")
+        print(f"Boosted task index: {boosted_task_index.index}")
         if boosted_task_index.index == -1 or boosted_task_index.index >= len(boosted_tasks):
             return 1.0
             
-        multiplier = boosted_tasks[boosted_task_index.index][2]  # Get multiplier from tuple
+        multiplier = boosted_tasks[boosted_task_index.index].multiplier  # Get multiplier from Pydantic object
         try:
             multiplier = float(multiplier)
         except (TypeError, ValueError):
@@ -372,7 +381,7 @@ Additionally, here is a detailed description of the video content:
         combined_score = combined_score ** (1 / coefficient_sum)
         
         # apply score boost if it's a boosted task
-        # print(f"Boosted multiplier: {boosted_multiplier}")
+        print(f"Boosted multiplier: {boosted_multiplier}")
         combined_score *= boosted_multiplier
 
         return VideoScore(
