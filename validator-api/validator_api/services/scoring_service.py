@@ -290,6 +290,9 @@ Additionally, here is a detailed description of the video content:
                 description=task.description,
                 multiplier=task.multiplier
             ) for task in boosted_tasks_records]
+        
+        if len(boosted_tasks) == 0:
+            return 1.0
 
         system_prompt = focus_scoring_prompts.BOOST_SCORING_SYSTEM_PROMPT.format(
             boosted_tasks="\n".join([f"{idx}. {task.title}: {task.description}" for idx, task in enumerate(boosted_tasks)])
@@ -304,7 +307,7 @@ Additionally, here is a detailed description of the video content:
             video_id=None,
             OutputClassSchema=BoostedTaskIndex,
         )
-        print(f"Boosted task index: {boosted_task_index.index}")
+        # print(f"Boosted task index: {boosted_task_index.index}")
         if boosted_task_index.index == -1 or boosted_task_index.index >= len(boosted_tasks):
             return 1.0
             
@@ -381,7 +384,8 @@ Additionally, here is a detailed description of the video content:
         combined_score = combined_score ** (1 / coefficient_sum)
         
         # apply score boost if it's a boosted task
-        print(f"Boosted multiplier: {boosted_multiplier}")
+        # print(f"Boosted multiplier: {boosted_multiplier}")
+        assert boosted_multiplier is not None
         combined_score *= boosted_multiplier
 
         return VideoScore(
