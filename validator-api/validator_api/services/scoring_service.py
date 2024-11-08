@@ -385,7 +385,7 @@ Additionally, here is a detailed description of the video content:
         combined_score = combined_score ** (1 / coefficient_sum)
         
         # apply score boost if it's a boosted task
-        # print(f"Boosted multiplier: {boosted_multiplier}")
+        print(f"Boosted multiplier: {boosted_multiplier}")
         assert boosted_multiplier is not None
         combined_score *= boosted_multiplier
 
