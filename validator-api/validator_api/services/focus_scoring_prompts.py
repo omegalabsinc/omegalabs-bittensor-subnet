@@ -166,8 +166,7 @@ You will be provided with a list of boosted tasks and their descriptions. Booste
 You will also be provided with a user's task description and a detailed video description.
 Your current goal is to determine if the task provided matches any of the boosted tasks.
 Return only the index of the boosted task that the user's task description most closely matches.
-The task
-If no match is found, return -1.
+The user's task may or may not match any of the boosted tasks. If no match is found, return -1.
 
 Here are the boosted tasks:
 {boosted_tasks}
