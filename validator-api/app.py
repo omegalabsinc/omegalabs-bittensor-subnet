@@ -93,7 +93,7 @@ sentry_sdk.init(
     profiles_sample_rate=1.0,
 )
 
-### Utility functions for OMEGA Metadata Dashboard ###
+# region Utility functions for OMEGA Metadata Dashboard
 def get_timestamp_from_filename(filename: str):
     return ulid.from_str(os.path.splitext(filename.split("/")[-1])[0]).timestamp().timestamp
 
@@ -135,7 +135,7 @@ def pull_and_cache_dataset() -> List[str]:
         json.dump(video_metadata, f)
     
     return True
-### End Utility functions for OMEGA Metadata Dashboard ###
+# endregion Utility functions for OMEGA Metadata Dashboard
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     if api_key_header in API_KEYS:
