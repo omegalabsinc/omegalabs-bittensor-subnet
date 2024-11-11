@@ -142,14 +142,14 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
     return video_ids
 
 
-def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadata]) -> None:
-    video_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
+async def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadata]) -> None:
+    audio_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
     try:
         PINECONE_INDEX.upsert(
             vectors=sum([
                 [
                     {
-                        "id": f"{modality_type[:3]}{video_uuid}",
+                        "id": f"{modality_type[:3]}{audio_uuid}",
                         "values": emb.tolist(),
                         "metadata": {
                             "youtube_id": audio.video_id,
@@ -162,16 +162,64 @@ def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadat
                         [AUDIO_TYPE]
                     )
                 ]
-                for video_uuid, audio, embedding_aud
-                in zip(video_ids, metadata, embeddings.audio)
+                for audio_uuid, audio, embedding_aud
+                in zip(audio_ids, metadata, embeddings.audio)
             ], []),
         )
     except Exception as e:
         print(f"Failed to upload to Pinecone: {e}")
+    return audio_ids
+
+async def upload_video_metadata(
+    metadata: List[VideoMetadata], 
+    description_relevance_scores: List[float], 
+    query_relevance_scores: List[float], 
+    query: str, 
+) -> None:
+    # generate embeddings from our metadata
+    embeddings = Embeddings(
+        video=torch.stack([torch.tensor(v.video_emb) for v in metadata]),
+        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
+        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
+    )
+    # upload embeddings and metadata to pinecone
+    video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
+    # Schedule upload to HuggingFace
+    video_dataset_uploader.add_videos(
+        metadata,
+        video_ids,
+        description_relevance_scores,
+        query_relevance_scores,
+        query,
+    )
     return video_ids
 
-
-
+async def upload_audio_metadata(
+    metadata: List[AudioMetadata], 
+    inverse_der: float, audio_length_score: float,
+    audio_quality_total_score: float, 
+    audio_query_score: float,
+    query: str, 
+    total_score: float 
+) -> None:
+    embeddings = Embeddings(
+        video=None,
+        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
+        description=None,
+    )
+    # audio_ids = await run_async(upload_to_pinecone_audio, embeddings, metadata)
+    audio_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
+    audio_dataset_uploader.add_audios(
+        metadata,
+        audio_ids,
+        inverse_der,
+        audio_length_score,
+        audio_quality_total_score,
+        audio_query_score,
+        query,
+        total_score
+    )
+    return audio_ids
 
 
 def filter_embeddings(embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:

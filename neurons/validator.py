@@ -231,8 +231,8 @@ class Validator(BaseValidatorNeuron):
             self (:obj:`bittensor.neuron.Neuron`): The neuron object which contains all the necessary state for the validator.
 
         """
-        # miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
-        miner_uids = [125]
+        miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        # miner_uids = [125]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")

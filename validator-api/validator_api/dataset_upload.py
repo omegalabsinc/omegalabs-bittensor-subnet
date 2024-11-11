@@ -12,7 +12,7 @@ from omega.protocol import VideoMetadata, AudioMetadata
 from validator_api import config
 
 
-HF_API = HfApi()
+HF_API = HfApi(token=config.HF_TOKEN)
 NUM_BUCKETS = 1000
 
 
@@ -29,6 +29,17 @@ def get_random_batch_size() -> int:
         config.UPLOAD_BATCH_SIZE * 2,
     ])
 
+def create_repo(name: str) -> None:
+    try:
+        HF_API.create_repo(
+            repo_id=name,
+            repo_type=config.REPO_TYPE,
+            exist_ok=True,
+            token=config.HF_TOKEN
+        )
+        print("Successfully created/verified repository")
+    except Exception as e:
+        print(f"Error creating repository: {e}")
 
 class DatasetUploader:
     def __init__(self):
@@ -80,6 +91,7 @@ class DatasetUploader:
                     path_in_repo=get_data_path(str(ulid.new())),
                     repo_id=config.HF_REPO,
                     repo_type=config.REPO_TYPE,
+                    token=config.HF_TOKEN,
                 )
                 print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
@@ -106,9 +118,11 @@ class AudioDatasetUploader:
             {
                 "audio_id": audio_uuid,
                 "youtube_id": audio.video_id,
+                "audio_array": audio.audio_array,
                 "start_time": audio.start_time,
                 "end_time": audio.end_time,
                 "audio_embed": audio.audio_emb,
+                "sample_rate": audio.sampling_rate,
                 "diar_timestamps_start": audio.diar_timestamps_start,
                 "diar_timestamps_end": audio.diar_timestamps_end,
                 "diar_speakers": audio.diar_speakers,
@@ -141,6 +155,7 @@ class AudioDatasetUploader:
                     path_in_repo=get_data_path(str(ulid.new())),
                     repo_id=config.HF_AUDIO_REPO,
                     repo_type=config.REPO_TYPE,
+                    token=config.HF_TOKEN,
                 )
                 print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:

@@ -6,15 +6,16 @@ import pandas as pd
 
 
 
-HUGGINGFACE_AUTH_TOKEN = os.getenv('HUGGINGFACE_AUTH_TOKEN')
+HF_TOKEN = os.getenv('HF_TOKEN')
+
 
 class CustomDiarizationPipeline:
     def __init__(self, overlap_detection_model_id, diarization_model_id, device="cuda"):
         self.device = torch.device(device)
         self.overlapped_speech_detection_pipeline = Pipeline.from_pretrained(overlap_detection_model_id,
-                                    use_auth_token=HUGGINGFACE_AUTH_TOKEN).to(self.device)
+                                    use_auth_token=HF_TOKEN).to(self.device)
         
-        self.diarization_pipeline = Pipeline.from_pretrained(diarization_model_id, use_auth_token=HUGGINGFACE_AUTH_TOKEN).to(self.device)
+        self.diarization_pipeline = Pipeline.from_pretrained(diarization_model_id, use_auth_token=HF_TOKEN).to(self.device)
 
     
     def preprocess_audio(self, audio_arr, sr):
