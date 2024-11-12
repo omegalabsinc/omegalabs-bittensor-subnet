@@ -9,6 +9,7 @@ import random
 import json
 from pydantic import BaseModel
 import traceback
+from threading import Lock
 
 from tempfile import TemporaryDirectory
 import huggingface_hub
@@ -27,11 +28,14 @@ from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
 
+import sentry_sdk
+
 from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
-    get_all_available_focus, check_availability, get_purchased_list, check_video_metadata, 
-    get_pending_focus, get_video_owner_coldkey, already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats, set_focus_video_score, mark_video_rejected, mark_video_submitted
+    get_all_available_focus, check_availability, get_video_owner_coldkey,
+    already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
+    set_focus_video_score, mark_video_rejected, mark_video_submitted
 )
 from validator_api.utils.marketplace import get_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
@@ -42,7 +46,7 @@ from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
-from omega.imagebind_wrapper import ImageBind
+from validator_api.imagebind_loader import ImageBindLoader
 
 from validator_api import score
 from validator_api.config import (
@@ -50,7 +54,8 @@ from validator_api.config import (
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
     TOPICS_LIST, PROXY_LIST, IS_PROD, 
-    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS
+    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS,
+    SENTRY_DSN
 )
 from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 from validator_api.limiter import limiter
@@ -77,11 +82,18 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-imagebind = ImageBind(v2=True)
+imagebind_loader = ImageBindLoader()
 
 focus_scoring_service = FocusScoringService()
 
-### Utility functions for OMEGA Metadata Dashboard ###
+print("SENTRY_DSN:", SENTRY_DSN)
+sentry_sdk.init(
+    dsn=SENTRY_DSN,
+    traces_sample_rate=1.0,
+    profiles_sample_rate=1.0,
+)
+
+# region Utility functions for OMEGA Metadata Dashboard
 def get_timestamp_from_filename(filename: str):
     return ulid.from_str(os.path.splitext(filename.split("/")[-1])[0]).timestamp().timestamp
 
@@ -123,7 +135,7 @@ def pull_and_cache_dataset() -> List[str]:
         json.dump(video_metadata, f)
     
     return True
-### End Utility functions for OMEGA Metadata Dashboard ###
+# endregion Utility functions for OMEGA Metadata Dashboard
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     if api_key_header in API_KEYS:
@@ -256,6 +268,10 @@ async def main():
         print("Shutdown event fired, attempting dataset upload of current batch.")
         video_dataset_uploader.submit()
         audio_dataset_uploader.submit()
+
+    @app.get("/sentry-debug")
+    async def trigger_error():
+        division_by_zero = 1 / 0
 
     @app.post("/api/get_pinecone_novelty")
     async def get_pinecone_novelty(
@@ -566,7 +582,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         """
         Return all available focus videos
         """
-        return get_all_available_focus(db)
+        return await get_all_available_focus(db)
 
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
@@ -583,12 +599,12 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
 
-        availability = await check_availability(db, video_id, miner_hotkey)
+        availability = await check_availability(db, video_id, miner_hotkey, True) # run with_lock True
         print('availability', availability)
         if availability['status'] == 'success':
             amount = availability['price']
-            video_owner_coldkey = get_video_owner_coldkey(db, video_id)
-            background_tasks.add_task(confirm_video_purchased, video_id)
+            video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
+            background_tasks.add_task(confirm_video_purchased, video_id, True) # run with_lock True
             return {
                 'status': 'success',
                 'address': video_owner_coldkey,
@@ -604,7 +620,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         video: VideoPurchaseRevert,
         db: Session=Depends(get_db),
     ):
-        return mark_video_submitted(db, video.video_id)
+        return mark_video_submitted(db, video.video_id, True) # run with_lock True
         
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("100/minute")
@@ -615,7 +631,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         block_hash: Annotated[str, Body()],
         db: Session=Depends(get_db),
     ):
-        video_owner_coldkey = get_video_owner_coldkey(db, video_id)
+        video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:
             return {
@@ -627,13 +643,6 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                 'status': 'error',
                 'message': f'Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}'
             }
-
-    @app.get('/api/focus/miner_purchase_score/{miner_hotkey}')
-    async def miner_purchase_score(
-        miner_hotkey: str,
-        db: Session = Depends(get_db)
-    ) -> MinerPurchaseStats:
-        return await get_miner_purchase_stats(db, miner_hotkey)
 
     @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
     async def miner_purchase_scores(
@@ -694,7 +703,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         
         start_time = time.time()
         
-        youtube_rewards = await score.score_and_upload_videos(videos, imagebind)
+        youtube_rewards = await score.score_and_upload_videos(videos, await imagebind_loader.get_imagebind())
 
         if youtube_rewards is None:
             print("YouTube rewards are empty, returning None")
@@ -719,7 +728,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         async def check_score(
             videos: Videos,
         ) -> dict:
-            detailed_score = await score.score_videos_for_testing(videos, imagebind)
+            detailed_score = await score.score_videos_for_testing(videos, await imagebind_loader.get_imagebind())
             return detailed_score
 
     @app.get("/api/topic")
