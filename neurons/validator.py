@@ -120,19 +120,15 @@ class Validator(BaseValidatorNeuron):
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
-        
-        api_root = "http://35.202.68.172:8001"
         self.validation_endpoint = f"{api_root}/api/validate"
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
-        self.novelty_scores_audio_endpoint = f"{api_root}/api/get_pinecone_novelty_audio"
-
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
         self.upload_audio_metadata_endpoint = f"{api_root}/api/upload_audio_metadata"
         self.focus_rewards_percent_endpoint = f"{api_root}/api/focus/get_rewards_percent"
         self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
-        self.num_audios = 2
+        self.num_audios = 3
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
         # load topics from topics URL (CSV) or fallback to local topics file
@@ -291,12 +287,12 @@ class Validator(BaseValidatorNeuron):
                 audio_rewards.append(r)
                 audio_reward_uids.append(r_uid)
         audio_rewards = torch.FloatTensor(audio_rewards).to(self.device)
-        self.update_scores(audio_rewards, audio_reward_uids)
+        self.update_audio_scores(audio_rewards, audio_reward_uids)
         
         # give min reward to miners who didn't respond
         bad_miner_uids = [uid for uid in miner_uids if uid not in audio_working_miner_uids]
         penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
-        self.update_scores(penalty_tensor, bad_miner_uids)
+        self.update_audio_scores(penalty_tensor, bad_miner_uids)
 
         for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
             bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
@@ -500,7 +496,7 @@ class Validator(BaseValidatorNeuron):
     
     async def get_random_youtube_video(
         self,
-        metadata,
+        metadata: List[VideoMetadata],
         check_video: bool
     ) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
         if not check_video and len(metadata) > 0:
@@ -655,6 +651,7 @@ class Validator(BaseValidatorNeuron):
             
             # first get local novelty scores
             local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
+            #bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
             # second get the novelty scores from the validator api if not already too similar
             embeddings_to_check = [
                 (embedding, metadata)
@@ -669,25 +666,25 @@ class Validator(BaseValidatorNeuron):
                 # If no embeddings to check, return an empty list or appropriate default value
                 global_novelty_scores = []
 
-            if global_novelty_scores is None or len(global_novelty_scores) == 0:
-                bt.logging.error("Issue retrieving global novelty scores, returning None.")
-                return None
-            bt.logging.info(f"global_novelty_scores: {global_novelty_scores}, {len(global_novelty_scores)}")
+            # if global_novelty_scores is None or len(global_novelty_scores) == 0:
+            #     bt.logging.error("Issue retrieving global novelty scores, returning None.")
+            #     return None
+            # #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
             
-            # calculate true novelty scores between local and global
-            true_novelty_scores = [
-                min(local_score, global_score) for local_score, global_score
-                in zip(local_novelty_scores, global_novelty_scores)
-            ]
-            bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
+            # # calculate true novelty scores between local and global
+            # true_novelty_scores = [
+            #     min(local_score, global_score) for local_score, global_score
+            #     in zip(local_novelty_scores, global_novelty_scores)
+            # ]
+            #bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
-            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+            # is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
             # # filter out metadata too similar
-            metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+            # metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
             # filter out embeddings too similar
-            embeddings = self.filter_embeddings(embeddings, is_too_similar)
+            # embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
@@ -1004,33 +1001,8 @@ class Validator(BaseValidatorNeuron):
             bt.logging.debug(f"Error trying novelty_scores_endpoint: {e}")
             return None
     
-    async def get_novelty_scores_audio(self, metadata: List[AudioMetadata]) -> List[float]:
-        """
-        Queries the validator api to get novelty scores for supplied audios. 
-        Returns a list of float novelty scores for each audio after deduplicating.
-
-        Returns:
-        - List[float]: The novelty scores for the miner's audios.
-        """
-        keypair = self.dendrite.keypair
-        hotkey = keypair.ss58_address
-        signature = f"0x{keypair.sign(hotkey).hex()}"
-        try:
-            async with ClientSession() as session:
-                serialized_metadata = [item.dict() for item in metadata]
-                async with session.post(
-                    self.novelty_scores_audio_endpoint,
-                    auth=BasicAuth(hotkey, signature),
-                    json=serialized_metadata,
-                ) as response:
-                    response.raise_for_status()
-                    novelty_scores = await response.json()
-            return novelty_scores
-        except Exception as e:
-
-            bt.logging.debug(f"Error trying novelty_scores_audio_endpoint: {e}")
-            return [1.0]*len(metadata)
-    
+    # async def get_novelty_scores_audio(self, metadata: List[AudioMetadata]) -> List[float]:
+        
     async def get_proxy_url(self) -> str:
         """
         Queries the validator api to get a random proxy URL.
@@ -1074,26 +1046,12 @@ class Validator(BaseValidatorNeuron):
                 bt.logging.info(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
             else:
                 bt.logging.info(f"No duplicate audios found")
-
             
-            # if randomly tripped, flag our random check to pull a video from miner's submissions
-            check_video = CHECK_PROBABILITY > random.random()
-            
-            # pull a random video and/or description only
-            bt.logging.info(f"audio_metadata: {metadata}")
-            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_video)
-            if random_meta_and_vid is None:
-                return FAKE_VIDEO_PUNISHMENT
-            
-            bt.logging.info(f"random_meta_and_vid_audio: {random_meta_and_vid}")
 
             
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
                 query_emb = await self.imagebind.embed_text_async([audios.query])
-
-            bt.logging.info(f"random_meta_and_vid_audio: {random_meta_and_vid}")
-
             
             embeddings = Embeddings(
                 video=None, 
@@ -1117,32 +1075,9 @@ class Validator(BaseValidatorNeuron):
             # first get local novelty scores
             local_novelty_scores = self.compute_novelty_score_among_batch_audio(embeddings)
             
-            # second get the novelty scores from the validator api if not already too similar
-            embeddings_to_check = [
-                (embedding, metadata)
-                for embedding, local_score, metadata in zip(embeddings.audio, local_novelty_scores, metadata)
-                if local_score >= DIFFERENCE_THRESHOLD
-            ]
-            if embeddings_to_check:
-                embeddings_to_check, metadata_to_check = zip(*embeddings_to_check)
-                global_novelty_scores = await self.get_novelty_scores_audio(metadata_to_check)
-            else:
-                global_novelty_scores = []
-            
-            
-            if global_novelty_scores is None or len(global_novelty_scores) == 0:
-                bt.logging.error("Issue retrieving global novelty scores, returning None.")
-                return None
-            # calculate true novelty scores between local and global
-            true_novelty_scores = [
-                min(local_score, global_score) for local_score, global_score
-                in zip(local_novelty_scores, global_novelty_scores)
-            ]
-
-
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
-            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in local_novelty_scores]
             # filter out metadata too similar
             metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
             # filter out embeddings too similar

@@ -559,4 +559,11 @@ class BaseValidatorNeuron(BaseNeuron):
             state["focus_scores"] = torch.zeros(
                 self.metagraph.n, dtype=torch.float32, device=self.device
             )
+        
+        if "audio_score_arr" in state:
+            self.audio_score_arr = state["audio_score_arr"]
+        else:
+            state["audio_score_arr"] = torch.zeros(
+                self.metagraph.n, dtype=torch.float32, device=self.device
+            )
         self.hotkeys = state["hotkeys"]
