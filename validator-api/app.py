@@ -457,7 +457,7 @@ async def main():
                 start_time = time.time()
                 connection = connect_to_db()
 
-                leaderboard_table_name = "miner_audio_leaderboard"
+                leaderboard_table_name = "miner_leaderboard_audio"
                 if not IS_PROD:
                     leaderboard_table_name += "_test"
                 query = f"""

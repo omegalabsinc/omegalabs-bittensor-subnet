@@ -118,11 +118,10 @@ class AudioDatasetUploader:
             {
                 "audio_id": audio_uuid,
                 "youtube_id": audio.video_id,
-                "audio_array": audio.audio_array,
+                "audio_bytes": audio.audio_bytes,
                 "start_time": audio.start_time,
                 "end_time": audio.end_time,
                 "audio_embed": audio.audio_emb,
-                "sample_rate": audio.sampling_rate,
                 "diar_timestamps_start": audio.diar_timestamps_start,
                 "diar_timestamps_end": audio.diar_timestamps_end,
                 "diar_speakers": audio.diar_speakers,

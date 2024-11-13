@@ -31,6 +31,8 @@ import random
 import traceback
 import requests
 import math
+import soundfile as sf
+from io import BytesIO
 
 # Bittensor
 import bittensor as bt
@@ -1117,12 +1119,13 @@ class Validator(BaseValidatorNeuron):
 
             # Randomly sample one audio for duration check
             selected_random_meta = random.choice(metadata)
-            audio_duration = len(selected_random_meta.audio_array) / selected_random_meta.sampling_rate
+            audio_array, sr = sf.read(BytesIO(selected_random_meta.audio_bytes))
+            audio_duration = len(audio_array) / sr
             bt.logging.info(f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
 
             audio_quality_scores = self.audio_score.total_score(
-                selected_random_meta.audio_array,
-                selected_random_meta.sampling_rate,
+                audio_array,
+                sr,
                 selected_random_meta.diar_timestamps_start,
                 selected_random_meta.diar_timestamps_end,
                 selected_random_meta.diar_speakers
@@ -1140,11 +1143,10 @@ class Validator(BaseValidatorNeuron):
                 "end": selected_random_meta.diar_timestamps_end,
                 "speakers": selected_random_meta.diar_speakers
             }
-  
 
             diarization_score = calculate_diarization_metrics(
-                selected_random_meta.audio_array,
-                selected_random_meta.sampling_rate,
+                audio_array,
+                sr,
                 miner_diar_segment
             )
             inverse_der = diarization_score["inverse_der"]

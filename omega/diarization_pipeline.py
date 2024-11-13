@@ -5,17 +5,11 @@ from pyannote.audio import Pipeline
 import pandas as pd
 
 
-
-HF_TOKEN = os.getenv('HF_TOKEN')
-
-
 class CustomDiarizationPipeline:
     def __init__(self, overlap_detection_model_id, diarization_model_id, device="cuda"):
         self.device = torch.device(device)
-        self.overlapped_speech_detection_pipeline = Pipeline.from_pretrained(overlap_detection_model_id,
-                                    use_auth_token=HF_TOKEN).to(self.device)
-        
-        self.diarization_pipeline = Pipeline.from_pretrained(diarization_model_id, use_auth_token=HF_TOKEN).to(self.device)
+        self.overlapped_speech_detection_pipeline = Pipeline.from_pretrained(overlap_detection_model_id).to(self.device)
+        self.diarization_pipeline = Pipeline.from_pretrained(diarization_model_id).to(self.device)
 
     
     def preprocess_audio(self, audio_arr, sr):

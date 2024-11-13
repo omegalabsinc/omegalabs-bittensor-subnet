@@ -93,15 +93,14 @@ class AudioMetadata(BaseModel):
     start_time: int
     end_time: int
     audio_emb: typing.List[float]
-    sampling_rate: int
-    audio_array: typing.List[float]
+    audio_bytes: bytes
     diar_timestamps_start: typing.List[float]
     diar_timestamps_end: typing.List[float]
     diar_speakers: typing.List[str]
 
     def __repr_args__(self):
         parent_args = super().__repr_args__()
-        exclude_args = ['audio_emb', 'audio_array', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
+        exclude_args = ['audio_emb', 'audio_bytes', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
         return (
             [(a, v) for a, v in parent_args if a not in exclude_args] +
             [(a, ["..."]) for a in exclude_args]

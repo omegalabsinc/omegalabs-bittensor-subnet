@@ -1,7 +1,9 @@
+from io import BytesIO
 import os
 import time
 from typing import List, Tuple
 
+import soundfile as sf
 import bittensor as bt
 
 from omega.protocol import VideoMetadata, AudioMetadata
@@ -132,7 +134,8 @@ def search_and_diarize_youtube_videos(query: str, num_videos: int, diarization_p
                     start, end = get_relevant_timestamps(query, result, download_path, max_length=MAX_AUDIO_LENGTH_SECONDS)
                     # bt.logging.info(f"Audio Start: {start}, End: {end}")
                     description = get_description(result, download_path)
-                    audio_array, sr = video_utils.get_audio_array(download_path.name)
+                    audio_bytes = video_utils.get_audio_bytes(download_path.name)
+                    audio_array, sr = sf.read(BytesIO(audio_bytes))
                     dataframe = diarization_pipeline.process(audio_array, sr)
                     diar_timestamps_start = dataframe["start"]
                     diar_timestamps_end = dataframe["end"]
@@ -149,8 +152,7 @@ def search_and_diarize_youtube_videos(query: str, num_videos: int, diarization_p
                         start_time=start,
                         end_time=end,
                         audio_emb=embeddings.audio[0].tolist(),
-                        sampling_rate=sr,
-                        audio_array=audio_array.tolist(),
+                        audio_bytes=audio_bytes,
                         diar_timestamps_start=diar_timestamps_start,
                         diar_timestamps_end=diar_timestamps_end,
                         diar_speakers=diar_speakers,

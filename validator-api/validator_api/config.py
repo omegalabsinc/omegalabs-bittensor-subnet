@@ -47,6 +47,7 @@ API_KEYS = json.loads(os.environ["API_KEYS"])
 
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 PINECONE_INDEX = os.environ["PINECONE_INDEX"]
+PINECONE_AUDIO_INDEX = os.environ["PINECONE_AUDIO_INDEX"]
 HF_TOKEN = os.environ["HF_TOKEN"]
 HF_REPO = os.environ["HF_REPO"]
 HF_AUDIO_REPO = os.environ["HF_AUDIO_REPO"]

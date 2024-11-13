@@ -7,6 +7,8 @@ import math
 from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
+import soundfile as sf
+from io import BytesIO
 
 from omega.protocol import Videos, VideoMetadata, AudioMetadata, Audios
 from omega import video_utils, unstuff
@@ -46,6 +48,7 @@ from omega.diarization_metric import calculate_diarization_metrics
 
 
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
+PINECONE_AUDIO_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_AUDIO_INDEX)
 GPU_SEMAPHORE = asyncio.Semaphore(1)
 DOWNLOAD_SEMAPHORE = asyncio.Semaphore(5)
 VIDEO_TYPE = "video"
@@ -145,26 +148,18 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
 async def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadata]) -> None:
     audio_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
     try:
-        PINECONE_INDEX.upsert(
-            vectors=sum([
-                [
-                    {
-                        "id": f"{modality_type[:3]}{audio_uuid}",
-                        "values": emb.tolist(),
-                        "metadata": {
-                            "youtube_id": audio.video_id,
-                            "modality_type": modality_type,
-                        }
+        PINECONE_AUDIO_INDEX.upsert(
+            vectors=[
+                {
+                    "id": f"{audio_uuid}",
+                    "values": embedding_aud.tolist(),
+                    "metadata": {
+                        "youtube_id": audio.video_id,
                     }
-                    for emb, modality_type
-                    in zip(
-                        [embedding_aud],
-                        [AUDIO_TYPE]
-                    )
-                ]
+                }
                 for audio_uuid, audio, embedding_aud
                 in zip(audio_ids, metadata, embeddings.audio)
-            ], []),
+            ],
         )
     except Exception as e:
         print(f"Failed to upload to Pinecone: {e}")
@@ -207,7 +202,7 @@ async def upload_audio_metadata(
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
         description=None,
     )
-    # audio_ids = await run_async(upload_to_pinecone_audio, embeddings, metadata)
+    audio_ids = await run_async(upload_to_pinecone_audio, embeddings, metadata)
     audio_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
     audio_dataset_uploader.add_audios(
         metadata,
@@ -618,12 +613,13 @@ async def _run_audio_scoring(audios: Audios, imagebind: ImageBind, is_check_only
 
     # Randomly sample one audio for duration check
     selected_random_meta = random.choice(metadata)
-    audio_duration = len(selected_random_meta.audio_array) / selected_random_meta.sampling_rate
+    audio_array, sr = sf.read(BytesIO(selected_random_meta.audio_bytes))
+    audio_duration = len(audio_array) / sr
     print(f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
 
     audio_quality_scores = AudioScore().total_score(
-        selected_random_meta.audio_array,
-        selected_random_meta.sampling_rate,
+        audio_array,
+        sr,
         selected_random_meta.diar_timestamps_start,
         selected_random_meta.diar_timestamps_end,
         selected_random_meta.diar_speakers
@@ -640,10 +636,9 @@ async def _run_audio_scoring(audios: Audios, imagebind: ImageBind, is_check_only
                 "speakers": selected_random_meta.diar_speakers
             }
   
-
     diarization_score = calculate_diarization_metrics(
-        selected_random_meta.audio_array,
-        selected_random_meta.sampling_rate,
+        audio_array,
+        sr,
         miner_diar_segment
     )
     inverse_der = diarization_score["inverse_der"]

@@ -1,15 +1,17 @@
 import os
 from datasets import load_dataset
 from huggingface_hub import login
+from io import BytesIO
+import soundfile as sf
 
 # Set HF_TOKEN environment variable or pass directly
 HF_TOKEN = os.getenv('HF_TOKEN')
 
 # Login to Hugging Face
-login(token=HF_TOKEN)
+# login(token=HF_TOKEN)
 
 # Load the dataset
-dataset = load_dataset("tezuesh/diarization_dataset", use_auth_token=HF_TOKEN)
+dataset = load_dataset("tezuesh/diarization_dataset", token=HF_TOKEN)
 
 print(f"Dataset loaded successfully with {len(dataset)} examples")
 # Get first row from the dataset
@@ -28,13 +30,14 @@ for key in first_row.keys():
 
 import librosa
 import numpy as np
-audio_arr = first_row['audio_array']
+breakpoint()
+audio_bytes = first_row['audio_bytes']
+audio_arr, sr = sf.read(BytesIO(audio_bytes))
 print(len(audio_arr), type(audio_arr))
-sr = 22050
 audio = np.array(audio_arr)
 # exit()
 print(audio.shape)
-import soundfile as sf
+
 youtube_id = first_row['youtube_id']
 os.makedirs('Dataset_audios/Original', exist_ok=True)
 sf.write(f'Dataset_audios/Original/{youtube_id}.wav', audio, sr)
