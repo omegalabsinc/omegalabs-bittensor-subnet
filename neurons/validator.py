@@ -58,7 +58,6 @@ from omega.constants import (
     QUERY_RELEVANCE_SCALING_FACTOR,
     DESCRIPTION_RELEVANCE_SCALING_FACTOR,
     VIDEO_RELEVANCE_WEIGHT,
-    YOUTUBE_REWARDS_PERCENT,
     FOCUS_REWARDS_PERCENT,
     AUDIO_REWARDS_PERCENT,
     DESCRIPTION_LENGTH_WEIGHT,
@@ -239,7 +238,7 @@ class Validator(BaseValidatorNeuron):
         """ START YOUTUBE AUDIO PROCESSING AND SCORING """
         bt.logging.info("===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
         # The dendrite client queries the network.
-        query = random.choice(self.all_topics)
+        query = random.choice(self.all_topics) + " podcast"
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
         audio_input_synapse = Audios(query=query, num_audios=self.num_audios)
         bt.logging.info(f"audio_input_synapse: {audio_input_synapse}")
