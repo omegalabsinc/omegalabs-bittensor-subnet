@@ -56,8 +56,8 @@ class Miner(BaseMinerNeuron):
         
         
         self.diarization_pipeline = CustomDiarizationPipeline(
-            overlap_detection_model_id="pyannote/overlapped-speech-detection",
-            diarization_model_id="pyannote/speaker-diarization",
+            overlap_detection_model_id = "tezuesh/overlapped-speech-detection",
+            diarization_model_id="tezuesh/diarization",
             # device="cuda"
         )
         self.imagebind = ImageBind(v2=True)
