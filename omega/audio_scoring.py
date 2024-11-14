@@ -91,6 +91,15 @@ class AudioScore:
             
         # Convert SNR to penalty score (higher SNR = lower penalty)
         return 1 - max(0, 1 - (snr / 50))  # Normalize to 0-1 range, assuming 50dB as reference
+    
+    def unique_speakers_error(self, speakers):
+        unique_speakers = len(set(speakers))
+        if unique_speakers == 2:
+            return 1
+        elif unique_speakers == 1 or unique_speakers == 0 or unique_speakers > 4:
+            return 0
+        else:
+            return 1/(unique_speakers-1)
 
     
 

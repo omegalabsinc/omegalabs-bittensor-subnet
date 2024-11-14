@@ -71,6 +71,7 @@ from omega.constants import (
     SPEECH_CONTENT_SCALING_FACTOR,
     SPEAKER_DOMINANCE_SCALING_FACTOR,
     BACKGROUND_NOISE_SCALING_FACTOR,
+    UNIQUE_SPEAKERS_ERROR_SCALING_FACTOR,
     AUDIO_LENGTH_SCALING_FACTOR,
     AUDIO_QUALITY_SCALING_FACTOR,
     DIARIZATION_SCALING_FACTOR,
@@ -1133,7 +1134,8 @@ class Validator(BaseValidatorNeuron):
             audio_quality_total_score = (
                 audio_quality_scores["speech_content_score"] * SPEECH_CONTENT_SCALING_FACTOR +
                 audio_quality_scores["speaker_dominance_score"] * SPEAKER_DOMINANCE_SCALING_FACTOR +
-                audio_quality_scores["background_noise_score"] * BACKGROUND_NOISE_SCALING_FACTOR
+                audio_quality_scores["background_noise_score"] * BACKGROUND_NOISE_SCALING_FACTOR +
+                audio_quality_scores["unique_speakers_error"] * UNIQUE_SPEAKERS_ERROR_SCALING_FACTOR
             )
             # query score
 
