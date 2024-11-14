@@ -145,7 +145,7 @@ def upload_to_pinecone(embeddings: Embeddings, metadata: List[VideoMetadata]) ->
     return video_ids
 
 
-async def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadata]) -> None:
+def upload_to_pinecone_audio(embeddings: Embeddings, metadata: List[AudioMetadata]) -> None:
     audio_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
     try:
         PINECONE_AUDIO_INDEX.upsert(

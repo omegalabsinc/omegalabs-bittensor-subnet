@@ -2,10 +2,13 @@ from io import BytesIO
 from typing import List
 from datetime import datetime
 import random
+import tempfile
 
-from datasets import Dataset
+from datasets import Dataset, Audio
 from huggingface_hub import HfApi
 import ulid
+import soundfile as sf
+import base64
 
 from omega.protocol import VideoMetadata, AudioMetadata
 
@@ -22,11 +25,11 @@ def get_data_path(batch_ulid_str: str) -> str:
     return f"default/train/{bucket:03d}/{batch_ulid_str}.parquet"
 
 
-def get_random_batch_size() -> int:
+def get_random_batch_size(batch_size: int) -> int:
     return random.choice([
-        config.UPLOAD_BATCH_SIZE // 2,
-        config.UPLOAD_BATCH_SIZE,
-        config.UPLOAD_BATCH_SIZE * 2,
+        batch_size // 2,
+        batch_size,
+        batch_size * 2,
     ])
 
 def create_repo(name: str) -> None:
@@ -44,7 +47,7 @@ def create_repo(name: str) -> None:
 class DatasetUploader:
     def __init__(self):
         self.current_batch = []
-        self.desired_batch_size = get_random_batch_size()
+        self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
         self.min_batch_size = 32
 
     def add_videos(
@@ -97,15 +100,21 @@ class DatasetUploader:
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
         self.current_batch = self.current_batch[self.desired_batch_size:]
-        self.desired_batch_size = get_random_batch_size()
+        self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
 
     
 
 class AudioDatasetUploader:
     def __init__(self):
         self.current_batch = []
-        self.min_batch_size = 2
-        self.desired_batch_size = get_random_batch_size()
+        self.min_batch_size = 8
+        self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
+    
+    def convert_audio_to_wav(self, audio_bytes: bytes) -> bytes:
+        temp_audiofile = tempfile.NamedTemporaryFile(suffix=".wav")
+        with open(temp_audiofile.name, "wb") as f:
+            f.write(audio_bytes)
+        return temp_audiofile.read()
 
     def add_audios(
         self, metadata: List[AudioMetadata], audio_ids: List[str],
@@ -114,11 +123,17 @@ class AudioDatasetUploader:
         query: str, total_score: float
     ) -> None:
         curr_time = datetime.now()
+
+        audio_files = [self.convert_audio_to_wav(audio.audio_bytes) for audio in metadata]
+
+
+        
         self.current_batch.extend([
             {
                 "audio_id": audio_uuid,
                 "youtube_id": audio.video_id,
-                "audio_bytes": audio.audio_bytes,
+                # "audio_bytes": audio.audio_bytes,
+                "audio": {"path": audio_file, "array": sf.read(BytesIO(base64.b64decode(audio.audio_bytes)))[0], "sampling_rate": 16000},
                 "start_time": audio.start_time,
                 "end_time": audio.end_time,
                 "audio_embed": audio.audio_emb,
@@ -133,7 +148,7 @@ class AudioDatasetUploader:
                 "query": query,
                 "submitted_at": int(curr_time.timestamp()),
             }
-            for audio_uuid, audio in zip(audio_ids, metadata)
+            for audio_uuid, audio_file, audio in zip(audio_ids, audio_files, metadata)
         ])
         print(f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}")
         if len(self.current_batch) >= self.desired_batch_size:
@@ -147,6 +162,7 @@ class AudioDatasetUploader:
         print(f"Uploading batch of {len(self.current_batch)} audios")
         with BytesIO() as f:
             dataset = Dataset.from_list(data)
+            dataset = dataset.cast_column("audio", Audio())
             num_bytes = dataset.to_parquet(f)
             try:
                 HF_API.upload_file(
@@ -160,7 +176,7 @@ class AudioDatasetUploader:
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
         self.current_batch = self.current_batch[self.desired_batch_size:]
-        self.desired_batch_size = get_random_batch_size()
+        self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
 
 
 

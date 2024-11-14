@@ -117,8 +117,7 @@ class Validator(BaseValidatorNeuron):
             self.successfully_started_wandb = False
         
         api_root = (
-            # "https://dev-validator.api.omega-labs.ai"
-            "http://35.202.68.172:8001"
+            "https://dev-validator.api.omega-labs.ai"
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
@@ -230,7 +229,6 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
-        miner_uids = [125]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
