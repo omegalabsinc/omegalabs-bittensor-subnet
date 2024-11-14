@@ -1,7 +1,7 @@
 # The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
 # Copyright © 2023 Omega Labs, Inc.
 
+# Copyright © 2023 Yuma Rao
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
@@ -33,14 +33,14 @@ import requests
 import math
 import soundfile as sf
 from io import BytesIO
-
+import json
 # Bittensor
 import bittensor as bt
 import torch
 import torch.nn.functional as F
 from torch.nn import CosineSimilarity
 import wandb
-
+import base64
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
 from omega.protocol import Videos, VideoMetadata, AudioMetadata, Audios
@@ -117,7 +117,8 @@ class Validator(BaseValidatorNeuron):
             self.successfully_started_wandb = False
         
         api_root = (
-            "https://dev-validator.api.omega-labs.ai"
+            # "https://dev-validator.api.omega-labs.ai"
+            "http://35.202.68.172:8001"
             if self.config.subtensor.network == "test" else
             "https://validator.api.omega-labs.ai"
         )
@@ -129,7 +130,7 @@ class Validator(BaseValidatorNeuron):
         self.focus_rewards_percent_endpoint = f"{api_root}/api/focus/get_rewards_percent"
         self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
-        self.num_audios = 3
+        self.num_audios = 4
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 
         # load topics from topics URL (CSV) or fallback to local topics file
@@ -229,7 +230,7 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
-        # miner_uids = [125]
+        miner_uids = [125]
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
@@ -667,25 +668,25 @@ class Validator(BaseValidatorNeuron):
                 # If no embeddings to check, return an empty list or appropriate default value
                 global_novelty_scores = []
 
-            # if global_novelty_scores is None or len(global_novelty_scores) == 0:
-            #     bt.logging.error("Issue retrieving global novelty scores, returning None.")
-            #     return None
+            if global_novelty_scores is None or len(global_novelty_scores) == 0:
+                bt.logging.error("Issue retrieving global novelty scores, returning None.")
+                return None
             # #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
             
-            # # calculate true novelty scores between local and global
-            # true_novelty_scores = [
-            #     min(local_score, global_score) for local_score, global_score
-            #     in zip(local_novelty_scores, global_novelty_scores)
-            # ]
+            # calculate true novelty scores between local and global
+            true_novelty_scores = [
+                min(local_score, global_score) for local_score, global_score
+                in zip(local_novelty_scores, global_novelty_scores)
+            ]
             #bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
-            # is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
-            # # filter out metadata too similar
-            # metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+            # filter out metadata too similar
+            metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
             # filter out embeddings too similar
-            # embeddings = self.filter_embeddings(embeddings, is_too_similar)
+            embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
 
@@ -899,7 +900,8 @@ class Validator(BaseValidatorNeuron):
         try:
             async with ClientSession() as session:
                 # Serialize the list of VideoMetadata
-                serialized_metadata = [item.dict() for item in metadata]
+                # serialized_metadata = [item.dict() for item in metadata]
+                serialized_metadata = [json.loads(item.model_dump_json()) for item in metadata]
                 # Construct the JSON payload
                 payload = {
                     "metadata": serialized_metadata,
@@ -948,7 +950,8 @@ class Validator(BaseValidatorNeuron):
         try:
             async with ClientSession() as session:
                 # Serialize the list of AudioMetadata
-                serialized_metadata = [item.dict() for item in metadata]
+                # serialized_metadata = [item.dict() for item in metadata]
+                serialized_metadata = [json.loads(item.model_dump_json()) for item in metadata]
                 # Construct the JSON payload
                 payload = {
                     "metadata": serialized_metadata,
@@ -1118,7 +1121,7 @@ class Validator(BaseValidatorNeuron):
 
             # Randomly sample one audio for duration check
             selected_random_meta = random.choice(metadata)
-            audio_array, sr = sf.read(BytesIO(selected_random_meta.audio_bytes))
+            audio_array, sr = sf.read(BytesIO(base64.b64decode(selected_random_meta.audio_bytes)))
             audio_duration = len(audio_array) / sr
             bt.logging.info(f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
 
@@ -1166,6 +1169,7 @@ class Validator(BaseValidatorNeuron):
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = audios.axon.hotkey
             bt.logging.info(f"Uploading audio metadata for miner: {miner_hotkey}")
+            print("type audiadsas ", type(metadata[0].audio_bytes))
             upload_result = await self.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, audios.query, total_score, miner_hotkey)
             if upload_result:
                 bt.logging.info("Uploading of audio metadata successful.")

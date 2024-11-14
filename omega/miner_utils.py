@@ -143,16 +143,20 @@ def search_and_diarize_youtube_videos(query: str, num_videos: int, diarization_p
                     clip_path = video_utils.clip_video(download_path.name, start, end)
                     bt.logging.info(f"Clip video path: {clip_path}")
                     embeddings = imagebind.embed([description], [clip_path])
-                    # bt.logging.info(f"Embeddings: {type(embeddings)}, audio_emb: {type(embeddings.audio[0])}, audio_array: {type(audio_array)} {audio_array.shape}, sr: {sr}, diar_timestamps_start: {type(diar_timestamps_start)}, diar_timestamps_end: {type(diar_timestamps_end)}, diar_speakers: {type(diar_speakers)}")
-                    # bt.logging.info(f"Audio duration: {end - start}, actual length: {result.length}")
-                    # bt.logging.info("Diarization Dataframe: ", dataframe)
+                    bt.logging.info(f"Embeddings: {type(embeddings)}, audio_emb: {type(embeddings.audio[0])}, audio_array: {type(audio_array)} {audio_array.shape}, audio_bytes: {type(audio_bytes)}, sr: {sr}, diar_timestamps_start: {type(diar_timestamps_start)}, diar_timestamps_end: {type(diar_timestamps_end)}, diar_speakers: {type(diar_speakers)}")
+                    bt.logging.info(f"Audio duration: {end - start}, actual length: {result.length}")
+                    bt.logging.info("Diarization Dataframe: ", dataframe)
+                    # Convert audio_bytes to base64 string for serialization
+                    import base64
+                    audio_bytes_b64 = base64.b64encode(audio_bytes).decode('utf-8')
+                    
                     audio_metas.append(AudioMetadata(
                         video_id=result.video_id,
                         views=result.views,
                         start_time=start,
                         end_time=end,
                         audio_emb=embeddings.audio[0].tolist(),
-                        audio_bytes=audio_bytes,
+                        audio_bytes=audio_bytes_b64,  # Store base64 encoded string instead of raw bytes
                         diar_timestamps_start=diar_timestamps_start,
                         diar_timestamps_end=diar_timestamps_end,
                         diar_speakers=diar_speakers,

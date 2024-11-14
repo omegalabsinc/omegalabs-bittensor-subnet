@@ -43,7 +43,7 @@ def calculate_diarization_metrics(audio_arr, sr, true_segments):
 
 
 diarization_model_id = "tezuesh/diarization"
-overlap_detection_model_id = "pyannote/overlapped-speech-detection" 
+overlap_detection_model_id = "tezuesh/overlapped-speech-detection" 
 pipeline = CustomDiarizationPipeline(overlap_detection_model_id=overlap_detection_model_id,
                                     diarization_model_id=diarization_model_id)
 
