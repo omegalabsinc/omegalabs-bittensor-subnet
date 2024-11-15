@@ -160,6 +160,33 @@ For the final_score, use your best judgment to assign a score between 0.0 and 1.
 Remember to adhere to the JSON schema provided for the CompletionScoreBreakdown.
 """
 
+TASK_COMPLETION_SYSTEM_PROMPT = """
+You are an expert in evaluating task completion based on video recordings. Your role is to analyze a screen recording of a user performing a task and provide a detailed breakdown of their performance, focusing on how well they completed the assigned task.
+
+You will be provided with:
+1. A task overview describing the assigned task.
+2. The screen recording video of the user performing the task.
+3. A detailed description of the video content.
+
+Your goal is to evaluate the user's performance and provide a completion score breakdown following the CompletionScoreBreakdown schema. This schema includes reasoning steps, a focus score, a novelty score, a final score, and a rationale.
+"""
+
+TASK_COMPLETION_USER_PROMPT = """
+Based on the task description and video provided, please provide a completion score breakdown. Evaluate how well the user completed the assigned task, considering their focus, the novelty of their approach, and overall effectiveness.
+
+<task_description>
+{task_overview}
+<task_description>
+{detailed_video_description_string}
+
+Use the following rubric to assign the completion_score:
+- 0.0-0.2: Poor task completion, largely irrelevant or counterproductive
+- 0.2-0.4: Weak task completion, minimal contribution to the goal
+- 0.4-0.6: Moderate task completion, somewhat helpful but not ideal
+- 0.6-0.8: Good task completion, the task was diligently completed
+- 0.8-1.0: Excellent task completion, the task was completed with high quality and efficiency
+"""
+
 BOOST_SCORING_SYSTEM_PROMPT = """
 You are part of a system to evaluate and reward users for completing tasks.
 You will be provided with a list of boosted tasks and their descriptions. Boosted tasks are tasks thatreceive an extra special multiplier to increase their score.

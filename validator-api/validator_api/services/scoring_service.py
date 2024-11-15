@@ -61,30 +61,24 @@ class DetailedVideoDescription(BaseModel):
     user_feedback: str = Field(description="Feedback for the user to improve their task completion skills in the future")
     description: str = Field(description="High-level summary description of the video content")
 
-class CompletionScoreBreakdown(BaseModel):
-    # put some more intermediate scores here like focus_score, novelty_score, etc, check my old code for this
-    reasoning_steps: List[str] = Field(description="Steps of reasoning used to arrive at the final score. Before each step, write the text 'Step X: '")
-    focus_score: float = Field(ge=0, le=1, description="Score indicating how focused the user is on completing the task, based on the user's actions. Between 0.0 and 1.0")
-    educational_score: float = Field(ge=0, le=1, description="Score indicating how clear the user's steps are and how easy it is to follow along. Between 0.0 and 1.0")
-    completion_score: float = Field(ge=0, le=1, description="Score indicating how well the user completed the task, considering their focus and the clarity of their steps. Between 0.0 and 1.0")
-    creativity_score: float = Field(ge=0, le=1, description="Score indicating how creative the user's approach to the task was. Between 0.0 and 1.0")
-    final_score: float = Field(ge=0, le=1, description="Final completion score, between 0.0 and 1.0")
-    rationale: str = Field(description="Concise explanation for the given completion score")
+class CompletionScore(BaseModel):
+    rationale: str = Field(description="Concise description of how well the user completed the task")
+    completion_score: float = Field(ge=0, le=1, description="Final completion score, between 0.0 and 1.0")
 
 class VideoScore(BaseModel):
     # task and video scores
-    task_score: float
+    # task_score: float
     task_uniqueness_score: Optional[float]
     video_completion_score: float
     description_uniqueness_score: Optional[float]
     video_uniqueness_score: float
     boosted_multiplier: Optional[float]
-    combined_score: float
+    final_score: float
 
     # metadata
     task_overview: str
-    task_score_breakdown: TaskScoreBreakdown
-    completion_score_breakdown: CompletionScoreBreakdown
+    # task_score_breakdown: TaskScoreBreakdown
+    completion_score_breakdown: CompletionScore
     detailed_video_description: DetailedVideoDescription
 
     # embeddings
@@ -182,7 +176,7 @@ class FocusScoringService:
             OutputClassSchema=DetailedVideoDescription,
         )
 
-    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription]) -> CompletionScoreBreakdown:
+    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription]) -> CompletionScore:
         detailed_video_description_string = f"""
 Additionally, here is a detailed description of the video content:
 
@@ -192,13 +186,13 @@ Additionally, here is a detailed description of the video content:
 """ if detailed_video_description else ""
 
         return await self.make_gemini_request_with_retries(
-            system_prompt=focus_scoring_prompts.VIDEO_SCORING_SYSTEM_PROMPT,
-            user_prompt=focus_scoring_prompts.VIDEO_SCORING_USER_PROMPT.format(
+            system_prompt=focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
+            user_prompt=focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT.format(
                 task_overview=task_overview,
                 detailed_video_description_string=detailed_video_description_string,
             ),
             video_id=video_id,
-            OutputClassSchema=CompletionScoreBreakdown,
+            OutputClassSchema=CompletionScore,
         )
 
     # Pinecone related functions
@@ -322,88 +316,50 @@ Additionally, here is a detailed description of the video content:
     
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
-        The combined_score is an average of five components, plus a final multiplier:
-
-        # gemini based scores
-        1. task_gemini_score: Gemini's evaluation of the task's quality, based on the task overview and how it feeds into the community's goals and its relevance to teaching AI systems
-        2. completion_gemini_score: Gemini's evaluation of how well the task was completed and how relevant the video content is to the task and the community's goals
-
-        # embedding based scores
-        3. task_uniqueness_score: Uniqueness of the task based on embedding similarity of the task overview
-        4. description_uniqueness_score: Uniqueness of the video description based on embedding similarity of the detailed video description
-        5. video_uniqueness_score: Uniqueness of the video content based on embedding similarity of the video
-        
-        # score boost: a task may be a boosted task, in which case the score is multiplied by a constant factor
-        6. score_boost: a constant factor that is applied to the final score
-        
-        Final score: each component contributes equally to the final score.
+        The video score is a score of how well the user completed the task, based on the task overview and the detailed video description.
+        If the video is too similar to other videos, it will be rejected.
         """
         video_duration_seconds = self.get_video_duration_seconds(video_id)
         if video_duration_seconds > NINETY_MINUTES:
             raise ValueError(f"Video duration is too long: {video_duration_seconds} seconds")
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
-        
-        # NOTE: we could choose to include the detailed breakdown in the completion score, which
-        # would likely make the completion score more accurate, but would add a lot of latency
+
         (
             (task_overview_embedding, task_uniqueness_score),
-            task_score_breakdown,
+            # task_score_breakdown,
             (video_description, video_description_embedding, video_description_uniqueness_score),
             completion_score_breakdown,
             (video_embedding, video_uniqueness_score),
             boosted_multiplier,
         ) = await asyncio.gather(
             self.embed_and_get_task_uniqueness_score(task_overview),  # uses openai to get embedding
-            self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
+            # self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
             self.get_detailed_video_description_embedding_score(video_id, task_overview),  # uses gemini to get detailed description
             self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None),  # use gemini to get breakdown of task score
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
             self.get_boosted_multiplier(focusing_task, focusing_description),
         )
-        task_gemini_score = task_score_breakdown.final_score
-        completion_gemini_score = completion_score_breakdown.final_score
-
-        scores_array = [
-            task_gemini_score,
-            task_uniqueness_score,
-            completion_gemini_score,
-            video_description_uniqueness_score,
-            video_uniqueness_score,
-        ]
-
-        # geometric mean of the scores
-        combined_score = 1.0
-        coefficient_sum = 0.0
-        assert len(scores_array) == len(self.coefficients)
-        for score, coefficient in zip(scores_array, self.coefficients):
-            if score is None:
-                continue
-            adjusted_score = min(FOCUS_VIDEO_MAX_SCORE, max(score, FOCUS_VIDEO_MIN_SCORE))
-            combined_score *= adjusted_score ** coefficient
-            coefficient_sum += coefficient
-        combined_score = combined_score ** (1 / coefficient_sum)
+        completion_gemini_score = completion_score_breakdown.completion_score
+        final_score = completion_gemini_score * boosted_multiplier
         
-        # apply score boost if it's a boosted task
-        # print(f"Boosted multiplier: {boosted_multiplier}")
-        assert boosted_multiplier is not None
-        combined_score *= boosted_multiplier
-
+        print(f"Final score: {final_score}")
+        
         return VideoScore(
-            task_score=task_gemini_score,
             task_uniqueness_score=task_uniqueness_score,
             video_completion_score=completion_gemini_score,
             description_uniqueness_score=video_description_uniqueness_score,
             video_uniqueness_score=video_uniqueness_score,
             boosted_multiplier=boosted_multiplier,
-            combined_score=combined_score,
+            final_score=final_score,
+            
             task_overview=task_overview,
-            task_overview_embedding=task_overview_embedding,
-            task_score_breakdown=task_score_breakdown,
             completion_score_breakdown=completion_score_breakdown,
             detailed_video_description=video_description,
+            
+            task_overview_embedding=task_overview_embedding,
             detailed_video_description_embedding=video_description_embedding,
-            video_embedding=video_embedding
+            video_embedding=video_embedding,
         )
 
     # async def get_model_cached_on_video(self, video_id: str) -> GenerativeModel:

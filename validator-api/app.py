@@ -414,12 +414,15 @@ async def main():
 
         try:
             score_details = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
-            print(f"Score for focus video <{video_id}>: {score_details.combined_score}")
-            minimum_score = 0.1
+            print(f"Score for focus video <{video_id}>: {score_details.final_score}")
+            MIN_FINAL_SCORE = 0.1
+            # todo: measure and tune these
+            MIN_TASK_UNIQUENESS_SCORE = 0
+            MIN_VIDEO_UNIQUENESS_SCORE = 0
             # get the db after scoring the video so it's not open for too long
             with get_db_context() as db:
-                if score_details.combined_score < minimum_score:
-                    rejection_reason = f"""This video got a score of {score_details.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%.
+                if score_details.final_score < MIN_FINAL_SCORE:
+                    rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     mark_video_rejected(
                         db,
