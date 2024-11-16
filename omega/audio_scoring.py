@@ -9,16 +9,13 @@ import torch
 
 dotenv.load_dotenv()
 
-HUGGINGFACE_AUTH_TOKEN = os.getenv("HUGGINGFACE_AUTH_TOKEN")
-
 class AudioScore:
     def __init__(self, device="cuda"):
 
         self.device = torch.device(device)
 
         # Load the audio file   
-        self.pipeline = Pipeline.from_pretrained("pyannote/voice-activity-detection",
-                                    use_auth_token=HUGGINGFACE_AUTH_TOKEN).to(self.device)
+        self.pipeline = Pipeline.from_pretrained("salmanshahid/vad").to(self.device)
         
 
         self.steepness = 5

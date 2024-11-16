@@ -1,7 +1,7 @@
 bittensor==7.3.1
-torch==2.0.1
-torchaudio==2.0.2
-torchvision==0.15.2
+torch==2.1.0
+torchaudio==2.1.0
+torchvision==0.16.0
 datasets==2.17.1
 pinecone-client==3.1.0
 huggingface-hub==0.20.3
@@ -20,3 +20,6 @@ python-dotenv==1.0.1
 google-generativeai
 boto3
 tabulate
+soundfile==0.12.1
+pyannote-audio==3.1.1
+librosa==0.10.2.post1
