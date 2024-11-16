@@ -228,6 +228,7 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        # miner_uids = torch.LongTensor([0])
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
