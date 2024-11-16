@@ -35,7 +35,7 @@ from omega.imagebind_wrapper import ImageBind
 from omega.miner_utils import search_and_diarize_youtube_videos, search_and_embed_youtube_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
-from omega.constants import VALIDATOR_TIMEOUT
+from omega.constants import VALIDATOR_TIMEOUT, VALIDATOR_TIMEOUT_AUDIO
 from omega.diarization_pipeline import CustomDiarizationPipeline
 
 class Miner(BaseMinerNeuron):
@@ -97,7 +97,7 @@ class Miner(BaseMinerNeuron):
         
         time_elapsed = time.time() - start
             
-        if len(synapse.audio_metadata) == synapse.num_audios:
+        if len(synapse.audio_metadata) == synapse.num_audios and time_elapsed < VALIDATOR_TIMEOUT_AUDIO:
             bt.logging.info(f"–––––– SCRAPING SUCCEEDED: Scraped {len(synapse.audio_metadata)}/{synapse.num_audios} audios in {time_elapsed} seconds.")
         else:
             bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.audio_metadata)}/{synapse.num_audios} audios in {time_elapsed} seconds.")

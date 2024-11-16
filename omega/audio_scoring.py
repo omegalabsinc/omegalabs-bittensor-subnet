@@ -101,8 +101,6 @@ class AudioScore:
         else:
             return 1/(unique_speakers-1)
 
-    
-
     def total_score(self, audio_arr, sr, timestamps_start, timestamps_end, speakers):
         audio_arr = np.array(audio_arr)
         timestamps_start = np.array(timestamps_start)
@@ -111,18 +109,12 @@ class AudioScore:
         speech_content_score = self.speech_content_score(audio_arr, sr)
         speaker_dominance_score = self.speaker_dominance_score(timestamps_start, timestamps_end, speakers)
         background_noise_score = self.background_noise_score(audio_arr, sr)
-        return {"speech_content_score": speech_content_score, 
-                "speaker_dominance_score": speaker_dominance_score, 
-                "background_noise_score": background_noise_score,
-                }
-
-    
-
-    
-
-    
-
-    
+        return {
+            "speech_content_score": speech_content_score, 
+            "speaker_dominance_score": speaker_dominance_score, 
+            "background_noise_score": background_noise_score,
+            "unique_speakers_error": self.unique_speakers_error(speakers),
+        }
 
 
 if __name__ == "__main__":    

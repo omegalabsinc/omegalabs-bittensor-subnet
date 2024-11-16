@@ -9,6 +9,7 @@ FIVE_MINUTES = 300  # 5 minutes in seconds
 TEN_MINUTES = 600  # 10 minutes in seconds
 VALIDATOR_TIMEOUT = 90  # 1.5 minutes
 VALIDATOR_TIMEOUT_MARGIN = 30  # 30 seconds
+VALIDATOR_TIMEOUT_AUDIO = 60  # 1 minute
 
 # Validator constants
 CHECK_PROBABILITY = 0.1

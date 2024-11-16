@@ -23,10 +23,7 @@ os.environ["USE_TORCH"] = "1"
 from aiohttp import ClientSession, BasicAuth
 import asyncio
 from typing import List, Tuple, Optional, BinaryIO, Dict
-from fastapi import HTTPException
-from pydantic import ValidationError
 import datetime as dt
-import functools
 import random
 import traceback
 import requests
@@ -45,8 +42,9 @@ import base64
 from omega.utils.uids import get_random_uids
 from omega.protocol import Videos, VideoMetadata, AudioMetadata, Audios
 from omega.constants import (
-    VALIDATOR_TIMEOUT, 
-    VALIDATOR_TIMEOUT_MARGIN, 
+    VALIDATOR_TIMEOUT,
+    VALIDATOR_TIMEOUT_MARGIN,
+    VALIDATOR_TIMEOUT_AUDIO,
     MAX_VIDEO_LENGTH, 
     MIN_VIDEO_LENGTH,
     CHECK_PROBABILITY,
@@ -132,7 +130,7 @@ class Validator(BaseValidatorNeuron):
         self.num_videos = 8
         self.num_audios = 4
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
-
+        self.client_timeout_seconds_audio = VALIDATOR_TIMEOUT_AUDIO + VALIDATOR_TIMEOUT_MARGIN
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
@@ -249,7 +247,7 @@ class Validator(BaseValidatorNeuron):
             axons=axons,
             synapse=audio_input_synapse,
             deserialize=False,
-            timeout=self.client_timeout_seconds,
+            timeout=self.client_timeout_seconds_audio,
         )
         audio_working_miner_uids = []
         audio_finished_responses = []
