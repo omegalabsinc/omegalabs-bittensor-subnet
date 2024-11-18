@@ -32,21 +32,16 @@ import omega
 
 from omega.base.miner import BaseMinerNeuron
 from omega.imagebind_wrapper import ImageBind
-from omega.miner_utils import search_and_embed_youtube_videos
+from omega.miner_utils import search_and_diarize_youtube_videos, search_and_embed_youtube_videos
 from omega.augment import LocalLLMAugment, OpenAIAugment, NoAugment
 from omega.utils.config import QueryAugment
-from omega.constants import VALIDATOR_TIMEOUT
-
+from omega.constants import VALIDATOR_TIMEOUT, VALIDATOR_TIMEOUT_AUDIO
+from omega.diarization_pipeline import CustomDiarizationPipeline
 
 class Miner(BaseMinerNeuron):
     """
     Your miner neuron class. You should use this class to define your miner's behavior. In particular, you should replace the forward function with your own logic. You may also want to override the blacklist and priority functions according to your needs.
-
-    This class inherits from the BaseMinerNeuron class, which in turn inherits from BaseNeuron. The BaseNeuron class takes care of routine tasks such as setting up wallet, subtensor, metagraph, logging directory, parsing config, etc. You can override any of the methods in BaseNeuron if you need to customize the behavior.
-
-    This class provides reasonable default behavior for a miner such as blacklisting unrecognized hotkeys, prioritizing requests based on stake, and forwarding requests to the forward function. If you need to define custom
     """
-
     def __init__(self, config=None):
         super(Miner, self).__init__(config=config)
         query_augment_type = QueryAugment(self.config.neuron.query_augment)
@@ -59,32 +54,57 @@ class Miner(BaseMinerNeuron):
         else:
             raise ValueError("Invalid query augment")
         
+        
+        self.diarization_pipeline = CustomDiarizationPipeline(
+            overlap_detection_model_id = "tezuesh/overlapped-speech-detection",
+            diarization_model_id="tezuesh/diarization",
+            # device="cuda"
+        )
         self.imagebind = ImageBind(v2=True)
 
-    async def forward(
+    async def forward_videos(
         self, synapse: omega.protocol.Videos
-    ) -> omega.protocol.Videos:
-        
+    ) :
         # Scrape Youtube videos
         bt.logging.info(f"Received scraping request: {synapse.num_videos} videos for query '{synapse.query}'")
         
         start = time.time()
-
+        
         synapse.video_metadata = search_and_embed_youtube_videos(
             self.augment(synapse.query), synapse.num_videos, self.imagebind
         )
-        
+            
         time_elapsed = time.time() - start
-        
+            
         if len(synapse.video_metadata) == synapse.num_videos and time_elapsed < VALIDATOR_TIMEOUT:
             bt.logging.info(f"–––––– SCRAPING SUCCEEDED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
         else:
             bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.video_metadata)}/{synapse.num_videos} videos in {time_elapsed} seconds.")
 
+
+        return synapse
+    
+    async def forward_audios(
+        self, synapse: omega.protocol.Audios
+    ) -> omega.protocol.Audios:
+        bt.logging.info(f"Received youtube audio scraping and diarization request: {synapse.num_audios} audios for query '{synapse.query}'")
+        
+        start = time.time()
+        
+        synapse.audio_metadata = search_and_diarize_youtube_videos(
+            self.augment(synapse.query), synapse.num_audios, self.diarization_pipeline, self.imagebind
+        )
+        
+        time_elapsed = time.time() - start
+            
+        if len(synapse.audio_metadata) == synapse.num_audios and time_elapsed < VALIDATOR_TIMEOUT_AUDIO:
+            bt.logging.info(f"–––––– SCRAPING SUCCEEDED: Scraped {len(synapse.audio_metadata)}/{synapse.num_audios} audios in {time_elapsed} seconds.")
+        else:
+            bt.logging.error(f"–––––– SCRAPING FAILED: Scraped {len(synapse.audio_metadata)}/{synapse.num_audios} audios in {time_elapsed} seconds.")
         return synapse
 
     async def blacklist(
-        self, synapse: omega.protocol.Videos
+        self, synapse: bt.Synapse
     ) -> typing.Tuple[bool, str]:
         """
         Determines whether an incoming request should be blacklisted and thus ignored. Your implementation should
@@ -144,8 +164,18 @@ class Miner(BaseMinerNeuron):
             f"Not Blacklisting recognized hotkey {synapse.dendrite.hotkey}"
         )
         return False, "Hotkey recognized!"
+    
+    async def blacklist_videos(
+        self, synapse: omega.protocol.Videos
+    ) -> typing.Tuple[bool, str]:
+        return await self.blacklist(synapse)
+    
+    async def blacklist_audios(
+        self, synapse: omega.protocol.Audios
+    ) -> typing.Tuple[bool, str]:
+        return await self.blacklist(synapse)
 
-    async def priority(self, synapse: omega.protocol.Videos) -> float:
+    async def priority(self, synapse: bt) -> float:
         """
         The priority function determines the order in which requests are handled. More valuable or higher-priority
         requests are processed before others. You should design your own priority mechanism with care.
@@ -153,7 +183,7 @@ class Miner(BaseMinerNeuron):
         This implementation assigns priority to incoming requests based on the calling entity's stake in the metagraph.
 
         Args:
-            synapse (template.protocol.Videos): The synapse object that contains metadata about the incoming request.
+            synapse (template.protocol.Audios): The synapse object that contains metadata about the incoming request.
 
         Returns:
             float: A priority score derived from the stake of the calling entity.
@@ -176,6 +206,16 @@ class Miner(BaseMinerNeuron):
         )
         return prirority
 
+    async def priority_videos(
+        self, synapse: omega.protocol.Videos
+    ) -> float:
+        return await self.priority(synapse)
+    
+    async def priority_audios(
+        self, synapse: omega.protocol.Audios
+    ) -> float:
+        return await self.priority(synapse)
+    
     def save_state(self):
         """
         We define this function to avoid printing out the log message in the BaseNeuron class

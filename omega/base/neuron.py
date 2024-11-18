@@ -112,9 +112,9 @@ class BaseNeuron(ABC):
         self.last_sync_check = dt.datetime.now()
         self.sync_check_interval = 300  # 5 minutes
 
-    @abstractmethod
-    async def forward(self, synapse: bt.Synapse) -> bt.Synapse:
-        ...
+    # @abstractmethod
+    # async def forward(self, synapse: bt.Synapse) -> bt.Synapse:
+    #     ...
 
     @abstractmethod
     def run(self):

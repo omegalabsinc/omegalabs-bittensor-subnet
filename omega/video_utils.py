@@ -8,6 +8,8 @@ import bittensor as bt
 import ffmpeg
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
+import librosa
+import numpy as np
 
 from omega.constants import FIVE_MINUTES
 
@@ -108,6 +110,7 @@ def download_youtube_video(
     video_url = f"https://www.youtube.com/watch?v={video_id}"
     
     temp_fileobj = tempfile.NamedTemporaryFile(suffix=".mp4")
+    
     ydl_opts = {
         "format": "worst",  # Download the worst quality
         "outtmpl": temp_fileobj.name,  # Set the output template to the temporary file"s name
@@ -175,3 +178,42 @@ def copy_audio(video_path: str) -> BinaryIO:
         .run(quiet=True)
     )
     return temp_audiofile
+
+def copy_audio_wav(video_path: str) -> BinaryIO:
+    """
+    Extract audio from video file to 16-bit PCM WAV format.
+
+    Args:
+        video_path: Path to input video
+
+    Returns:
+        BinaryIO: Temporary file containing WAV audio
+    """
+    temp_audiofile = tempfile.NamedTemporaryFile(suffix=".wav")
+
+    (
+        ffmpeg
+        .input(video_path)
+        .output(
+            temp_audiofile.name,
+            acodec='pcm_s16le',  # 16-bit PCM
+            ac=1,                # mono
+            ar=16000,            # 16kHz sample rate
+            vn=None             # no video
+        )
+        .overwrite_output()
+        .run(quiet=True)
+    )
+
+    return temp_audiofile
+
+def get_audio_bytes(video_path: str) -> bytes:
+    audio_file = copy_audio_wav(video_path)
+    with open(audio_file.name, 'rb') as f:
+        wav_bytes = f.read()
+
+    # Clean up temp file
+    audio_file.close()
+
+    # NOTE: MINERS, you cannot change the sample rate here or we will not be able to score your audio
+    return wav_bytes

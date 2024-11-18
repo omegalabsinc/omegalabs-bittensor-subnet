@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:11.7.0-devel-ubuntu20.04
+FROM nvcr.io/nvidia/cuda:12.1.0-devel-ubuntu20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
@@ -22,6 +22,7 @@ WORKDIR /app/
 # Install python requirements
 COPY ./requirements.txt ./requirements.txt
 COPY ./requirements_api.txt ./requirements_api.txt
+
 RUN python -m ensurepip && python -m pip install --upgrade pip setuptools wheel uv
 RUN python -m uv pip install -r requirements_api.txt --prerelease=allow --no-cache-dir
 

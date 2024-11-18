@@ -13,39 +13,50 @@ from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore
 
-available_focus_cache = {
-    'value': None,
-    'timestamp': 0
-}
+class CachedValue:
+    def __init__(self, duration: int = 90):
+        self._value = None
+        self._timestamp = 0
+        self._duration = duration
+        self._mutex = asyncio.Lock()
 
-CACHE_DURATION = 90  # 1 minute in seconds
+    def is_valid(self) -> bool:
+        return (
+            self._value is not None and 
+            time.time() - self._timestamp < self._duration
+        )
 
-cache_mutex = asyncio.Lock()
+    async def get_or_update(self, fetch_func):
+        if self.is_valid():
+            return self._value
+
+        try:
+            async with self._mutex:
+                # Double check after acquiring lock
+                if not self.is_valid():
+                    self._value = await fetch_func()
+                    self._timestamp = time.time()
+            return self._value
+
+        except Exception as e:
+            print(e)
+            raise HTTPException(500, detail="Internal error")
+
+async def _fetch_available_focus(db: Session):
+    # Show oldest videos first so they get rewarded fastest
+    items = db.query(FocusVideoRecord).filter_by(
+        processing_state=FocusVideoStateInternal.SUBMITTED,
+        deleted_at=None,
+    ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
+    return [FocusVideoInternal.model_validate(record) for record in items]
+
+_available_focus_cache = CachedValue()
 
 async def get_all_available_focus(db: Session):
-    global available_focus_cache
+    return await _available_focus_cache.get_or_update(
+        lambda: _fetch_available_focus(db)
+    )
 
-    # Check if cached data is still valid
-    if available_focus_cache['value'] is not None and time.time() - available_focus_cache['timestamp'] < CACHE_DURATION:
-        return available_focus_cache['value']
-
-    try:
-        async with cache_mutex:
-            # if many threads simultaneously check the cache, only one will update the cache
-            if time.time() - available_focus_cache['timestamp'] > CACHE_DURATION:
-                # show oldest videos first so that they get rewarded fastest
-                items = db.query(FocusVideoRecord).filter_by(
-                    processing_state=FocusVideoStateInternal.SUBMITTED,
-                    deleted_at=None,
-                ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
-                available_focus_cache['value'] = [FocusVideoInternal.model_validate(record) for record in items]
-                available_focus_cache['timestamp'] = time.time()
-        return available_focus_cache['value']
-
-    except Exception as e:
-        print(e)
-        raise HTTPException(500, detail="Internal error")
-    
 def get_pending_focus(
     db: Session,
     miner_hotkey: str
@@ -279,15 +290,20 @@ def get_video_owner_coldkey(db: Session, video_id: str) -> str:
 
     return user_record.coldkey
 
-async def already_purchased_max_focus_tao(db: Session) -> bool:
+_already_purchased_cache = CachedValue()
+
+async def _already_purchased_max_focus_tao(db: Session) -> bool:
     max_focus_tao = await get_max_focus_tao()
     total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
         FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
     ).scalar() or 0
-
-    # set max as 90% of the max focus tao, leaving extra 10% as profit to incentivize miners to purchase videos
     return total_earned_tao >= max_focus_tao * 0.9
+
+async def already_purchased_max_focus_tao(db: Session) -> bool:
+    return await _already_purchased_cache.get_or_update(
+        lambda: _already_purchased_max_focus_tao(db)
+    )
 
 class MinerPurchaseStats(BaseModel):
     purchased_videos: List[FocusVideoInternal]

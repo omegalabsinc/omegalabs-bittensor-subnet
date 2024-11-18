@@ -1,7 +1,7 @@
 # The MIT License (MIT)
-# Copyright © 2023 Yuma Rao
 # Copyright © 2023 Omega Labs, Inc.
 
+# Copyright © 2023 Yuma Rao
 # Permission is hereby granted, free of charge, to any person obtaining a copy of this software and associated
 # documentation files (the “Software”), to deal in the Software without restriction, including without limitation
 # the rights to use, copy, modify, merge, publish, distribute, sublicense, and/or sell copies of the Software,
@@ -23,27 +23,28 @@ os.environ["USE_TORCH"] = "1"
 from aiohttp import ClientSession, BasicAuth
 import asyncio
 from typing import List, Tuple, Optional, BinaryIO, Dict
-from fastapi import HTTPException
-from pydantic import ValidationError
 import datetime as dt
 import random
 import traceback
 import requests
 import math
-
+import soundfile as sf
+from io import BytesIO
+import json
 # Bittensor
 import bittensor as bt
 import torch
 import torch.nn.functional as F
 from torch.nn import CosineSimilarity
 import wandb
-
+import base64
 # Bittensor Validator Template:
 from omega.utils.uids import get_random_uids
-from omega.protocol import Videos, VideoMetadata
+from omega.protocol import Videos, VideoMetadata, AudioMetadata, Audios
 from omega.constants import (
-    VALIDATOR_TIMEOUT, 
-    VALIDATOR_TIMEOUT_MARGIN, 
+    VALIDATOR_TIMEOUT,
+    VALIDATOR_TIMEOUT_MARGIN,
+    VALIDATOR_TIMEOUT_AUDIO,
     MAX_VIDEO_LENGTH, 
     MIN_VIDEO_LENGTH,
     CHECK_PROBABILITY,
@@ -55,17 +56,30 @@ from omega.constants import (
     QUERY_RELEVANCE_SCALING_FACTOR,
     DESCRIPTION_RELEVANCE_SCALING_FACTOR,
     VIDEO_RELEVANCE_WEIGHT,
-    YOUTUBE_REWARDS_PERCENT,
     FOCUS_REWARDS_PERCENT,
+    AUDIO_REWARDS_PERCENT,
     DESCRIPTION_LENGTH_WEIGHT,
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
     FOCUS_MIN_SCORE,
+    MIN_AUDIO_LENGTH_SECONDS,
+    MAX_AUDIO_LENGTH_SECONDS,
+    MIN_AUDIO_LENGTH_SCORE,
+    SPEECH_CONTENT_SCALING_FACTOR,
+    SPEAKER_DOMINANCE_SCALING_FACTOR,
+    BACKGROUND_NOISE_SCALING_FACTOR,
+    UNIQUE_SPEAKERS_ERROR_SCALING_FACTOR,
+    AUDIO_LENGTH_SCALING_FACTOR,
+    AUDIO_QUALITY_SCALING_FACTOR,
+    DIARIZATION_SCALING_FACTOR,
+    AUDIO_QUERY_RELEVANCE_SCALING_FACTOR
 )
 from omega import video_utils, unstuff
 from omega.imagebind_wrapper import ImageBind, Embeddings, run_async, LENGTH_TOKENIZER
 from omega.text_similarity import get_text_similarity_score
+from omega.diarization_metric import calculate_diarization_metrics
+from omega.audio_scoring import AudioScore
 
 # import base validator class which takes care of most of the boilerplate
 from omega.base.validator import BaseValidatorNeuron
@@ -85,7 +99,7 @@ class Validator(BaseValidatorNeuron):
 
     def __init__(self, config=None):
         super(Validator, self).__init__(config=config)
-
+        self.audio_score = AudioScore()
         bt.logging.info("load_state()")
         self.load_state()
         self.successfully_started_wandb = False
@@ -110,11 +124,13 @@ class Validator(BaseValidatorNeuron):
         self.proxy_endpoint = f"{api_root}/api/get_proxy"
         self.novelty_scores_endpoint = f"{api_root}/api/get_pinecone_novelty"
         self.upload_video_metadata_endpoint = f"{api_root}/api/upload_video_metadata"
+        self.upload_audio_metadata_endpoint = f"{api_root}/api/upload_audio_metadata"
         self.focus_rewards_percent_endpoint = f"{api_root}/api/focus/get_rewards_percent"
         self.focus_miner_purchases_endpoint = f"{api_root}/api/focus/miner_purchase_scores"
         self.num_videos = 8
+        self.num_audios = 4
         self.client_timeout_seconds = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
-
+        self.client_timeout_seconds_audio = VALIDATOR_TIMEOUT_AUDIO + VALIDATOR_TIMEOUT_MARGIN
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
@@ -122,8 +138,9 @@ class Validator(BaseValidatorNeuron):
         self.imagebind = None
         
         self.load_focus_rewards_start = dt.datetime.now()
-        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
-        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT
+        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent() # 2.5%
+        self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT # 12.5%
+        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT # 85%
 
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
@@ -211,10 +228,79 @@ class Validator(BaseValidatorNeuron):
 
         """
         miner_uids = get_random_uids(self, k=self.config.neuron.sample_size)
+        # miner_uids = torch.LongTensor([0])
 
         if len(miner_uids) == 0:
             bt.logging.info("No miners available")
             return
+        
+        """ START YOUTUBE AUDIO PROCESSING AND SCORING """
+        bt.logging.info("===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
+        # The dendrite client queries the network.
+        query = random.choice(self.all_topics) + " podcast"
+        bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
+        audio_input_synapse = Audios(query=query, num_audios=self.num_audios)
+        bt.logging.info(f"audio_input_synapse: {audio_input_synapse}")
+        # exit(0)
+        axons = [self.metagraph.axons[uid] for uid in miner_uids]
+        audio_responses = await self.dendrite(
+            # Send the query to selected miner axons in the network.
+            axons=axons,
+            synapse=audio_input_synapse,
+            deserialize=False,
+            timeout=self.client_timeout_seconds_audio,
+        )
+        audio_working_miner_uids = []
+        audio_finished_responses = []
+
+        for response in audio_responses:
+            if response.audio_metadata is None or not response.axon or not response.axon.hotkey:
+                continue
+
+            uid = [uid for uid, axon in zip(miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
+            audio_working_miner_uids.append(uid)
+            audio_finished_responses.append(response)
+
+        if len(audio_working_miner_uids) == 0:
+            bt.logging.info("No miner responses available")
+        
+        # Log the results for monitoring purposes.
+        bt.logging.info(f"Received responses: {audio_responses}")
+        # Adjust the scores based on responses from miners.
+        try:
+            # Check if this validator is running decentralization
+            if not self.decentralization:
+                # if not, use validator API get_rewards system
+                audio_rewards_list = await self.get_rewards(input_synapse=audio_input_synapse, responses=audio_finished_responses)
+            else:
+                # if so, use decentralization logic with local GPU
+                audio_rewards_list = await self.handle_checks_and_reward_audio(input_synapse=audio_input_synapse, responses=audio_finished_responses)
+        except Exception as e:
+            bt.logging.error(f"Error in handle_checks_and_rewards_audio: {e}")
+            traceback.print_exc()
+            return
+        
+        audio_rewards = []
+        audio_reward_uids = []
+        for r, r_uid in zip(audio_rewards_list, audio_working_miner_uids):
+            if r is not None:
+                audio_rewards.append(r)
+                audio_reward_uids.append(r_uid)
+        audio_rewards = torch.FloatTensor(audio_rewards).to(self.device)
+        self.update_audio_scores(audio_rewards, audio_reward_uids)
+        
+        # give min reward to miners who didn't respond
+        bad_miner_uids = [uid for uid in miner_uids if uid not in audio_working_miner_uids]
+        penalty_tensor = torch.FloatTensor([NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
+        self.update_audio_scores(penalty_tensor, bad_miner_uids)
+
+        for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
+            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+        
+        for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
+            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+
+        """ END YOUTUBE AUDIO PROCESSING AND SCORING """
 
         """ START YOUTUBE SYNAPSE REQUESTS, PROCESSING, AND SCORING """
         bt.logging.info("===== YOUTUBE REQUESTS, PROCESSING, AND SCORING =====") 
@@ -329,6 +415,9 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info(f"Scoring miner={miner_uid} with reward={no_reward} for no focus videos")
         """ END FOCUS VIDEOS PROCESSING AND SCORING """
 
+
+        
+
     def metadata_check(self, metadata: List[VideoMetadata]) -> List[VideoMetadata]:
         return [
             video_metadata for video_metadata in metadata
@@ -337,6 +426,16 @@ class Validator(BaseValidatorNeuron):
                 video_metadata.end_time - video_metadata.start_time >= MIN_VIDEO_LENGTH
             )
         ]
+    
+    def audio_metadata_check(self, metadata: List[AudioMetadata]) -> List[AudioMetadata]:
+        return [
+            audio_metadata for audio_metadata in metadata
+            if (
+                audio_metadata.end_time - audio_metadata.start_time <= MAX_VIDEO_LENGTH and
+                audio_metadata.end_time - audio_metadata.start_time >= MIN_VIDEO_LENGTH
+            )
+        ]
+    
     
     def filter_embeddings(self, embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
         """Filter the embeddings based on whether they are too similar to the query."""
@@ -368,6 +467,19 @@ class Validator(BaseValidatorNeuron):
         is_similar = []
         for i in range(num_videos):
             similarity_score = cossim(video_tensor[[i]], video_tensor[i + 1:])
+            has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
+            is_similar.append(has_duplicates.item())
+        
+        return is_similar
+
+    async def deduplicate_audios(self, embeddings: Embeddings) -> Audios:
+        # return a list of booleans where True means the corresponding video is a duplicate i.e. is_similar
+        audio_tensor = embeddings.audio
+        num_audios = audio_tensor.shape[0]
+        cossim = CosineSimilarity(dim=1)
+        is_similar = []
+        for i in range(num_audios):
+            similarity_score = cossim(audio_tensor[[i]], audio_tensor[i + 1:])
             has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
             is_similar.append(has_duplicates.item())
         
@@ -461,6 +573,16 @@ class Validator(BaseValidatorNeuron):
             novelty_scores.append(1 - similarity_score.item())
         novelty_scores.append(1.0)  # last video is 100% novel
         return novelty_scores
+    
+    def compute_novelty_score_among_batch_audio(self, emb: Embeddings) -> List[float]:
+        audio_tensor = emb.audio
+        num_audios = audio_tensor.shape[0]
+        novelty_scores = []
+        for i in range(num_audios - 1):
+            similarity_score = F.cosine_similarity(audio_tensor[[i]], audio_tensor[i + 1:]).max()
+            novelty_scores.append(1 - similarity_score.item())
+        novelty_scores.append(1.0)  # last video is 100% novel
+        return novelty_scores
 
     async def async_zero() -> None:
         return 0
@@ -547,7 +669,7 @@ class Validator(BaseValidatorNeuron):
             if global_novelty_scores is None or len(global_novelty_scores) == 0:
                 bt.logging.error("Issue retrieving global novelty scores, returning None.")
                 return None
-            #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
+            # #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
             
             # calculate true novelty scores between local and global
             true_novelty_scores = [
@@ -662,7 +784,7 @@ class Validator(BaseValidatorNeuron):
 
             # Log all our scores
             bt.logging.info(f'''
-                is_unique: {[not is_sim for is_sim in is_too_similar]},
+                is_unique: {[False]*len(metadata)},
                 video cosine sim: {video_description_relevance_scores},
                 audio cosine sim: {audio_description_relevance_scores},
                 description relevance scores: {description_relevance_scores},
@@ -739,6 +861,20 @@ class Validator(BaseValidatorNeuron):
         ])
         return rewards
     
+    async def handle_checks_and_reward_audio(
+        self,
+        input_synapse: Audios,
+        responses: List[Audios],
+    ) -> torch.FloatTensor:
+        rewards = await asyncio.gather(*[
+            self.check_audios_and_calculate_rewards(
+                input_synapse,
+                response,
+            )
+            for response in responses
+        ])
+        return rewards
+    
     async def upload_video_metadata(
         self, 
         metadata: List[VideoMetadata], 
@@ -762,7 +898,8 @@ class Validator(BaseValidatorNeuron):
         try:
             async with ClientSession() as session:
                 # Serialize the list of VideoMetadata
-                serialized_metadata = [item.dict() for item in metadata]
+                # serialized_metadata = [item.dict() for item in metadata]
+                serialized_metadata = [json.loads(item.model_dump_json()) for item in metadata]
                 # Construct the JSON payload
                 payload = {
                     "metadata": serialized_metadata,
@@ -784,6 +921,57 @@ class Validator(BaseValidatorNeuron):
             return True
         except Exception as e:
             bt.logging.debug(f"Error trying upload_video_metadata_endpoint: {e}")
+            return False
+
+
+    async def upload_audio_metadata(
+        self, 
+        metadata: List[AudioMetadata], 
+        inverse_der: float, 
+        audio_length_score: float, 
+        audio_quality_total_score: float, 
+        audio_query_score: float, 
+        query: str, 
+        total_score: float, 
+        miner_hotkey: str
+    ) -> bool:
+        """
+        Queries the validator api to get novelty scores for supplied audios. 
+        Returns a list of float novelty scores for each audio after deduplicating.
+
+        Returns:
+        - List[float]: The novelty scores for the miner's audios.
+        """
+        keypair = self.dendrite.keypair
+        hotkey = keypair.ss58_address
+        signature = f"0x{keypair.sign(hotkey).hex()}"
+        try:
+            async with ClientSession() as session:
+                # Serialize the list of AudioMetadata
+                # serialized_metadata = [item.dict() for item in metadata]
+                serialized_metadata = [json.loads(item.model_dump_json()) for item in metadata]
+                # Construct the JSON payload
+                payload = {
+                    "metadata": serialized_metadata,
+                    "inverse_der": inverse_der,
+                    "audio_length_score": audio_length_score,
+                    "audio_quality_total_score": audio_quality_total_score,
+                    "audio_query_score": audio_query_score,
+                    "topic_query": query,
+                    "total_score": total_score,
+                    "miner_hotkey": miner_hotkey
+                }
+
+                async with session.post(
+                    self.upload_audio_metadata_endpoint,
+                    auth=BasicAuth(hotkey, signature),
+                    json=payload,
+                ) as response:
+                    response.raise_for_status()
+                    result = await response.json()
+            return True
+        except Exception as e:
+            bt.logging.debug(f"Error trying upload_audio_metadata_endpoint: {e}")
             return False
 
     async def get_novelty_scores(self, metadata: List[VideoMetadata]) -> List[float]:
@@ -814,6 +1002,8 @@ class Validator(BaseValidatorNeuron):
         except Exception as e:
             bt.logging.debug(f"Error trying novelty_scores_endpoint: {e}")
             return None
+    
+    # async def get_novelty_scores_audio(self, metadata: List[AudioMetadata]) -> List[float]:
         
     async def get_proxy_url(self) -> str:
         """
@@ -837,6 +1027,160 @@ class Validator(BaseValidatorNeuron):
         except Exception as e:
             bt.logging.debug(f"Error trying proxy_endpoint: {e}")
             return None
+     
+
+    async def check_audios_and_calculate_rewards(
+            self, 
+            input_synapse: Audios, 
+            audios: Audios
+        ) -> Optional[float]:
+        try:
+            # return minimum score if no videos were found in video_metadata
+            if len(audios.audio_metadata) == 0:
+                return MIN_SCORE
+            # check video_ids for fake videos
+            if any(not video_utils.is_valid_youtube_id(audio.video_id) for audio in audios.audio_metadata):
+                return FAKE_VIDEO_PUNISHMENT
+            
+            # check and filter duplicate metadata
+            metadata = self.audio_metadata_check(audios.audio_metadata)[:input_synapse.num_audios]
+            if len(metadata) < len(audios.audio_metadata):
+                bt.logging.info(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+            else:
+                bt.logging.info(f"No duplicate audios found")
+            
+
+            
+            # execute the random check on metadata and video
+            async with GPU_SEMAPHORE:
+                query_emb = await self.imagebind.embed_text_async([audios.query])
+            
+            embeddings = Embeddings(
+                video=None, 
+                audio=torch.stack([torch.tensor(a.audio_emb) for a in metadata]).to(self.imagebind.device),
+                description=None
+            )
+
+
+            # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
+            metadata_is_similar = await self.deduplicate_audios(embeddings)
+            metadata = [metadata for metadata, too_similar in zip(metadata, metadata_is_similar) if not too_similar]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
+            
+            if len(metadata) < len(audios.audio_metadata):
+                bt.logging.info(f"Deduplicated {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+            
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            # first get local novelty scores
+            local_novelty_scores = self.compute_novelty_score_among_batch_audio(embeddings)
+            
+            pre_filter_metadata_length = len(metadata)
+            # check scores from index for being too similar
+            is_too_similar = [score < DIFFERENCE_THRESHOLD for score in local_novelty_scores]
+            # filter out metadata too similar
+            metadata = [metadata for metadata, too_similar in zip(metadata, is_too_similar) if not too_similar]
+            # filter out embeddings too similar
+            embeddings = self.filter_embeddings(embeddings, is_too_similar)
+            if len(metadata) < pre_filter_metadata_length:
+                bt.logging.info(f"Filtering {pre_filter_metadata_length} audios down to {len(metadata)} audios that are too similar to audios in our index.")
+
+            # return minimum score if no unique videos were found
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            # filter data based on audio length
+            # Filter audios based on length constraints
+            pre_filter_metadata_length = len(metadata)
+            metadata = [
+                meta for meta in metadata 
+                if (meta.end_time - meta.start_time) >= MIN_AUDIO_LENGTH_SECONDS 
+                and (meta.end_time - meta.start_time) <= MAX_AUDIO_LENGTH_SECONDS
+            ]
+            
+            if len(metadata) < pre_filter_metadata_length:
+                bt.logging.info(f"Filtered {pre_filter_metadata_length} audios down to {len(metadata)} audios based on length constraints")
+                
+            # Return minimum score if no audios remain after filtering
+            if len(metadata) == 0:
+                return MIN_SCORE
+            
+            total_audio_length = sum((meta.end_time - meta.start_time) for meta in metadata) 
+            bt.logging.info(f"Average audio length: {total_audio_length/len(metadata):.2f} seconds")
+            audio_length_score = total_audio_length/(self.num_audios*MAX_AUDIO_LENGTH_SECONDS)
+            
+
+            audio_query_score = sum(F.cosine_similarity(
+                embeddings.audio, query_emb
+            ).tolist())/len(metadata)
+            bt.logging.info(f"Audio query score: {audio_query_score}")
+
+            # Randomly sample one audio for duration check
+            selected_random_meta = random.choice(metadata)
+            audio_array, sr = sf.read(BytesIO(base64.b64decode(selected_random_meta.audio_bytes)))
+            audio_duration = len(audio_array) / sr
+            bt.logging.info(f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
+
+            audio_quality_scores = self.audio_score.total_score(
+                audio_array,
+                sr,
+                selected_random_meta.diar_timestamps_start,
+                selected_random_meta.diar_timestamps_end,
+                selected_random_meta.diar_speakers
+            )
+            audio_quality_total_score = (
+                audio_quality_scores["speech_content_score"] * SPEECH_CONTENT_SCALING_FACTOR +
+                audio_quality_scores["speaker_dominance_score"] * SPEAKER_DOMINANCE_SCALING_FACTOR +
+                audio_quality_scores["background_noise_score"] * BACKGROUND_NOISE_SCALING_FACTOR +
+                audio_quality_scores["unique_speakers_error"] * UNIQUE_SPEAKERS_ERROR_SCALING_FACTOR
+            )
+            # query score
+
+            ## diarization segment
+            miner_diar_segment = {
+                "start": selected_random_meta.diar_timestamps_start,
+                "end": selected_random_meta.diar_timestamps_end,
+                "speakers": selected_random_meta.diar_speakers
+            }
+
+            diarization_score = calculate_diarization_metrics(
+                audio_array,
+                sr,
+                miner_diar_segment
+            )
+            inverse_der = diarization_score["inverse_der"]
+            total_score = (
+                DIARIZATION_SCALING_FACTOR * inverse_der +
+                AUDIO_LENGTH_SCALING_FACTOR * audio_length_score +
+                AUDIO_QUALITY_SCALING_FACTOR * audio_quality_total_score +
+                AUDIO_QUERY_RELEVANCE_SCALING_FACTOR * audio_query_score
+            )
+
+            bt.logging.info(
+                f"total_score: {total_score}, "
+                f"inverse_der: {inverse_der}, "
+                f"audio_length_score: {audio_length_score}, "
+                f"audio_quality_total_score: {audio_quality_total_score}, "
+                f"audio_query_score: {audio_query_score}"
+            )
+            # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
+            miner_hotkey = audios.axon.hotkey
+            bt.logging.info(f"Uploading audio metadata for miner: {miner_hotkey}")
+            print("type audiadsas ", type(metadata[0].audio_bytes))
+            upload_result = await self.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, audios.query, total_score, miner_hotkey)
+            if upload_result:
+                bt.logging.info("Uploading of audio metadata successful.")
+            else:
+                bt.logging.error("Issue uploading audio metadata.")
+            return total_score
+
+
+        except Exception as e:
+            bt.logging.error(f"Error in check_audios_and_calculate_rewards: {e}")
+            return None
+
 
     async def reward(self, input_synapse: Videos, response: Videos) -> float:
         """
