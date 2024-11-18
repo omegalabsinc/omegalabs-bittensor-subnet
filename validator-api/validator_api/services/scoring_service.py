@@ -24,9 +24,12 @@ from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 from validator_api.database.models.boosted_task import BoostedTask
 
+from typing import Tuple, Optional
+
 NINETY_MINUTES = 5400  # in seconds
 FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
+MIN_VIDEO_UNIQUENESS_SCORE = 0.1
 
 def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
     return db.query(FocusVideoRecord).filter(
@@ -49,6 +52,9 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
         similarity_score = max(0.0, min(similarity_score, 1.0))
         return 1.0 - similarity_score
     return await run_with_retries(_internal_async)
+
+class VideoUniquenessError(Exception):
+    pass
 
 class TaskScoreBreakdown(BaseModel):
     reasoning_steps: List[str] = Field(description="Steps of reasoning used to arrive at the final score. Before each step, write the text 'Step X: '")
@@ -253,7 +259,7 @@ Additionally, here is a detailed description of the video content:
             print(f"Error getting text embedding: {e}")
             return None
 
-    async def embed_and_get_task_uniqueness_score(self, task_overview: str) -> float:
+    async def embed_and_get_task_uniqueness_score(self, task_overview: str) -> Tuple[Optional[List[float]], Optional[float]]:
         embedding = await self.get_text_embedding(task_overview)
         if embedding is None:
             return None, None
@@ -318,6 +324,7 @@ Additionally, here is a detailed description of the video content:
         """
         The video score is a score of how well the user completed the task, based on the task overview and the detailed video description.
         If the video is too similar to other videos, it will be rejected.
+        Errors raised should make the video rejected.
         """
         video_duration_seconds = self.get_video_duration_seconds(video_id)
         if video_duration_seconds > NINETY_MINUTES:
@@ -340,6 +347,12 @@ Additionally, here is a detailed description of the video content:
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
             self.get_boosted_multiplier(focusing_task, focusing_description),
         )
+        
+        video_uniqueness_score = 0.05
+        
+        if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
+            raise VideoUniquenessError("Video uniqueness score is too low.")
+        
         completion_gemini_score = completion_score_breakdown.completion_score
         final_score = completion_gemini_score * boosted_multiplier
         

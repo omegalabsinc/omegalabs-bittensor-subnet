@@ -39,7 +39,7 @@ from validator_api.database.crud.focusvideo import (
 )
 from validator_api.utils.marketplace import get_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
-from validator_api.services.scoring_service import FocusScoringService
+from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
 
 from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
@@ -435,15 +435,16 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             return { "success": True }
 
         except Exception as e:
-            error_string = f"{str(e)}\n{traceback.format_exc()}"
+            exception_string = traceback.format_exc()
+            error_string = f"{str(e)}\n{exception_string}"
             print(f"Error scoring focus video <{video_id}>: {error_string}")
             with get_db_context() as db:
                 mark_video_rejected(
                     db,
                     video_id,
-                    "Error scoring video",
+                    "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
                     score_details=score_details,
-                    exception_string=traceback.format_exc()
+                    exception_string=exception_string
                 )
             return { "success": False, "error": error_string }
 
@@ -882,7 +883,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             server_task,
             resync_metagraph(),
             cache_max_focus_tao(),
-            resync_dataset(),
+            # resync_dataset(),
         )
     except asyncio.CancelledError:
         server_task.cancel()
