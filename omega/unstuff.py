@@ -40,10 +40,10 @@ def check_extraneous_chunks(description, video_emb, audio_emb, imagebind):
     for text in text_chunks:
         text_emb = imagebind.embed_text([text]).to("cpu")
         v_cosim = F.cosine_similarity(
-            torch.tensor(video_emb), text_emb
+            torch.tensor(video_emb).unsqueeze(0), text_emb
         ).tolist()[0]
         a_cosim = F.cosine_similarity(
-            torch.tensor(audio_emb), text_emb
+            torch.tensor(audio_emb).unsqueeze(0), text_emb
         ).tolist()[0]
         similarities.append((v_cosim + a_cosim) / 2)
     best = max(similarities)
