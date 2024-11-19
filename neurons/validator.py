@@ -784,7 +784,7 @@ class Validator(BaseValidatorNeuron):
 
             # Log all our scores
             bt.logging.info(f'''
-                is_unique: {[False]*len(metadata)},
+                is_unique: {[not is_sim for is_sim in is_too_similar]},
                 video cosine sim: {video_description_relevance_scores},
                 audio cosine sim: {audio_description_relevance_scores},
                 description relevance scores: {description_relevance_scores},
@@ -805,7 +805,7 @@ class Validator(BaseValidatorNeuron):
 
         except Exception as e:
             bt.logging.error(f"Error in check_videos_and_calculate_rewards_youtube: {e}")
-            #traceback.print_exc()
+            traceback.print_exc()
             return None
     
     async def check_videos_and_calculate_rewards_focus(
@@ -830,6 +830,7 @@ class Validator(BaseValidatorNeuron):
             return total_score
         except Exception as e:
             bt.logging.error(f"Error in check_videos_and_calculate_rewards_focus: {e}")
+            traceback.print_exc()
             return None
     
     # Get all the focus reward results by iteratively calling your check_videos_and_calculate_rewards_focus() function.
@@ -921,6 +922,7 @@ class Validator(BaseValidatorNeuron):
             return True
         except Exception as e:
             bt.logging.debug(f"Error trying upload_video_metadata_endpoint: {e}")
+            traceback.print_exc()
             return False
 
 
@@ -972,6 +974,7 @@ class Validator(BaseValidatorNeuron):
             return True
         except Exception as e:
             bt.logging.debug(f"Error trying upload_audio_metadata_endpoint: {e}")
+            traceback.print_exc()
             return False
 
     async def get_novelty_scores(self, metadata: List[VideoMetadata]) -> List[float]:
@@ -1001,6 +1004,7 @@ class Validator(BaseValidatorNeuron):
         
         except Exception as e:
             bt.logging.debug(f"Error trying novelty_scores_endpoint: {e}")
+            traceback.print_exc()
             return None
     
     # async def get_novelty_scores_audio(self, metadata: List[AudioMetadata]) -> List[float]:
@@ -1026,6 +1030,7 @@ class Validator(BaseValidatorNeuron):
             return proxy_url
         except Exception as e:
             bt.logging.debug(f"Error trying proxy_endpoint: {e}")
+            traceback.print_exc()
             return None
      
 
@@ -1179,6 +1184,7 @@ class Validator(BaseValidatorNeuron):
 
         except Exception as e:
             bt.logging.error(f"Error in check_audios_and_calculate_rewards: {e}")
+            traceback.print_exc()
             return None
 
 
@@ -1206,6 +1212,7 @@ class Validator(BaseValidatorNeuron):
             return score
         except Exception as e:
             bt.logging.debug(f"Error in reward: {e}")
+            traceback.print_exc()
             return None
 
     async def get_rewards(
@@ -1291,6 +1298,7 @@ class Validator(BaseValidatorNeuron):
                 return []
             except Exception as e:
                 bt.logging.error(f"Error in get_focus_videos: {e}")
+                traceback.print_exc()
                 return []
 
 # The main function parses the configuration and runs the validator.
