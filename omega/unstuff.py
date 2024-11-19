@@ -1,6 +1,7 @@
 import torch
 from transformers import pipeline
 from typing import Tuple
+import bittensor as bt
 import random
 import torch.nn.functional as F
 from omega.imagebind_wrapper import (
@@ -25,6 +26,9 @@ def is_stuffed(description: str) -> Tuple[bool, float]:
     return stuffed, confidence
 
 def check_extraneous_chunks(description, video_emb, audio_emb, imagebind):
+    bt.logging.info(f"Length of description: {len(description)}")
+    bt.logging.info(f"Length of video_emb: {len(video_emb)}")
+    bt.logging.info(f"Length of audio_emb: {len(audio_emb)}")
     text_chunks = [
         chunk
         for chunk in split_text_by_token_limit(description, TOKENIZER, CHUNK_SIZE)

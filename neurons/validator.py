@@ -262,19 +262,13 @@ class Validator(BaseValidatorNeuron):
             audio_finished_responses.append(response)
 
         if len(audio_working_miner_uids) == 0:
-            bt.logging.info("No miner responses available")
+            bt.logging.info("No miner responses available for audio synapse")
         
         # Log the results for monitoring purposes.
-        bt.logging.info(f"Received responses: {audio_responses}")
+        bt.logging.info(f"Received audio responses: {audio_responses}")
         # Adjust the scores based on responses from miners.
         try:
-            # Check if this validator is running decentralization
-            if not self.decentralization:
-                # if not, use validator API get_rewards system
-                audio_rewards_list = await self.get_rewards(input_synapse=audio_input_synapse, responses=audio_finished_responses)
-            else:
-                # if so, use decentralization logic with local GPU
-                audio_rewards_list = await self.handle_checks_and_reward_audio(input_synapse=audio_input_synapse, responses=audio_finished_responses)
+            audio_rewards_list = await self.handle_checks_and_reward_audio(input_synapse=audio_input_synapse, responses=audio_finished_responses)
         except Exception as e:
             bt.logging.error(f"Error in handle_checks_and_rewards_audio: {e}")
             traceback.print_exc()
@@ -332,7 +326,7 @@ class Validator(BaseValidatorNeuron):
             bt.logging.info("No miner responses available")
         
         # Log the results for monitoring purposes.
-        bt.logging.info(f"Received responses: {responses}")
+        bt.logging.info(f"Received video responses: {responses}")
 
         # Adjust the scores based on responses from miners.
         try:
@@ -1173,7 +1167,6 @@ class Validator(BaseValidatorNeuron):
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = audios.axon.hotkey
             bt.logging.info(f"Uploading audio metadata for miner: {miner_hotkey}")
-            print("type audiadsas ", type(metadata[0].audio_bytes))
             upload_result = await self.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, audios.query, total_score, miner_hotkey)
             if upload_result:
                 bt.logging.info("Uploading of audio metadata successful.")
