@@ -348,7 +348,7 @@ def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore)
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
 
-    video_record.video_score = score_details.combined_score
+    video_record.video_score = score_details.final_score
     video_record.video_details = {
         **video_record.video_details,
         **json.loads(score_details.model_dump_json()),

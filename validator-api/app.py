@@ -39,7 +39,7 @@ from validator_api.database.crud.focusvideo import (
 )
 from validator_api.utils.marketplace import get_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
-from validator_api.services.scoring_service import FocusScoringService
+from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
 
 from validator_api.communex.client import CommuneClient
 from validator_api.communex.types import Ss58Address
@@ -532,12 +532,15 @@ async def main():
 
         try:
             score_details = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
-            print(f"Score for focus video <{video_id}>: {score_details.combined_score}")
-            minimum_score = 0.1
+            print(f"Score for focus video <{video_id}>: {score_details.final_score}")
+            MIN_FINAL_SCORE = 0.1
+            # todo: measure and tune these
+            MIN_TASK_UNIQUENESS_SCORE = 0
+            MIN_VIDEO_UNIQUENESS_SCORE = 0
             # get the db after scoring the video so it's not open for too long
             with get_db_context() as db:
-                if score_details.combined_score < minimum_score:
-                    rejection_reason = f"""This video got a score of {score_details.combined_score * 100:.2f}%, which is lower than the minimum score of {minimum_score * 100}%.
+                if score_details.final_score < MIN_FINAL_SCORE:
+                    rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     mark_video_rejected(
                         db,
@@ -550,15 +553,16 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             return { "success": True }
 
         except Exception as e:
-            error_string = f"{str(e)}\n{traceback.format_exc()}"
+            exception_string = traceback.format_exc()
+            error_string = f"{str(e)}\n{exception_string}"
             print(f"Error scoring focus video <{video_id}>: {error_string}")
             with get_db_context() as db:
                 mark_video_rejected(
                     db,
                     video_id,
-                    "Error scoring video",
+                    "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
                     score_details=score_details,
-                    exception_string=traceback.format_exc()
+                    exception_string=exception_string
                 )
             return { "success": False, "error": error_string }
 
