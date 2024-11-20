@@ -883,7 +883,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             server_task,
             resync_metagraph(),
             cache_max_focus_tao(),
-            # resync_dataset(),
+            resync_dataset(),
         )
     except asyncio.CancelledError:
         server_task.cancel()

@@ -348,8 +348,6 @@ Additionally, here is a detailed description of the video content:
             self.get_boosted_multiplier(focusing_task, focusing_description),
         )
         
-        video_uniqueness_score = 0.05
-        
         if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
             raise VideoUniquenessError("Video uniqueness score is too low.")
         
