@@ -29,7 +29,7 @@ from typing import Tuple, Optional
 NINETY_MINUTES = 5400  # in seconds
 FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
-MIN_VIDEO_UNIQUENESS_SCORE = 0.1
+MIN_VIDEO_UNIQUENESS_SCORE = 0.02
 
 def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
     return db.query(FocusVideoRecord).filter(
@@ -45,7 +45,13 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
             top_k=1,
         )
         if len(response["matches"]) > 0:
-            similarity_score = response["matches"][0]["score"]
+            matches = response["matches"]
+            similarity_score = matches[0]["score"]
+            # for match in matches:
+            #     print(f"Match:")
+            #     print(f"  - Score: {match['score']}")
+            #     print(f"  - ID: {match.get('id', 'N/A')}")
+            #     print(f"  - Metadata: {match.get('metadata', {})}")
         else:
             print(f"No pinecone matches, returning 0")
             similarity_score = 0
