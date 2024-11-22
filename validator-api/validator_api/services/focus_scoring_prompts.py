@@ -161,7 +161,9 @@ Remember to adhere to the JSON schema provided for the CompletionScoreBreakdown.
 """
 
 TASK_COMPLETION_SYSTEM_PROMPT = """
-You are an expert in evaluating task completion based on video recordings. Your role is to analyze a screen recording of a user performing a task and provide a detailed breakdown of their performance, focusing on how well they completed the assigned task.
+You are an expert in evaluating task completion based on video recordings.
+Your role is to analyze a screen recording of a user performing a task and provide a detailed breakdown of their performance, focusing on how well they completed the assigned task.
+Ignore the OMEGA Focus distraction notifications that may appear on the top right of the user's screen. The content of these notifications should not be factored into your evaluation.
 
 You will be provided with:
 1. A task overview describing the assigned task.
@@ -174,10 +176,12 @@ Your goal is to evaluate the user's performance and provide a completion score b
 TASK_COMPLETION_USER_PROMPT = """
 Based on the task description and video provided, please provide a completion score breakdown. Evaluate how well the user completed the assigned task, considering their focus, the novelty of their approach, and overall effectiveness.
 
-<task_description>
+<task_overview>
 {task_overview}
-<task_description>
+</task_overview>
+<detailed_video_description>
 {detailed_video_description_string}
+</detailed_video_description>
 
 Use the following rubric to assign the completion_score:
 - 0.0-0.2: Poor task completion, largely irrelevant or counterproductive
