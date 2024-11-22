@@ -360,8 +360,8 @@ Additionally, here is a detailed description of the video content:
         completion_gemini_score = completion_score_breakdown.completion_score
         final_score = completion_gemini_score * boosted_multiplier
         
-        # print(f"Final score: {final_score}")
-        # print(f"completion score breakdown: {completion_score_breakdown}")
+        print(f"Final score: {final_score}")
+        print(f"completion score breakdown: {completion_score_breakdown}")
         
         return VideoScore(
             task_uniqueness_score=task_uniqueness_score,
