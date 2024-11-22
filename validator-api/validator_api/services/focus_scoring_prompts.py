@@ -190,6 +190,8 @@ The content of these notifications should not be factored into your evaluation.
 {detailed_video_description_string}
 </detailed_video_description>
 
+If the user accomplishes the spirit of the task according to the task title, but does not complete it exactly as described according to the task description, you should still award some score (not 0.0).
+
 Use the following rubric to assign the completion_score:
 - 0.0-0.2: Poor task completion, largely irrelevant or counterproductive
 - 0.2-0.4: Weak task completion, minimal contribution to the goal
