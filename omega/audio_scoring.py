@@ -39,16 +39,16 @@ class AudioScore:
     def speaker_dominance_score(self, timestamps_start, timestamps_end, speakers, dominance_threshold=0.7):
         if timestamps_start is None:
             self.rttm_data = None
-            return 1
+            return 0
         self.rttm_data = pd.DataFrame({
             'start': timestamps_start,
             'end': timestamps_end,
             'speaker': speakers
         })
 
-        # If there's only one speaker, return 1 since dominance is expected
-        # if len(set(speakers)) == 1:
-        #     return 0
+        # If there's only one speaker, return 0 since dominance is expected
+        if len(set(speakers)) == 1:
+            return 0
 
         # Calculate total duration for each speaker
         speaker_durations = {}
@@ -59,12 +59,11 @@ class AudioScore:
                 speaker_durations[speaker] += duration
             else:
                 speaker_durations[speaker] = duration
-        max_speaking_time = max(speaker_durations.values())
-        print(f"Max speaking time: {max_speaking_time}")
-        max_speaking_proportion = max_speaking_time / self.total_duration
-        score = max(0, max_speaking_proportion - dominance_threshold)/(1 - dominance_threshold)
-        return 1 - score
-    
+        max_time = max(speaker_durations.values())
+        min_time = min(speaker_durations.values())
+
+        return 1 - (max_time - min_time) / self.total_duration
+        
 
     def background_noise_score(self, audio_arr, sr, noise_threshold=0.1):
         # Load audio and calculate SNR

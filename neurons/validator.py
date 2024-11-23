@@ -289,7 +289,7 @@ class Validator(BaseValidatorNeuron):
         self.update_audio_scores(penalty_tensor, bad_miner_uids)
 
         for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
-            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward} for audio dataset")
         
         for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
             bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
