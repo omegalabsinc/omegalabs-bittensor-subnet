@@ -490,9 +490,9 @@ class Validator(BaseValidatorNeuron):
     
     async def get_random_youtube_video(
         self,
-        metadata: List[VideoMetadata],
+        metadata,
         check_video: bool
-    ) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
+    ):
         if not check_video and len(metadata) > 0:
             random_metadata = random.choice(metadata)
             return random_metadata, None
@@ -1045,10 +1045,18 @@ class Validator(BaseValidatorNeuron):
             metadata = self.audio_metadata_check(audios.audio_metadata)[:input_synapse.num_audios]
             if len(metadata) < len(audios.audio_metadata):
                 bt.logging.info(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
-            else:
-                bt.logging.info(f"No duplicate audios found")
             
 
+            # if randomly tripped, flag our random check to pull a video from miner's submissions
+            check_video = CHECK_PROBABILITY > random.random()
+            
+
+            
+            # pull a random video and/or description only
+            bt.logging.info(f"Getting random youtube video with check_video={check_video}")
+            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_video)
+            if random_meta_and_vid is None:
+                return FAKE_VIDEO_PUNISHMENT
             
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
