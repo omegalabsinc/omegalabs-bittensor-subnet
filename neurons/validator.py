@@ -561,8 +561,10 @@ class Validator(BaseValidatorNeuron):
 
     async def random_audio_check(self, random_meta_and_audio: List[AudioMetadata]) -> bool:
         random_metadata, random_video = random_meta_and_audio
+        if random_video is None:
+            return True
         
-        audio_bytes_from_youtube = video_utils.get_audio_bytes(random_video)
+        audio_bytes_from_youtube = video_utils.get_audio_bytes(random_video.name)
         submitted_audio_bytes = random_metadata.audio_bytes
         # Compare the audio bytes
         if audio_bytes_from_youtube != submitted_audio_bytes:
