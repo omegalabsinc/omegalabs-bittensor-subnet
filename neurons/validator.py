@@ -490,9 +490,9 @@ class Validator(BaseValidatorNeuron):
     
     async def get_random_youtube_video(
         self,
-        metadata: List[VideoMetadata],
+        metadata,
         check_video: bool
-    ) -> Optional[Tuple[VideoMetadata, Optional[BinaryIO]]]:
+    ):
         if not check_video and len(metadata) > 0:
             random_metadata = random.choice(metadata)
             return random_metadata, None
@@ -558,6 +558,18 @@ class Validator(BaseValidatorNeuron):
         bt.logging.debug(f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
         return is_similar_
     
+
+    async def random_audio_check(self, random_meta_and_audio: List[AudioMetadata]) -> bool:
+        random_metadata, random_video = random_meta_and_audio
+        
+        audio_bytes_from_youtube = video_utils.get_audio_bytes(random_video)
+        submitted_audio_bytes = random_metadata.audio_bytes
+        # Compare the audio bytes
+        if audio_bytes_from_youtube != submitted_audio_bytes:
+            bt.logging.warning("WARNING: Audio bytes do not match")
+            return False
+        return True
+        
     def compute_novelty_score_among_batch(self, emb: Embeddings) -> List[float]:
         video_tensor = emb.video
         num_videos = video_tensor.shape[0]
@@ -1045,13 +1057,27 @@ class Validator(BaseValidatorNeuron):
             metadata = self.audio_metadata_check(audios.audio_metadata)[:input_synapse.num_audios]
             if len(metadata) < len(audios.audio_metadata):
                 bt.logging.info(f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
-            else:
-                bt.logging.info(f"No duplicate audios found")
+            
+
+            # if randomly tripped, flag our random check to pull a video from miner's submissions
+            check_video = CHECK_PROBABILITY > random.random()
             
 
             
+            # pull a random video and/or description only
+            
+            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_video)
+            if random_meta_and_vid is None:
+                return FAKE_VIDEO_PUNISHMENT
+            
             # execute the random check on metadata and video
             async with GPU_SEMAPHORE:
+                if check_video:
+                    passed_check = await self.random_audio_check(random_meta_and_vid)
+
+                    # punish miner if not passing
+                    if not passed_check:
+                        return FAKE_VIDEO_PUNISHMENT
                 query_emb = await self.imagebind.embed_text_async([audios.query])
             
             embeddings = Embeddings(
