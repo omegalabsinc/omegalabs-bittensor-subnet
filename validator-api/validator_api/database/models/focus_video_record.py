@@ -64,10 +64,10 @@ class FocusVideoRecord(Base):
     processing_state = Column(Enum(FocusVideoStateInternal), nullable=False, default=FocusVideoStateInternal.PROCESSING)
     video_score = Column(Float, nullable=True)
     video_details = Column(JSONB, nullable=True)
+    embeddings = Column(JSONB, nullable=True)
     rejection_reason = Column(String(1000), nullable=True)
     expected_reward_tao = Column(Float, nullable=True)
     earned_reward_tao = Column(Float, nullable=True)
-    miner_uid = Column(Integer, nullable=True)
     miner_hotkey = Column(String(DB_STRING_LENGTH), nullable=True)
     extrinsic_id = Column(String(DB_STRING_LENGTH), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -93,5 +93,4 @@ class FocusVideoInternal(FocusVideoBase):
     model_config = ConfigDict(from_attributes=True)
 
     processing_state: FocusVideoStateInternal
-    miner_uid: Optional[int]
     miner_hotkey: Optional[str]
