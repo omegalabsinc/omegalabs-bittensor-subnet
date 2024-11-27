@@ -93,7 +93,7 @@ class AudioMetadata(BaseModel):
     start_time: int
     end_time: int
     audio_emb: typing.List[float]
-    audio_bytes: typing.Optional[bytes] = None
+    audio_bytes: typing.Optional[str] = None
     diar_timestamps_start: typing.List[float]
     diar_timestamps_end: typing.List[float]
     diar_speakers: typing.List[str]
