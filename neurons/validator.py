@@ -565,7 +565,7 @@ class Validator(BaseValidatorNeuron):
             return True
         
         audio_bytes_from_youtube = video_utils.get_audio_bytes(random_video.name)
-        audio_bytes_from_youtube = base64.b64encode(audio_bytes_from_youtube).decode('utf-8')
+        audio_bytes_from_youtube = base64.b64encode(audio_bytes_from_youtube)
         submitted_audio_bytes = random_metadata.audio_bytes
         # Compare the audio bytes
         if audio_bytes_from_youtube != submitted_audio_bytes:
