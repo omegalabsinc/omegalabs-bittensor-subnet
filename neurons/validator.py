@@ -31,6 +31,7 @@ import math
 import soundfile as sf
 from io import BytesIO
 import json
+import numpy as np
 # Bittensor
 import bittensor as bt
 import torch
@@ -561,20 +562,18 @@ class Validator(BaseValidatorNeuron):
 
     async def random_audio_check(self, random_meta_and_audio: List[AudioMetadata]) -> bool:
         random_metadata, random_video = random_meta_and_audio
+        bt.logging.info(f"inside random_audio_check, random_metadata: {random_metadata}, random_video: {random_video}")
         if random_video is None:
             return True
         
         audio_bytes_from_youtube = video_utils.get_audio_bytes(random_video.name)
         audio_bytes_from_youtube = base64.b64encode(audio_bytes_from_youtube).decode('utf-8')
+        audio_array_youtube, _ = sf.read(BytesIO(base64.b64decode(audio_bytes_from_youtube)))
         submitted_audio_bytes = random_metadata.audio_bytes
+        audio_array_submitted, _ = sf.read(BytesIO(base64.b64decode(submitted_audio_bytes)))
         
-        # Compare the audio bytes
-        count = 0
-        for i in range(len(audio_bytes_from_youtube)):
-            if audio_bytes_from_youtube[i] != submitted_audio_bytes[i]:
-                count += 1
-        bt.logging.info(f"Count of different bytes: {count}")
-        if count > 3:
+                
+        if np.array_equal(audio_array_youtube, audio_array_submitted) is False:
             bt.logging.warning("WARNING: Audio bytes do not match")
             return False
         return True
