@@ -1,9 +1,11 @@
 import time
-from typing import Tuple
+from typing import Tuple, Dict
 import requests
 import bittensor as bt
-from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, MAX_FOCUS_POINTS_PER_HOUR, FIXED_TAO_USD_ESTIMATE
+from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, FIXED_TAO_USD_ESTIMATE
 from validator_api.utils import run_with_retries, run_async
+from validator_api.database.models.focus_video_record import TaskType
+from validator_api.database.crud.focusvideo import TASK_TYPE_MAP
 
 async def get_subtensor_and_metagraph() -> Tuple[bt.subtensor, bt.metagraph]:
 
@@ -80,13 +82,30 @@ def get_max_focus_points_available_today(max_focus_tao: float) -> float:
     # 1 point = 1 dollar
     return int(get_dollars_available_today(max_focus_tao))
 
-def estimate_tao(productive_score: float, video_duration: float, max_focus_tao: float):
-    try:
-        max_focus_points_for_video = video_duration / 3600 * MAX_FOCUS_POINTS_PER_HOUR
-        actual_focus_points_for_video = max_focus_points_for_video * float(productive_score)
-        max_focus_points_available_today = get_max_focus_points_available_today(max_focus_tao)
-        tao = min(actual_focus_points_for_video / max_focus_points_available_today, 1.0) * float(max_focus_tao)
-        return round(tao, 5)
-    except Exception as e:
-        print(e)
-        return 0
+async def estimate_tao(
+    score: float,
+    duration: int,  # in seconds
+    task_type: TaskType,
+    max_focus_tao: float,
+    focus_points_last_24_hours: Dict[TaskType, float],
+) -> float:
+    """
+    Calculate reward for a focus video based on its score, duration and max rewards available
+    """
+    # Get all tasks from last hour
+    total_focus_points = focus_points_last_24_hours[task_type]
+
+    # Add current task's contribution
+    current_focus_points = score * duration
+    score_duration_with_current = total_focus_points + current_focus_points
+
+    # Calculate portion for current task
+    task_portion = current_focus_points / score_duration_with_current if score_duration_with_current > 0 else 0
+
+    # Get max rewards per hour and calculate final reward
+    task_percentage = TASK_TYPE_MAP[task_type]
+    max_rewards = max_focus_tao * task_percentage
+    reward = task_portion * max_rewards
+    reward = min(reward, 0.2)
+
+    return reward

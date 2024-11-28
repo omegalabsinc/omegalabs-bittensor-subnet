@@ -1,17 +1,20 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.orm import Session, joinedload
-from sqlalchemy import func
-from typing import List, Optional
+from sqlalchemy import func, Float
+from typing import List, Optional, Dict
 import json
 import time
 import asyncio
 
-from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal
+from validator_api.database import get_db_context
+from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal, TaskType
 from validator_api.database.models.user import UserRecord
 from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore, FocusVideoEmbeddings
+from validator_api.config import BOOSTED_TASKS_PERCENTAGE
+
 
 class CachedValue:
     def __init__(self, duration: int = 90):
@@ -41,6 +44,11 @@ class CachedValue:
         except Exception as e:
             print(e)
             raise HTTPException(500, detail="Internal error")
+
+TASK_TYPE_MAP = {
+    TaskType.USER: 1 - BOOSTED_TASKS_PERCENTAGE,
+    TaskType.BOOSTED: BOOSTED_TASKS_PERCENTAGE,
+}
 
 async def _fetch_available_focus(db: Session):
     # Show oldest videos first so they get rewarded fastest
@@ -80,6 +88,7 @@ async def check_availability(
 ):
     try:
         max_focus_tao = await get_max_focus_tao()
+        focus_points_last_24_hours = await get_focus_points_from_last_24_hours(db)
 
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
@@ -96,7 +105,7 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        actual_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), max_focus_tao)
+        actual_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), video_record.task_type, max_focus_tao, focus_points_last_24_hours)
         print(f"Expected reward TAO: {video_record.expected_reward_tao}, actual reward TAO: {actual_reward_tao}")
         if actual_reward_tao == 0:
             raise HTTPException(422, detail="Max reward TAO is 0")
@@ -292,17 +301,18 @@ def get_video_owner_coldkey(db: Session, video_id: str) -> str:
 
 _already_purchased_cache = CachedValue()
 
-async def _already_purchased_max_focus_tao(db: Session) -> bool:
-    max_focus_tao = await get_max_focus_tao()
-    total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-        FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-    ).scalar() or 0
-    return total_earned_tao >= max_focus_tao * 0.9
+async def _already_purchased_max_focus_tao() -> bool:
+    with get_db_context() as db:
+        max_focus_tao = await get_max_focus_tao()
+        total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+        ).scalar() or 0
+        return total_earned_tao >= max_focus_tao * 0.9
 
-async def already_purchased_max_focus_tao(db: Session) -> bool:
+async def already_purchased_max_focus_tao() -> bool:
     return await _already_purchased_cache.get_or_update(
-        lambda: _already_purchased_max_focus_tao(db)
+        lambda: _already_purchased_max_focus_tao()
     )
 
 class MinerPurchaseStats(BaseModel):
@@ -413,3 +423,23 @@ def mark_video_submitted(db: Session, video_id: str, with_lock: bool = False):
     video_record.updated_at = datetime.utcnow()
     db.add(video_record)
     db.commit()
+
+def get_focus_points_from_last_24_hours(db: Session) -> Dict[TaskType, float]:
+    results = db.query(
+        FocusVideoRecord.task_type,
+        func.sum(
+            func.cast(FocusVideoRecord.video_details['duration'].astext, Float) * 
+            FocusVideoRecord.video_score
+        ).label('focus_points')
+    ).filter(
+        FocusVideoRecord.processing_state.in_([
+            FocusVideoStateInternal.SUBMITTED,
+            FocusVideoStateInternal.PURCHASED
+        ]),
+        FocusVideoRecord.created_at >= datetime.utcnow() - timedelta(hours=24)
+    ).group_by(FocusVideoRecord.task_type).all()
+
+    return {
+        task_type: focus_points or 0 
+        for task_type, focus_points in results
+    }
