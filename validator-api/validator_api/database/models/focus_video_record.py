@@ -11,6 +11,9 @@ from validator_api.config import DB_STRING_LENGTH
 
 import enum
 
+class TaskType(enum.Enum):
+    USER = "USER"
+    BOOSTED = "BOOSTED"
 
 class FocusVideoStateExternal(enum.Enum):
     PROCESSING = "PROCESSING"
@@ -62,6 +65,7 @@ class FocusVideoRecord(Base):
     user_id = Column(String, ForeignKey('users.id'), nullable=False)
     user_email = Column(String, ForeignKey('users.email'), nullable=False)
     processing_state = Column(Enum(FocusVideoStateInternal), nullable=False, default=FocusVideoStateInternal.PROCESSING)
+    task_type = Column(Enum(TaskType), nullable=False, default=TaskType.USER)
     video_score = Column(Float, nullable=True)
     video_details = Column(JSONB, nullable=True)
     embeddings = Column(JSONB, nullable=True)
@@ -81,6 +85,7 @@ class FocusVideoBase(BaseModel):
     video_id: str
     task_id: str
     user_email: str
+    task_type: TaskType
     video_score: Optional[float]
     rejection_reason: Optional[str]
     expected_reward_tao: Optional[float]

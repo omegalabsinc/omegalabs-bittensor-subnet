@@ -11,7 +11,7 @@ from validator_api.database.models.focus_video_record import FocusVideoRecord, F
 from validator_api.database.models.user import UserRecord
 from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
-from validator_api.services.scoring_service import VideoScore
+from validator_api.services.scoring_service import VideoScore, FocusVideoEmbeddings
 
 class CachedValue:
     def __init__(self, duration: int = 90):
@@ -340,7 +340,7 @@ async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurch
         focus_points_percentage=focus_points_percentage
     )
 
-def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore):
+def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
@@ -353,6 +353,7 @@ def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore)
         **video_record.video_details,
         **json.loads(score_details.model_dump_json()),
     }
+    video_record.embeddings = json.loads(embeddings.model_dump_json())
     video_record.processing_state = FocusVideoStateInternal.READY
     db.add(video_record)
     db.commit()
@@ -362,6 +363,7 @@ def mark_video_rejected(
     video_id: str,
     rejection_reason: str,
     score_details: Optional[VideoScore]=None,
+    embeddings: Optional[FocusVideoEmbeddings]=None,
     exception_string: Optional[str]=None,
 ):
     video_record = db.query(FocusVideoRecord).filter(
@@ -384,6 +386,9 @@ def mark_video_rejected(
 
     if score_details or exception_string:
         video_record.video_details = video_details
+
+    if embeddings:
+        video_record.embeddings = json.loads(embeddings.model_dump_json())
 
     video_record.processing_state = FocusVideoStateInternal.REJECTED
     video_record.rejection_reason = rejection_reason

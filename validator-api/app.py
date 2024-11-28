@@ -529,9 +529,9 @@ async def main():
     ) -> Dict[str, Any]:
 
         score_details = None
-
+        embeddings = None
         try:
-            score_details = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
+            score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
             print(f"Score for focus video <{video_id}>: {score_details.final_score}")
             MIN_FINAL_SCORE = 0.1
             # todo: measure and tune these
@@ -547,9 +547,10 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                         video_id,
                         rejection_reason,
                         score_details=score_details,
+                        embeddings=embeddings
                     )
                 else:
-                    set_focus_video_score(db, video_id, score_details)
+                    set_focus_video_score(db, video_id, score_details, embeddings)
             return { "success": True }
 
         except Exception as e:
@@ -562,7 +563,8 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     video_id,
                     "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
                     score_details=score_details,
-                    exception_string=exception_string
+                    embeddings=embeddings,
+                    exception_string=exception_string,
                 )
             return { "success": False, "error": error_string }
 

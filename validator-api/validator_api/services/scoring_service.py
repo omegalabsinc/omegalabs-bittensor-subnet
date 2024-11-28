@@ -93,11 +93,12 @@ class VideoScore(BaseModel):
     completion_score_breakdown: CompletionScore
     detailed_video_description: DetailedVideoDescription
 
+class FocusVideoEmbeddings(BaseModel):
     # embeddings
     task_overview_embedding: Optional[List[float]]
     detailed_video_description_embedding: Optional[List[float]]
     video_embedding: List[float]
-    
+
 class BoostedTaskIndex(BaseModel):
     index: int
     
@@ -374,7 +375,7 @@ Additionally, here is a detailed description of the video content:
             task_overview=task_overview,
             completion_score_breakdown=completion_score_breakdown,
             detailed_video_description=video_description,
-            
+        ), FocusVideoEmbeddings(
             task_overview_embedding=task_overview_embedding,
             detailed_video_description_embedding=video_description_embedding,
             video_embedding=video_embedding,
