@@ -175,11 +175,13 @@ You will be provided with:
 
 Your goal is to evaluate the user's performance and provide a completion score following the CompletionScore schema.
 This schema includes a final score and a rationale.
+In the rationale, try to reference specific guidelines from the task description to justify your score.
 """
 
 TASK_COMPLETION_USER_PROMPT = """
 Based on the task description and video provided, please provide a completion score breakdown.
 Evaluate how well the user completed the assigned task, considering their focus and overall effectiveness.
+Please use the task description to evaluate the user's performance, which may include specific steps needed to complete the task.
 Ignore the OMEGA Focus distraction notifications that may appear on the top right of the user's screen.
 The content of these notifications should not be factored into your evaluation.
 
@@ -194,8 +196,8 @@ If the user accomplishes the spirit of the task according to the task title, but
 
 Use the following rubric to assign the completion_score:
 - 0.0-0.2: Poor task completion, largely irrelevant or counterproductive
-- 0.2-0.4: Weak task completion, minimal contribution to the goal
-- 0.4-0.6: Moderate task completion, somewhat helpful but not ideal
+- 0.2-0.4: Weak task completion, minimal completion towards the goal
+- 0.4-0.6: Moderate task completion, somewhat helpful but not ideal, maybe the user was distracted or did not follow the task description
 - 0.6-0.8: Good task completion, the task was diligently completed
 - 0.8-1.0: Excellent task completion, the task was completed with high quality and efficiency
 """
