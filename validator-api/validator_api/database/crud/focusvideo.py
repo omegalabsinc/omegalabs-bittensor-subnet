@@ -13,7 +13,9 @@ from validator_api.database.models.user import UserRecord
 from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore, FocusVideoEmbeddings
-from validator_api.config import BOOSTED_TASKS_PERCENTAGE
+
+
+MIN_REWARD_TAO = 0.001
 
 
 class CachedValue:
@@ -45,16 +47,12 @@ class CachedValue:
             print(e)
             raise HTTPException(500, detail="Internal error")
 
-TASK_TYPE_MAP = {
-    TaskType.USER: 1 - BOOSTED_TASKS_PERCENTAGE,
-    TaskType.BOOSTED: BOOSTED_TASKS_PERCENTAGE,
-}
-
 async def _fetch_available_focus(db: Session):
     # Show oldest videos first so they get rewarded fastest
-    items = db.query(FocusVideoRecord).filter_by(
-        processing_state=FocusVideoStateInternal.SUBMITTED,
-        deleted_at=None,
+    items = db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,
+        FocusVideoRecord.deleted_at.is_(None),
+        FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
     ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
     return [FocusVideoInternal.model_validate(record) for record in items]
 
@@ -94,6 +92,7 @@ async def check_availability(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
             FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,  # is available for purchase
+            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
         )
         if with_lock:
             video_record = video_record.with_for_update()
@@ -365,6 +364,8 @@ def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore,
     }
     video_record.embeddings = json.loads(embeddings.model_dump_json())
     video_record.processing_state = FocusVideoStateInternal.READY
+    video_record.updated_at = datetime.utcnow()
+    video_record.task_type = TaskType.BOOSTED if score_details.boosted_multiplier > 1.0 else TaskType.USER
     db.add(video_record)
     db.commit()
 
@@ -424,7 +425,9 @@ def mark_video_submitted(db: Session, video_id: str, with_lock: bool = False):
     db.add(video_record)
     db.commit()
 
-def get_focus_points_from_last_24_hours(db: Session) -> Dict[TaskType, float]:
+_focus_points_cache = CachedValue(duration=60)  # Cache for 60 seconds
+
+async def _fetch_focus_points(db: Session) -> Dict[TaskType, float]:
     results = db.query(
         FocusVideoRecord.task_type,
         func.sum(
@@ -439,7 +442,16 @@ def get_focus_points_from_last_24_hours(db: Session) -> Dict[TaskType, float]:
         FocusVideoRecord.created_at >= datetime.utcnow() - timedelta(hours=24)
     ).group_by(FocusVideoRecord.task_type).all()
 
-    return {
-        task_type: focus_points or 0 
-        for task_type, focus_points in results
-    }
+    # Initialize dict with all TaskType values set to 0
+    focus_points = {task_type: 0 for task_type in TaskType}
+
+    # Update with actual results
+    for task_type, points in results:
+        focus_points[task_type] = points or 0
+
+    return focus_points
+
+async def get_focus_points_from_last_24_hours(db: Session) -> Dict[TaskType, float]:
+    return await _focus_points_cache.get_or_update(
+        lambda: _fetch_focus_points(db)
+    )

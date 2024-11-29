@@ -2,10 +2,18 @@ import time
 from typing import Tuple, Dict
 import requests
 import bittensor as bt
-from validator_api.config import NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, FIXED_TAO_USD_ESTIMATE
+from validator_api.config import (
+    NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, FIXED_TAO_USD_ESTIMATE,
+    BOOSTED_TASKS_PERCENTAGE,
+)
 from validator_api.utils import run_with_retries, run_async
 from validator_api.database.models.focus_video_record import TaskType
-from validator_api.database.crud.focusvideo import TASK_TYPE_MAP
+
+TASK_TYPE_MAP = {
+    TaskType.USER: 1 - BOOSTED_TASKS_PERCENTAGE,
+    TaskType.BOOSTED: BOOSTED_TASKS_PERCENTAGE,
+}
+
 
 async def get_subtensor_and_metagraph() -> Tuple[bt.subtensor, bt.metagraph]:
 
@@ -82,7 +90,7 @@ def get_max_focus_points_available_today(max_focus_tao: float) -> float:
     # 1 point = 1 dollar
     return int(get_dollars_available_today(max_focus_tao))
 
-async def estimate_tao(
+def estimate_tao(
     score: float,
     duration: int,  # in seconds
     task_type: TaskType,

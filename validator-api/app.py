@@ -35,14 +35,13 @@ from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_video_owner_coldkey,
     already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
-    set_focus_video_score, mark_video_rejected, mark_video_submitted, TASK_TYPE_MAP, TaskType
+    set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType
 )
-from validator_api.utils.marketplace import get_max_focus_tao
+from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
 
 from validator_api.communex.client import CommuneClient
-from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
@@ -1009,12 +1008,14 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     server_task = asyncio.create_task(run_server())
     try:
         # Wait for the server to start
-        await asyncio.gather(
+        tasks_list = [
             server_task,
             resync_metagraph(),
             cache_max_focus_tao(),
-            resync_dataset(),
-        )
+        ]
+        if IS_PROD:
+            tasks_list.append(resync_dataset())
+        await asyncio.gather(*tasks_list)
     except asyncio.CancelledError:
         server_task.cancel()
         await server_task
