@@ -90,7 +90,7 @@ def get_max_focus_points_available_today(max_focus_tao: float) -> float:
     # 1 point = 1 dollar
     return int(get_dollars_available_today(max_focus_tao))
 
-MAX_TASK_REWARD_TAO = 0.15
+MAX_TASK_REWARD_TAO = 0.1
 
 def estimate_tao(
     score: float,
