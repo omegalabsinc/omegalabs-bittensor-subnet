@@ -26,6 +26,7 @@ from validator_api.database.models.boosted_task import BoostedTask
 
 from typing import Tuple, Optional
 
+TWO_MINUTES = 120  # in seconds
 NINETY_MINUTES = 5400  # in seconds
 FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
@@ -93,11 +94,12 @@ class VideoScore(BaseModel):
     completion_score_breakdown: CompletionScore
     detailed_video_description: DetailedVideoDescription
 
+class FocusVideoEmbeddings(BaseModel):
     # embeddings
     task_overview_embedding: Optional[List[float]]
     detailed_video_description_embedding: Optional[List[float]]
     video_embedding: List[float]
-    
+
 class BoostedTaskIndex(BaseModel):
     index: int
     
@@ -333,6 +335,10 @@ Additionally, here is a detailed description of the video content:
         Errors raised should make the video rejected.
         """
         video_duration_seconds = self.get_video_duration_seconds(video_id)
+
+        if video_duration_seconds < TWO_MINUTES:
+            raise ValueError(f"Video duration is too short: {video_duration_seconds} seconds")
+
         if video_duration_seconds > NINETY_MINUTES:
             raise ValueError(f"Video duration is too long: {video_duration_seconds} seconds")
 
@@ -374,7 +380,7 @@ Additionally, here is a detailed description of the video content:
             task_overview=task_overview,
             completion_score_breakdown=completion_score_breakdown,
             detailed_video_description=video_description,
-            
+        ), FocusVideoEmbeddings(
             task_overview_embedding=task_overview_embedding,
             detailed_video_description_embedding=video_description_embedding,
             video_embedding=video_embedding,

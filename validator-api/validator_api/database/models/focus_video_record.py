@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Column, String, DateTime, ForeignKey, Float, Enum, Integer
+from sqlalchemy import Column, String, DateTime, Float, Enum, Integer
 
 from validator_api.database import Base
 from sqlalchemy.dialects.postgresql import JSONB
@@ -11,6 +11,9 @@ from validator_api.config import DB_STRING_LENGTH
 
 import enum
 
+class TaskType(enum.Enum):
+    USER = "USER"
+    BOOSTED = "BOOSTED"
 
 class FocusVideoStateExternal(enum.Enum):
     PROCESSING = "PROCESSING"
@@ -59,9 +62,10 @@ class FocusVideoRecord(Base):
 
     video_id = Column(String(DB_STRING_LENGTH), primary_key=True, default=lambda: str(uuid.uuid4()), nullable=False)
     task_id = Column(String(DB_STRING_LENGTH), nullable=False)
-    user_id = Column(String, ForeignKey('users.id'), nullable=False)
-    user_email = Column(String, ForeignKey('users.email'), nullable=False)
+    user_id = Column(String, nullable=False)
+    user_email = Column(String, nullable=False)
     processing_state = Column(Enum(FocusVideoStateInternal), nullable=False, default=FocusVideoStateInternal.PROCESSING)
+    task_type = Column(Enum(TaskType), nullable=False, default=TaskType.USER)
     video_score = Column(Float, nullable=True)
     video_details = Column(JSONB, nullable=True)
     embeddings = Column(JSONB, nullable=True)
@@ -81,6 +85,7 @@ class FocusVideoBase(BaseModel):
     video_id: str
     task_id: str
     user_email: str
+    task_type: TaskType
     video_score: Optional[float]
     rejection_reason: Optional[str]
     expected_reward_tao: Optional[float]

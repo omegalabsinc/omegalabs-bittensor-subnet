@@ -35,14 +35,13 @@ from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_video_owner_coldkey,
     already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
-    set_focus_video_score, mark_video_rejected, mark_video_submitted
+    set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType
 )
-from validator_api.utils.marketplace import get_max_focus_tao
+from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
 
 from validator_api.communex.client import CommuneClient
-from validator_api.communex.types import Ss58Address
 from validator_api.communex._common import get_node_url
 
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
@@ -529,9 +528,9 @@ async def main():
     ) -> Dict[str, Any]:
 
         score_details = None
-
+        embeddings = None
         try:
-            score_details = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
+            score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
             print(f"Score for focus video <{video_id}>: {score_details.final_score}")
             MIN_FINAL_SCORE = 0.1
             # todo: measure and tune these
@@ -547,9 +546,10 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                         video_id,
                         rejection_reason,
                         score_details=score_details,
+                        embeddings=embeddings
                     )
                 else:
-                    set_focus_video_score(db, video_id, score_details)
+                    set_focus_video_score(db, video_id, score_details, embeddings)
             return { "success": True }
 
         except Exception as e:
@@ -562,7 +562,8 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     video_id,
                     "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
                     score_details=score_details,
-                    exception_string=exception_string
+                    embeddings=embeddings,
+                    exception_string=exception_string,
                 )
             return { "success": False, "error": error_string }
 
@@ -597,25 +598,25 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body()],
         miner_hotkey: Annotated[str, Body()],
-        db: Session=Depends(get_db),
     ):
-        if await already_purchased_max_focus_tao(db):
+        if await already_purchased_max_focus_tao():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
 
-        availability = await check_availability(db, video_id, miner_hotkey, True) # run with_lock True
-        print('availability', availability)
-        if availability['status'] == 'success':
-            amount = availability['price']
-            video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
-            background_tasks.add_task(confirm_video_purchased, video_id, True) # run with_lock True
-            return {
-                'status': 'success',
-                'address': video_owner_coldkey,
-                'amount': amount,
-            }
-        else:
-            return availability
+        with get_db_context() as db:
+            availability = await check_availability(db, video_id, miner_hotkey, True) # run with_lock True
+            print('availability', availability)
+            if availability['status'] == 'success':
+                amount = availability['price']
+                video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
+                background_tasks.add_task(confirm_video_purchased, video_id, True) # run with_lock True
+                return {
+                    'status': 'success',
+                    'address': video_owner_coldkey,
+                    'amount': amount,
+                }
+            else:
+                return availability
         
     @app.post("/api/focus/revert-pending-purchase")
     @limiter.limit("100/minute")
@@ -657,7 +658,14 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             hotkey: await get_miner_purchase_stats(db, hotkey)
             for hotkey in miner_hotkey_list.split(',')
         }
-    
+
+    class TaskTypeMap(BaseModel):
+        task_type_map: Dict[TaskType, float]
+
+    @app.get('/api/focus/get_task_percentage_map')
+    def get_task_percentage_map():
+        return TaskTypeMap(task_type_map=TASK_TYPE_MAP)
+
     @app.get('/api/focus/get_rewards_percent')
     async def get_rewards_percent():
         return FOCUS_REWARDS_PERCENT
@@ -1000,12 +1008,14 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     server_task = asyncio.create_task(run_server())
     try:
         # Wait for the server to start
-        await asyncio.gather(
+        tasks_list = [
             server_task,
             resync_metagraph(),
             cache_max_focus_tao(),
-            resync_dataset(),
-        )
+        ]
+        if IS_PROD:
+            tasks_list.append(resync_dataset())
+        await asyncio.gather(*tasks_list)
     except asyncio.CancelledError:
         server_task.cancel()
         await server_task

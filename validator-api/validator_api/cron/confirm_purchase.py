@@ -63,6 +63,7 @@ async def confirm_transfer(
     video = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
+        FocusVideoRecord.miner_hotkey == miner_hotkey,
         FocusVideoRecord.deleted_at.is_(None),
     )
     if with_lock:
