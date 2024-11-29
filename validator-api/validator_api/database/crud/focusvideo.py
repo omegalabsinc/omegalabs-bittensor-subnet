@@ -104,17 +104,14 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        actual_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), video_record.task_type, max_focus_tao, focus_points_last_24_hours)
-        print(f"Expected reward TAO: {video_record.expected_reward_tao}, actual reward TAO: {actual_reward_tao}")
-        if actual_reward_tao == 0:
-            raise HTTPException(422, detail="Max reward TAO is 0")
+        if video_record.expected_reward_tao is None:
+            print("ESTIMATED TAO WAS NONE, calculating now...")
+            video_record.expected_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), video_record.task_type, max_focus_tao, focus_points_last_24_hours)
 
         # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
         video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING
         video_record.miner_hotkey = miner_hotkey
         video_record.updated_at = datetime.utcnow()
-        # set the actual reward TAO as what is expected to be paid and needs to from purchasing miner
-        video_record.expected_reward_tao = actual_reward_tao
 
         # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
         # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
@@ -124,7 +121,7 @@ async def check_availability(
 
         return {
             'status': 'success',
-            'price': actual_reward_tao
+            'price': video_record.expected_reward_tao
         }
 
     except Exception as e:
