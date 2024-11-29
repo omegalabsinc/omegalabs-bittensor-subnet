@@ -90,6 +90,8 @@ def get_max_focus_points_available_today(max_focus_tao: float) -> float:
     # 1 point = 1 dollar
     return int(get_dollars_available_today(max_focus_tao))
 
+MAX_TASK_REWARD_TAO = 0.2
+
 def estimate_tao(
     score: float,
     duration: int,  # in seconds
@@ -114,6 +116,6 @@ def estimate_tao(
     task_percentage = TASK_TYPE_MAP[task_type]
     max_rewards = max_focus_tao * task_percentage
     reward = task_portion * max_rewards
-    reward = min(reward, 0.2)
+    reward = min(reward, MAX_TASK_REWARD_TAO)
 
     return reward
