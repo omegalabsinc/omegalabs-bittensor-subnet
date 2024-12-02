@@ -1,4 +1,4 @@
-import re
+﻿import re
 import json
 import os
 import tempfile
@@ -156,14 +156,16 @@ def download_youtube_video(
                 unacceptable_statuses = ('UNPLAYABLE',)
                 if status in unacceptable_statuses or (status == 'ERROR' and player_info['playabilityStatus'].get('reason', '').lower() == 'video unavailable'):
                     if "sign in to confirm you’re not a bot" not in result.text.lower():
-                        fake_video = True
-                        print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
+                        if player_info['playabilityStatus']['errorScreen']['playerErrorMessageRenderer']['subreason']['simpleText'] != "This content isn’t available.":
+                            fake_video = True
+                            print(f"Fake video submitted, youtube player status [{status}]: {player_info['playabilityStatus']}")
         except Exception as fake_check_exc:
             print(f"Error sanity checking playability: {fake_check_exc}")
         if fake_video:
             raise FakeVideoException("Unplayable video provided")
         if any(fake_vid_msg in str(e) for fake_vid_msg in ["Video unavailable", "is not a valid URL", "Incomplete YouTube ID", "Unsupported URL"]):
-            raise FakeVideoException(e)
+            if "Video unavailable. This content isn’t available." not in str(e):
+                raise FakeVideoException(e)
         print(f"Error downloading video: {e}")
         return None
 
