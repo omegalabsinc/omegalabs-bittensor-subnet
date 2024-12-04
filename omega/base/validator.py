@@ -201,10 +201,10 @@ class BaseValidatorNeuron(BaseNeuron):
                 # Check if we should start a new wandb run.
                 if not self.config.wandb.off and self.successfully_started_wandb:
                     if (dt.datetime.now() - self.wandb_run_start) >= dt.timedelta(
-                        days=1
+                        hours=6
                     ):
                         bt.logging.info(
-                            "Current wandb run is more than 1 day old. Starting a new run."
+                            "Current wandb run is more than 6 hours old. Starting a new run."
                         )
                         self.wandb_run.finish()
                         self.new_wandb_run()
