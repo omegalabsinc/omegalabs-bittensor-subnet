@@ -23,6 +23,7 @@ from validator_api.utils import run_async, run_with_retries
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal
 from validator_api.database.models.boosted_task import BoostedTask
+from validator_api.database.models.task import TaskRecordPG
 
 from typing import Tuple, Optional
 
@@ -334,6 +335,23 @@ Additionally, here is a detailed description of the video content:
         If the video is too similar to other videos, it will be rejected.
         Errors raised should make the video rejected.
         """
+        with get_db_context() as db:
+            """
+            if the task is boosted, use the boosted task info directly
+            """
+            video_metadata = get_video_metadata(db, video_id)
+            if video_metadata and video_metadata.task_id:
+                task = db.query(TaskRecordPG).filter(
+                    TaskRecordPG.id == video_metadata.task_id,
+                ).first()
+                if task:
+                    boosted_task = db.query(BoostedTask).filter(
+                        BoostedTask.id == task.boosted_id
+                    ).first()
+                    if boosted_task:
+                        focusing_task = boosted_task.title
+                        focusing_description = boosted_task.description
+            
         video_duration_seconds = self.get_video_duration_seconds(video_id)
 
         if video_duration_seconds < TWO_MINUTES:
