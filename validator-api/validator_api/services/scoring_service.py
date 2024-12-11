@@ -285,56 +285,13 @@ Additionally, here is a detailed description of the video content:
             return detailed_video_description, None, None
         return detailed_video_description, embedding, await self.get_description_uniqueness_score(embedding)
 
-    async def get_boosted_multiplier(self, focusing_task: str, focusing_description: str) -> float:
-        """
-        Get boosted tasks from the database "boosted_tasks" table
-        ask Gemini if the task matches any of the boosted tasks
-        return the multiplier for the task if it is boosted, otherwise 1.0
-        """
-        with get_db_context() as db:
-            boosted_tasks_records = db.query(BoostedTask).filter(BoostedTask.active == True).all()
-            # Convert to Pydantic objects
-            boosted_tasks = [BoostedTaskData(
-                title=task.title,
-                description=task.description,
-                multiplier=task.multiplier
-            ) for task in boosted_tasks_records]
-        
-        # print(f"Boosted tasks: {boosted_tasks}")
-        if len(boosted_tasks) == 0:
-            return 1.0
-
-        system_prompt = focus_scoring_prompts.BOOST_SCORING_SYSTEM_PROMPT.format(
-            boosted_tasks="\n".join([f"{idx}. {task.title}: {task.description}" for idx, task in enumerate(boosted_tasks)])
-        )
-        user_prompt = focus_scoring_prompts.BOOST_SCORING_USER_PROMPT.format(
-            focusing_task=focusing_task,
-            focusing_description=focusing_description,
-        )
-        boosted_task_index = await self.make_gemini_request_with_retries(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-            video_id=None,
-            OutputClassSchema=BoostedTaskIndex,
-        )
-        # print(f"Boosted task index: {boosted_task_index.index}")
-        if boosted_task_index.index == -1 or boosted_task_index.index >= len(boosted_tasks):
-            return 1.0
-            
-        multiplier = boosted_tasks[boosted_task_index.index].multiplier  # Get multiplier from Pydantic object
-        try:
-            multiplier = float(multiplier)
-        except (TypeError, ValueError):
-            print(f"Invalid task score boost multiplier: {multiplier}, returning 1.0")
-            multiplier = 1.0
-        return multiplier
-    
     async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
         """
         The video score is a score of how well the user completed the task, based on the task overview and the detailed video description.
         If the video is too similar to other videos, it will be rejected.
         Errors raised should make the video rejected.
         """
+        boosted_multiplier = 1.0
         with get_db_context() as db:
             """
             if the task is boosted, use the boosted task info directly
@@ -349,9 +306,11 @@ Additionally, here is a detailed description of the video content:
                         BoostedTask.id == task.boosted_id
                     ).first()
                     if boosted_task:
-                        # print(f"Scoring boosted task index {boosted_task.id}\n\n{boosted_task.title}\n\n{boosted_task.description}")
+                        boosted_multiplier = boosted_task.multiplier
                         focusing_task = boosted_task.title
                         focusing_description = boosted_task.description
+                        # print(f"Scoring boosted task index {boosted_task.id} multiplier {boosted_multiplier}\n\n{boosted_task.title}\n\n{boosted_task.description}")
+                        
             
         video_duration_seconds = self.get_video_duration_seconds(video_id)
 
@@ -369,14 +328,12 @@ Additionally, here is a detailed description of the video content:
             (video_description, video_description_embedding, video_description_uniqueness_score),
             completion_score_breakdown,
             (video_embedding, video_uniqueness_score),
-            boosted_multiplier,
         ) = await asyncio.gather(
             self.embed_and_get_task_uniqueness_score(task_overview),  # uses openai to get embedding
             # self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
             self.get_detailed_video_description_embedding_score(video_id, task_overview),  # uses gemini to get detailed description
             self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None),  # use gemini to get breakdown of task score
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
-            self.get_boosted_multiplier(focusing_task, focusing_description),
         )
         
         if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
