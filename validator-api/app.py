@@ -47,7 +47,7 @@ from validator_api.communex._common import get_node_url
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
 from validator_api.imagebind_loader import ImageBindLoader
 
-# from validator_api import score
+from validator_api import score
 from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
