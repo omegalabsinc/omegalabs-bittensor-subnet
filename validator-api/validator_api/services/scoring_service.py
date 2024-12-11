@@ -190,8 +190,8 @@ class FocusScoringService:
             OutputClassSchema=DetailedVideoDescription,
         )
 
-    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription]) -> CompletionScore:
-        detailed_video_description_string = f"""
+    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> CompletionScore:
+        detailed_video_description_string = f"""\n\n
 Additionally, here is a detailed description of the video content:
 
 <detailed_video_description>
@@ -358,14 +358,14 @@ Additionally, here is a detailed description of the video content:
             self.get_boosted_multiplier(focusing_task, focusing_description),
         )
         
+        if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
+            raise VideoUniquenessError("Video uniqueness score is too low.")
+        
         completion_score_breakdown = await self.get_completion_score_breakdown(
             video_id,
             task_overview,
-            # detailed_video_description=video_description,
+            detailed_video_description=video_description,
         )
-        
-        if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
-            raise VideoUniquenessError("Video uniqueness score is too low.")
         
         completion_gemini_score = completion_score_breakdown.completion_score
         final_score = completion_gemini_score * boosted_multiplier
@@ -380,7 +380,6 @@ Additionally, here is a detailed description of the video content:
             video_uniqueness_score=video_uniqueness_score,
             boosted_multiplier=boosted_multiplier,
             final_score=final_score,
-            
             task_overview=task_overview,
             completion_score_breakdown=completion_score_breakdown,
             detailed_video_description=video_description,
