@@ -1,12 +1,11 @@
 from sqlalchemy import Column, String, Boolean, Float, DateTime, Integer
-from config import DB_STRING_LENGTH
-from database import PGBase
+from validator_api.config import DB_STRING_LENGTH
+from validator_api.database import Base
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
-
-class TaskRecordPG(PGBase):
+class TaskRecordPG(Base):
     __tablename__ = 'tasks'
     id = Column(String(DB_STRING_LENGTH), primary_key=True, nullable=False)
     info = Column(String(DB_STRING_LENGTH))

@@ -349,6 +349,7 @@ Additionally, here is a detailed description of the video content:
                         BoostedTask.id == task.boosted_id
                     ).first()
                     if boosted_task:
+                        # print(f"Scoring boosted task index {boosted_task.id}\n\n{boosted_task.title}\n\n{boosted_task.description}")
                         focusing_task = boosted_task.title
                         focusing_description = boosted_task.description
             
