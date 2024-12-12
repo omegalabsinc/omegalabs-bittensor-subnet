@@ -191,8 +191,8 @@ class FocusScoringService:
             OutputClassSchema=DetailedVideoDescription,
         )
 
-    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription]) -> CompletionScore:
-        detailed_video_description_string = f"""
+    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> CompletionScore:
+        detailed_video_description_string = f"""\n\n
 Additionally, here is a detailed description of the video content:
 
 <detailed_video_description>
@@ -326,18 +326,22 @@ Additionally, here is a detailed description of the video content:
             (task_overview_embedding, task_uniqueness_score),
             # task_score_breakdown,
             (video_description, video_description_embedding, video_description_uniqueness_score),
-            completion_score_breakdown,
             (video_embedding, video_uniqueness_score),
         ) = await asyncio.gather(
             self.embed_and_get_task_uniqueness_score(task_overview),  # uses openai to get embedding
             # self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
             self.get_detailed_video_description_embedding_score(video_id, task_overview),  # uses gemini to get detailed description
-            self.get_completion_score_breakdown(video_id, task_overview, detailed_video_description=None),  # use gemini to get breakdown of task score
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
         
         if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
             raise VideoUniquenessError("Video uniqueness score is too low.")
+        
+        completion_score_breakdown = await self.get_completion_score_breakdown(
+            video_id,
+            task_overview,
+            detailed_video_description=video_description,
+        )
         
         completion_gemini_score = completion_score_breakdown.completion_score
         final_score = completion_gemini_score * boosted_multiplier
@@ -352,7 +356,6 @@ Additionally, here is a detailed description of the video content:
             video_uniqueness_score=video_uniqueness_score,
             boosted_multiplier=boosted_multiplier,
             final_score=final_score,
-            
             task_overview=task_overview,
             completion_score_breakdown=completion_score_breakdown,
             detailed_video_description=video_description,
