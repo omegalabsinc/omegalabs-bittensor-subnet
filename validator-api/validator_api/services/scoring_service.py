@@ -192,19 +192,19 @@ class FocusScoringService:
         )
 
     async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> CompletionScore:
-        detailed_video_description_string = f"""\n\n
-Additionally, here is a detailed description of the video content:
+        completion_sequence_steps_string = f"""\n\n
+Additionally, here is a detailed description of the video content that you should reference along with the video:
 
-<detailed_video_description>
-{detailed_video_description.model_dump_json(indent=2)}
-</detailed_video_description>
+<completion_sequence_steps>
+{detailed_video_description.completion_sequence_steps}
+</completion_sequence_steps>
 """ if detailed_video_description else ""
 
         return await self.make_gemini_request_with_retries(
             system_prompt=focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
             user_prompt=focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT.format(
                 task_overview=task_overview,
-                detailed_video_description_string=detailed_video_description_string,
+                completion_sequence_steps=completion_sequence_steps_string,
             ),
             video_id=video_id,
             OutputClassSchema=CompletionScore,

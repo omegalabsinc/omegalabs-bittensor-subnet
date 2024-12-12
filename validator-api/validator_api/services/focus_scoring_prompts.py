@@ -171,26 +171,29 @@ The content of these notifications should not be factored into your evaluation.
 You will be provided with:
 1. A task overview describing the assigned task.
 2. The screen recording video of the user performing the task.
-3. A detailed description of the video content.
+3. Detailed description of the user's actions in the video.
 
 Your goal is to evaluate the user's performance and provide a completion score following the CompletionScore schema.
 This schema includes a final score and a rationale.
-In the rationale, try to reference specific guidelines from the task description to justify your score.
+In the rationale, try to reference specific guidelines from the task overview/description to justify your score.
 """
 
 TASK_COMPLETION_USER_PROMPT = """
-Based on the task description and video provided, please provide a completion score breakdown.
+Based on the provided completion sequence steps and video provided, please provide a completion score breakdown.
 Evaluate how well the user completed the assigned task, considering their focus and overall effectiveness.
 Please use the task description to evaluate the user's performance, which may include specific steps needed to complete the task.
 Ignore the OMEGA Focus distraction notifications that may appear on the top right of the user's screen.
-The content of these notifications should not be factored into your evaluation.
+EXTREMELY IMPORTANT: Again, the content of these distraction notifications should NOT be factored into your evaluation.
 
+This is the task overview:
 <task_overview>
 {task_overview}
 </task_overview>
-<detailed_video_description>
-{detailed_video_description_string}
-</detailed_video_description>
+
+This is the detailed description of the user's actions in the video, to aid you in your evaluation:
+<completion_sequence_steps>
+{completion_sequence_steps}
+</completion_sequence_steps>
 
 If the user accomplishes the spirit of the task according to the task title, but does not complete it exactly as described according to the task description, you should still award some score (not 0.0).
 
