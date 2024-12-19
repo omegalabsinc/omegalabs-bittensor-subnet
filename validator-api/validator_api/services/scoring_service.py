@@ -191,7 +191,29 @@ class FocusScoringService:
             OutputClassSchema=DetailedVideoDescription,
         )
 
-    async def get_completion_score_breakdown(self, video_id: str, task_overview: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> CompletionScore:
+    async def get_completion_score_breakdown(
+        self,
+        video_id: str,
+        task_overview: str,
+        detailed_video_description: Optional[DetailedVideoDescription] = None,
+        system_prompt: str = focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
+        user_prompt: str = focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT,
+    ) -> CompletionScore:
+        """
+        This function generates a completion score breakdown for a given video.
+
+        Args:
+            video_id (str): The ID of the video to be scored.
+            task_overview (str): An overview of the task associated with the video.
+            detailed_video_description (Optional[DetailedVideoDescription], optional): A detailed description of the video content. Defaults to None.
+            system_prompt (str, optional): The system prompt to be used for generating the completion score. Defaults to focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT.
+            user_prompt (str, optional): The user prompt to be used for generating the completion score. Defaults to focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT.
+
+        Returns:
+            CompletionScore: The completion score breakdown for the video.
+
+        The user_prompt should include {task_overview} and {completion_sequence_steps}.
+        """
         completion_sequence_steps_string = f"""\n\n
 Additionally, here is a detailed description of the video content that you should reference along with the video:
 
@@ -201,8 +223,8 @@ Additionally, here is a detailed description of the video content that you shoul
 """ if detailed_video_description else ""
 
         return await self.make_gemini_request_with_retries(
-            system_prompt=focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
-            user_prompt=focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT.format(
+            system_prompt=system_prompt,
+            user_prompt=user_prompt.format(
                 task_overview=task_overview,
                 completion_sequence_steps=completion_sequence_steps_string,
             ),
