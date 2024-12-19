@@ -1,6 +1,8 @@
 import os
 import torch
 import torchaudio
+import numpy as np
+np.NaN = np.nan
 from pyannote.audio import Pipeline
 import pandas as pd
 

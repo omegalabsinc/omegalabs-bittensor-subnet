@@ -1,21 +1,21 @@
-bittensor==7.3.1
-torch==2.1.0
-torchaudio==2.1.0
-torchvision==0.16.0
+bittensor[torch]==8.5.1
+torch==2.5.1
+torchaudio==2.5.1
+torchvision==0.20.1
 datasets==2.17.1
 pinecone-client==3.1.0
 huggingface-hub==0.20.3
 ulid-py==1.1.0
 yt-dlp==2024.11.18
 ffmpeg-python==0.2.0
-imagebind @ git+https://github.com/omegalabsinc/ImageBind.git@e2bfdec716b1c1d511d6bea806227b2b3dfcadee#egg=imagebind
+imagebind @ git+https://github.com/omegalabsinc/ImageBind.git@140bbb3dcc2f89c9a0af00859e79b69ec9a8a9ad
 openai==1.51.0
 transformers==4.38.2
 accelerate==0.28.0
 sentencepiece==0.2.0
 protobuf==3.20.3
-wandb==0.16.6
-numpy==1.26.4
+wandb==0.19.1
+numpy==2.0.2
 python-dotenv==1.0.1
 google-generativeai
 boto3
