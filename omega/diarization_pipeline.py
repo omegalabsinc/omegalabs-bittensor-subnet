@@ -2,7 +2,8 @@ import os
 import torch
 import torchaudio
 import numpy as np
-np.NaN = np.nan
+if hasattr(np, 'nan'):
+    np.nan = np.nan
 from pyannote.audio import Pipeline
 import pandas as pd
 
