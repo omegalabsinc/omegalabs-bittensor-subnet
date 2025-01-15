@@ -82,6 +82,13 @@ async def get_max_focus_tao() -> float:
 
     return max_focus_tao
 
+
+async def get_purchase_max_focus_tao() -> float:
+    """we want to limit the amount of focus tao that can be purchased to 90% of the max focus tao so miners can make some profit"""
+    max_focus_tao = await get_max_focus_tao()
+    return max_focus_tao * 0.9
+
+
 def get_dollars_available_today(max_focus_tao: float) -> float:
     """ Use a fixed TAO - USD estimate to keep consistent for the sake of miner rewards """
     return max_focus_tao * FIXED_TAO_USD_ESTIMATE
@@ -96,7 +103,7 @@ def estimate_tao(
     score: float,
     duration: int,  # in seconds
     task_type: TaskType,
-    max_focus_tao: float,
+    purchase_max_focus_tao: float, # 90% of max focus tao, to leave some profit for miners
     focus_points_last_24_hours: Dict[TaskType, float],
 ) -> float:
     """
@@ -114,7 +121,7 @@ def estimate_tao(
 
     # Get max rewards per hour and calculate final reward
     task_percentage = TASK_TYPE_MAP[task_type]
-    max_rewards = max_focus_tao * task_percentage
+    max_rewards = purchase_max_focus_tao * task_percentage
     reward = task_portion * max_rewards
     reward = min(reward, MAX_TASK_REWARD_TAO)
 

@@ -10,7 +10,7 @@ import asyncio
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal, TaskType
 from validator_api.database.models.user import UserRecord
-from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_max_focus_points_available_today
+from validator_api.utils.marketplace import estimate_tao, get_max_focus_tao, get_purchase_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.services.scoring_service import VideoScore, FocusVideoEmbeddings
 
@@ -85,7 +85,7 @@ async def check_availability(
     with_lock: bool = False
 ):
     try:
-        max_focus_tao = await get_max_focus_tao()
+        purchase_max_focus_tao = await get_purchase_max_focus_tao()
         focus_points_last_24_hours = await get_focus_points_from_last_24_hours(db)
 
         video_record = db.query(FocusVideoRecord).filter(
@@ -106,7 +106,13 @@ async def check_availability(
 
         if video_record.expected_reward_tao is None:
             print("ESTIMATED TAO WAS NONE, calculating now...")
-            video_record.expected_reward_tao = estimate_tao(video_record.video_score, video_record.get_duration(), video_record.task_type, max_focus_tao, focus_points_last_24_hours)
+            video_record.expected_reward_tao = estimate_tao(
+                video_record.video_score,
+                video_record.get_duration(),
+                video_record.task_type,
+                purchase_max_focus_tao,
+                focus_points_last_24_hours
+            )
 
         # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
         video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING
@@ -299,12 +305,12 @@ _already_purchased_cache = CachedValue()
 
 async def _already_purchased_max_focus_tao() -> bool:
     with get_db_context() as db:
-        max_focus_tao = await get_max_focus_tao()
+        effective_max_focus_tao = await get_purchase_max_focus_tao()
         total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
             FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
         ).scalar() or 0
-        return total_earned_tao >= max_focus_tao * 0.9
+        return total_earned_tao >= effective_max_focus_tao
 
 async def already_purchased_max_focus_tao() -> bool:
     return await _already_purchased_cache.get_or_update(

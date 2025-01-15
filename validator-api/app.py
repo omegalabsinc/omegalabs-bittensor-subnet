@@ -37,7 +37,7 @@ from validator_api.database.crud.focusvideo import (
     already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
     set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType
 )
-from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP
+from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
 
@@ -47,15 +47,23 @@ from validator_api.communex._common import get_node_url
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
 from validator_api.imagebind_loader import ImageBindLoader
 
-from validator_api import score
 from validator_api.config import (
     NETWORK, NETUID, 
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
     TOPICS_LIST, PROXY_LIST, IS_PROD, 
     FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS,
-    SENTRY_DSN
+    SENTRY_DSN, IMPORT_SCORE
 )
+
+print("IMPORT_SCORE:", IMPORT_SCORE)
+
+if IMPORT_SCORE is not False:
+    from validator_api import score
+else:
+    # remove cuda error on mac
+    score = None
+
 from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 from validator_api.limiter import limiter
 
@@ -224,6 +232,52 @@ def update_commune_keys(commune_client, commune_keys):
     except Exception as err:
         print("Error during commune keys update", str(err))
         return commune_keys
+
+async def run_focus_scoring(
+    video_id: Annotated[str, Body()],
+    focusing_task: Annotated[str, Body()],
+    focusing_description: Annotated[str, Body()]
+) -> Dict[str, Any]:
+
+    score_details = None
+    embeddings = None
+    try:
+        score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
+        print(f"Score for focus video <{video_id}>: {score_details.final_score}")
+        MIN_FINAL_SCORE = 0.1
+        # todo: measure and tune these
+        MIN_TASK_UNIQUENESS_SCORE = 0
+        MIN_VIDEO_UNIQUENESS_SCORE = 0
+        # get the db after scoring the video so it's not open for too long
+        with get_db_context() as db:
+            if score_details.final_score < MIN_FINAL_SCORE:
+                rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
+Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
+                mark_video_rejected(
+                    db,
+                    video_id,
+                    rejection_reason,
+                    score_details=score_details,
+                    embeddings=embeddings
+                )
+            else:
+                set_focus_video_score(db, video_id, score_details, embeddings)
+        return { "success": True }
+
+    except Exception as e:
+        exception_string = traceback.format_exc()
+        error_string = f"{str(e)}\n{exception_string}"
+        print(f"Error scoring focus video <{video_id}>: {error_string}")
+        with get_db_context() as db:
+            mark_video_rejected(
+                db,
+                video_id,
+                "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
+                score_details=score_details,
+                embeddings=embeddings,
+                exception_string=exception_string,
+            )
+        return { "success": False, "error": error_string }
 
 async def main():
     app = FastAPI()
@@ -521,52 +575,6 @@ async def main():
         return random.choice(PROXY_LIST)
     
     ################ START OMEGA FOCUS ENDPOINTS ################
-    async def run_focus_scoring(
-        video_id: Annotated[str, Body()],
-        focusing_task: Annotated[str, Body()],
-        focusing_description: Annotated[str, Body()]
-    ) -> Dict[str, Any]:
-
-        score_details = None
-        embeddings = None
-        try:
-            score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
-            print(f"Score for focus video <{video_id}>: {score_details.final_score}")
-            MIN_FINAL_SCORE = 0.1
-            # todo: measure and tune these
-            MIN_TASK_UNIQUENESS_SCORE = 0
-            MIN_VIDEO_UNIQUENESS_SCORE = 0
-            # get the db after scoring the video so it's not open for too long
-            with get_db_context() as db:
-                if score_details.final_score < MIN_FINAL_SCORE:
-                    rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
-Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
-                    mark_video_rejected(
-                        db,
-                        video_id,
-                        rejection_reason,
-                        score_details=score_details,
-                        embeddings=embeddings
-                    )
-                else:
-                    set_focus_video_score(db, video_id, score_details, embeddings)
-            return { "success": True }
-
-        except Exception as e:
-            exception_string = traceback.format_exc()
-            error_string = f"{str(e)}\n{exception_string}"
-            print(f"Error scoring focus video <{video_id}>: {error_string}")
-            with get_db_context() as db:
-                mark_video_rejected(
-                    db,
-                    video_id,
-                    "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
-                    score_details=score_details,
-                    embeddings=embeddings,
-                    exception_string=exception_string,
-                )
-            return { "success": False, "error": error_string }
-
     @app.post("/api/focus/get_focus_score")
     async def get_focus_score(
         api_key: str = Security(get_focus_api_key),
@@ -673,6 +681,10 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
     @app.get('/api/focus/get_max_focus_tao')
     async def _get_max_focus_tao():
         return await get_max_focus_tao()
+    
+    @app.get('/api/focus/get_purchase_max_focus_tao')
+    async def _get_purchase_max_focus_tao():
+        return await get_purchase_max_focus_tao()
     
     async def cache_max_focus_tao():
         while True:
