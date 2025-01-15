@@ -37,7 +37,7 @@ from validator_api.database.crud.focusvideo import (
     already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
     set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType
 )
-from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP
+from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
 
@@ -681,6 +681,10 @@ async def main():
     @app.get('/api/focus/get_max_focus_tao')
     async def _get_max_focus_tao():
         return await get_max_focus_tao()
+    
+    @app.get('/api/focus/get_purchase_max_focus_tao')
+    async def _get_purchase_max_focus_tao():
+        return await get_purchase_max_focus_tao()
     
     async def cache_max_focus_tao():
         while True:
