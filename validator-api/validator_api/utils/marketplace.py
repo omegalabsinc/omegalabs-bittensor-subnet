@@ -124,5 +124,5 @@ def estimate_tao(
     max_rewards = purchase_max_focus_tao * task_percentage
     reward = task_portion * max_rewards
     reward = min(reward, MAX_TASK_REWARD_TAO)
-
+    reward = reward * 0.5 # TODO: this is a temporary change to reduce queue size. properly fix later
     return reward
