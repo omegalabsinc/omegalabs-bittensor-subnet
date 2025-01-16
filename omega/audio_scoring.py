@@ -1,3 +1,4 @@
+import numpy as np
 if hasattr(np, 'nan'):
     np.NaN = np.nan
     np.NAN = np.nan
@@ -6,7 +7,6 @@ import librosa
 import os
 import dotenv
 import pandas as pd
-import numpy as np
 import torch
 
 
