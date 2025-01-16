@@ -98,31 +98,3 @@ def get_max_focus_points_available_today(max_focus_tao: float) -> float:
     return int(get_dollars_available_today(max_focus_tao))
 
 MAX_TASK_REWARD_TAO = 0.1
-
-def estimate_tao(
-    score: float,
-    duration: int,  # in seconds
-    task_type: TaskType,
-    purchase_max_focus_tao: float, # 90% of max focus tao, to leave some profit for miners
-    focus_points_last_24_hours: Dict[TaskType, float],
-) -> float:
-    """
-    Calculate reward for a focus video based on its score, duration and max rewards available
-    """
-    # Get all tasks from last hour
-    total_focus_points = focus_points_last_24_hours[task_type]
-
-    # Add current task's contribution
-    current_focus_points = score * duration
-    score_duration_with_current = total_focus_points + current_focus_points
-
-    # Calculate portion for current task
-    task_portion = current_focus_points / score_duration_with_current if score_duration_with_current > 0 else 0
-
-    # Get max rewards per hour and calculate final reward
-    task_percentage = TASK_TYPE_MAP[task_type]
-    max_rewards = purchase_max_focus_tao * task_percentage
-    reward = task_portion * max_rewards
-    reward = min(reward, MAX_TASK_REWARD_TAO)
-    reward = reward * 0.5 # TODO: this is a temporary change to reduce queue size. properly fix later
-    return reward
