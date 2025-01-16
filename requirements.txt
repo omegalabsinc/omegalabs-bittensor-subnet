@@ -9,7 +9,8 @@ ulid-py==1.1.0
 yt-dlp==2024.11.18
 ffmpeg-python==0.2.0
 imagebind @ git+https://github.com/omegalabsinc/ImageBind.git@140bbb3dcc2f89c9a0af00859e79b69ec9a8a9ad
-openai==1.51.0
+openai==1.41.1
+httpx==0.27.0
 transformers==4.38.2
 accelerate==0.28.0
 sentencepiece==0.2.0
