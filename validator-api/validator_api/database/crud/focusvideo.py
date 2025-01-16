@@ -85,9 +85,6 @@ async def check_availability(
     with_lock: bool = False
 ):
     try:
-        purchase_max_focus_tao = await get_purchase_max_focus_tao()
-        focus_points_last_24_hours = await get_focus_points_from_last_24_hours(db)
-
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
