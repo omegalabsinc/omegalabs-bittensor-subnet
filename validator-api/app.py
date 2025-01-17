@@ -679,11 +679,11 @@ async def main():
         return FOCUS_REWARDS_PERCENT
     
     @app.get('/api/focus/get_max_focus_tao')
-    async def _get_max_focus_tao():
+    async def _get_max_focus_tao() -> float:
         return await get_max_focus_tao()
     
     @app.get('/api/focus/get_purchase_max_focus_tao')
-    async def _get_purchase_max_focus_tao():
+    async def _get_purchase_max_focus_tao() -> float:
         return await get_purchase_max_focus_tao()
     
     async def cache_max_focus_tao():
