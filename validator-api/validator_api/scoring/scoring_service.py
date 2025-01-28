@@ -223,8 +223,10 @@ async def _get_completion_score_breakdown(
     task_overview: str,
     openai_client: AsyncOpenAI,
     detailed_video_description: Optional[DetailedVideoDescription] = None,
-    system_prompt: str = focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
-    user_prompt: str = focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT,
+    # system_prompt: str = focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
+    # user_prompt: str = focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT,
+    system_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT,
+    user_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_USER_PROMPT,
 ) -> CompletionScore:
     """
     This function generates a completion score breakdown for a given video using OpenAI's reasoning model.
@@ -240,13 +242,6 @@ async def _get_completion_score_breakdown(
     Returns:
         CompletionScore: The completion score breakdown for the video.
     """
-    completion_sequence_steps_string = f"""\n\n
-Additionally, here is a detailed description of the video content that you should reference along with the video:
-
-<completion_sequence_steps>
-{detailed_video_description.completion_sequence_steps}
-</completion_sequence_steps>
-""" if detailed_video_description else ""
 
     # return await _make_gemini_request_with_retries(
     #     system_prompt=system_prompt,
@@ -262,7 +257,7 @@ Additionally, here is a detailed description of the video content that you shoul
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt.format(
             task_overview=task_overview,
-            completion_sequence_steps=completion_sequence_steps_string,
+            completion_sequence_steps=detailed_video_description.completion_sequence_steps,
         )}
     ]
 

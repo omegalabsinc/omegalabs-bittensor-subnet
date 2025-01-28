@@ -68,6 +68,9 @@ class ChatOnlyDetectionModel(BaseModel):
     legitimate: bool = Field(description="False if the user is cheating by talking about completing a task, but not actually completing it, True otherwise")
 
 class ChatOnlyCheck(LegitimacyCheck):
+    """
+    Fails if a user is talking about completing a task (e.g. in a notepad or AI chat), but not actually completing it.
+    """
     async def passes_check(self, video_id: str) -> Tuple[bool, str]:
         chat_only_check_prompt = """You are an expert in analyzing task performance videos.
 Your current task is to determine if the user is cheating by talking about completing a task, but not actually completing it.

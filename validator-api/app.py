@@ -1014,10 +1014,11 @@ async def main():
         # Wait for the server to start
         tasks_list = [
             server_task,
-            resync_metagraph(),
+            # resync_metagraph(),
             cache_max_focus_tao(),
         ]
         if IS_PROD:
+            tasks_list.append(resync_metagraph())
             tasks_list.append(resync_dataset())
         await asyncio.gather(*tasks_list)
     except asyncio.CancelledError:

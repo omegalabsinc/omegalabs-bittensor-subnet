@@ -205,6 +205,45 @@ Use the following rubric to assign the completion_score:
 - 0.8-1.0: Excellent task completion, the task was completed with high quality and efficiency
 """
 
+# these are for scoring on only the annotated text description, without any video analysis
+DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT = """You are an expert in analyzing task performance videos, with three distinct phases of analysis.
+
+You will be provided with:
+1. Task overview describing the user's assigned task
+2. Detailed description and annotated transcript of the user's screen recording of their task completion
+
+Analyze the annotated transcript to provide helpful, actionable feedback.
+
+Provide meaningful feedback including:
+- Completion score following CompletionScore schema
+- Detailed feedback referencing task guidelines
+- Specific strengths and areas for improvement
+- Ignore OMEGA Focus notifications in top right
+
+Scoring rubric:
+- 0.0-0.2: Poor task completion, largely irrelevant or counterproductive
+- 0.2-0.4: Weak task completion, minimal completion towards the goal
+- 0.4-0.6: Moderate task completion, somewhat helpful but not ideal, maybe the user was distracted or did not follow the task description
+- 0.6-0.8: Good task completion, the task was diligently completed
+- 0.8-1.0: Excellent task completion, the task was completed with high quality and efficiency
+"""
+
+DESC_ONLY_TASK_COMPLETION_USER_PROMPT = """Based on the provided annotated transcript, please provide a completion score breakdown.
+Evaluate how well the user completed the assigned task, considering their focus and overall effectiveness.
+Please use the task description to evaluate the user's performance, which may include specific steps needed to complete the task.
+
+This is the task overview:
+<task_overview>
+{task_overview}
+</task_overview>
+
+This is the detailed description of the user's actions in the video:
+<annotated_transcript>
+{completion_sequence_steps}
+</annotated_transcript>
+
+If the user accomplishes the spirit of the task according to the task title, but does not complete it exactly as described according to the task description, you should still award some score (not 0.0)."""
+
 BOOST_SCORING_SYSTEM_PROMPT = """
 You are part of a system to evaluate and reward users for completing tasks.
 You will be provided with a list of boosted tasks and their descriptions. Boosted tasks are tasks thatreceive an extra special multiplier to increase their score.
