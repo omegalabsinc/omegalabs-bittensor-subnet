@@ -1,5 +1,4 @@
 import asyncio
-import requests
 import os
 import json
 from datetime import datetime
@@ -9,15 +8,11 @@ import random
 import json
 from pydantic import BaseModel
 import traceback
-from threading import Lock
-
 from tempfile import TemporaryDirectory
 import huggingface_hub
 from datasets import load_dataset
 import ulid
-
 from traceback import print_exception
-
 import bittensor
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks, Request
@@ -27,9 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
-
 import sentry_sdk
-
 from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
@@ -39,8 +32,7 @@ from validator_api.database.crud.focusvideo import (
 )
 from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
-from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
-
+from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError
 from validator_api.communex.client import CommuneClient
 from validator_api.communex._common import get_node_url
 
