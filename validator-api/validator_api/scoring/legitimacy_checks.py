@@ -1,5 +1,5 @@
 from abc import ABC, abstractmethod
-from typing import Tuple
+from typing import Tuple, Optional
 from pydantic import BaseModel, Field
 from openai import AsyncOpenAI
 import os
@@ -13,48 +13,15 @@ openai_client = AsyncOpenAI(
     api_key=OPENAI_API_KEY,
 )
 
-def get_task_overview(video_id: str) -> str:
-    with get_db_context() as db:
-        video_record = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.video_id == video_id,
-            FocusVideoRecord.deleted_at.is_(None)
-        ).first()
-
-        if video_record is None:
-            raise ValueError(f"Video not found: {video_id}")
-
-        focusing_task = video_record.video_details.get("focusing_task", "")
-        focusing_description = video_record.video_details.get(
-            "focusing_description", "")
-
-    task_overview = f"# Task Title: {focusing_task}\n\n Task Description:\n{focusing_description}"
-    return task_overview
-
-async def get_detailed_video_description(video_id: str) -> DetailedVideoDescription:
-    with get_db_context() as db:
-        video_record = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.video_id == video_id,
-            FocusVideoRecord.deleted_at.is_(None)
-        ).first()
-        
-        if video_record is None:
-            raise ValueError(f"Video not found: {video_id}")
-        
-        if video_record.video_details and "detailed_video_description" in video_record.video_details:
-            return DetailedVideoDescription.model_validate(
-                video_record.video_details["detailed_video_description"]
-            )
-    
-    raise ValueError(f"Detailed video description not found for video: {video_id}")
-
 class LegitimacyCheck(ABC):
     @abstractmethod
-    async def passes_check(self, video_id: str) -> Tuple[bool, str]:
+    async def passes_check(self, video_id: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> Tuple[bool, str]:
         """
         Check if the video passes this legitimacy check.
         
         Args:
             video_id: The ID of the video to check
+            detailed_video_description: Optional pre-computed video description
             
         Returns:
             Tuple[bool, str]: (passed, failure_reason)
@@ -71,7 +38,7 @@ class ChatOnlyCheck(LegitimacyCheck):
     """
     Fails if a user is talking about completing a task (e.g. in a notepad or AI chat), but not actually completing it.
     """
-    async def passes_check(self, video_id: str) -> Tuple[bool, str]:
+    async def passes_check(self, video_id: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> Tuple[bool, str]:
         chat_only_check_prompt = """You are an expert in analyzing task performance videos.
 Your current task is to determine if the user is cheating by talking about completing a task, but not actually completing it.
 Verify that the video shows actual evidence of task completion, not just chat interactions claiming completion.
@@ -89,11 +56,27 @@ Red flags for chat-only submissions:
 - Absence of expected task artifacts or outputs
 - Timeline inconsistency between chat claims and visible work"""
         
-        completion_sequence_steps = await get_detailed_video_description(video_id)
+        # Use provided description if available, otherwise fetch from DB
+        if detailed_video_description is None:
+            with get_db_context() as db:
+                video_record = db.query(FocusVideoRecord).filter(
+                    FocusVideoRecord.video_id == video_id,
+                    FocusVideoRecord.deleted_at.is_(None)
+                ).first()
+                
+                if video_record is None:
+                    raise ValueError(f"Video not found: {video_id}")
+                
+                if video_record.video_details and "detailed_video_description" in video_record.video_details:
+                    detailed_video_description = DetailedVideoDescription.model_validate(
+                        video_record.video_details["detailed_video_description"]
+                    )
+                else:
+                    raise ValueError(f"Detailed video description not found for video: {video_id}")
         
         messages = [
             {"role": "system", "content": chat_only_check_prompt},
-            {"role": "user", "content": f"Please analyze the following annotated transcript and determine if the user is cheating by talking about completing a task, but not actually completing it: {completion_sequence_steps}"}
+            {"role": "user", "content": f"Please analyze the following annotated transcript and determine if the user is cheating by talking about completing a task, but not actually completing it: {detailed_video_description}"}
         ]
 
         try:

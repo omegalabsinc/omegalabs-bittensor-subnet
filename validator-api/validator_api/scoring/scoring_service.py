@@ -463,7 +463,7 @@ class FocusScoringService:
         
         if self.legitimacy_checks:
             check_results = await asyncio.gather(
-                *(check.passes_check(video_id) for check in self.legitimacy_checks)
+                *(check.passes_check(video_id, video_description) for check in self.legitimacy_checks)
             )
             
             for passed, failure_reason in check_results:
