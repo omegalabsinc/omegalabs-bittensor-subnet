@@ -24,7 +24,7 @@ from typing import List, Optional, Tuple
 import vertexai
 from openai import AsyncOpenAI
 from pinecone import Pinecone
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, ValidationError
 from sqlalchemy.orm import Session
 from validator_api.config import (GOOGLE_CLOUD_BUCKET_NAME, GOOGLE_LOCATION,
                                   GOOGLE_PROJECT_ID, OPENAI_API_KEY,
@@ -54,10 +54,15 @@ FOCUS_VIDEO_MAX_SCORE = 1.0
 MIN_VIDEO_UNIQUENESS_SCORE = 0.02
 
 def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
-    return db.query(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id,
-        FocusVideoRecord.deleted_at.is_(None)
+    video = db.query(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id
     ).first()
+    
+    if video and video.deleted_at is not None:
+        print(f"Video {video_id} has been deleted")
+        return None
+    
+    return video
 
 def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
     """
@@ -92,7 +97,7 @@ def get_video_duration_seconds(video_id: str) -> int:
         video_metadata = get_video_metadata(db, video_id)
 
         if video_metadata is None:
-            raise ValueError(f"Focus video not found: {video_id}")
+            raise ValueError(f"Focus video is deleted or doesn't exist: {video_id}")
 
         video_duration_seconds = video_metadata.video_details.get("duration")
         if video_duration_seconds is None:

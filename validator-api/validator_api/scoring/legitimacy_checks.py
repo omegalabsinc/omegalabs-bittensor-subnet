@@ -7,6 +7,7 @@ import json
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord
 from validator_api.database.models.scoring import DetailedVideoDescription
+from validator_api.scoring.deepseek_chat import query_deepseek
 
 OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
 openai_client = AsyncOpenAI(
@@ -39,7 +40,7 @@ class ChatOnlyCheck(LegitimacyCheck):
     Fails if a user is talking about completing a task (e.g. in a notepad or AI chat), but not actually completing it.
     """
     async def passes_check(self, video_id: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> Tuple[bool, str]:
-        chat_only_check_prompt = """You are an expert in analyzing task performance videos.
+        chat_only_check_prompt = f"""You are an expert in analyzing task performance videos.
 Your current task is to determine if the user is cheating by talking about completing a task, but not actually completing it.
 Verify that the video shows actual evidence of task completion, not just chat interactions claiming completion.
 
@@ -54,7 +55,17 @@ Red flags for chat-only submissions:
 - Claims of completion without supporting visual evidence
 - Missing technical elements required by the task
 - Absence of expected task artifacts or outputs
-- Timeline inconsistency between chat claims and visible work"""
+- Timeline inconsistency between chat claims and visible work
+
+Limit your critique to the existence of chat-only submissions; the full video scoring and rating will be done in another step.
+
+OUTPUT JSON FORMAT:
+{{
+    "rationale": "Detailed explanation of the analysis",
+    "legitimate": true/false; False if the user is cheating by talking about completing a task, but not actually completing it, True otherwise
+}}
+"""
+# important: above, we need to provide an example of the output JSON format
         
         # Use provided description if available, otherwise fetch from DB
         if detailed_video_description is None:
@@ -80,21 +91,42 @@ Red flags for chat-only submissions:
         ]
 
         try:
-            response = await openai_client.beta.chat.completions.parse(
-                model="o1-2024-12-17",
-                messages=messages,
-                response_format=ChatOnlyDetectionModel,
-            )
-            if not response.choices[0].message.content:
-                raise Exception("Empty response from API")
+            # response = await openai_client.beta.chat.completions.parse(
+            #     model="o1-2024-12-17",
+            #     messages=messages,
+            #     response_format=ChatOnlyDetectionModel,
+            # )
+            # if not response.choices[0].message.content:
+            #     raise Exception("Empty response from API")
 
-            chat_only_detection_data = json.loads(response.choices[0].message.content)
+            # chat_only_detection_data = json.loads(response.choices[0].message.content)
+            
+            chat_only_detection_data = await query_deepseek(messages)
+            
+            if isinstance(chat_only_detection_data, str):
+                # Remove markdown code block formatting if present
+                chat_only_detection_data = chat_only_detection_data.replace('```json', '').replace('```', '').strip()
+                
+                if '</think>' in chat_only_detection_data:
+                    chat_only_detection_data = chat_only_detection_data.split('</think>')[-1].strip()
+                
+                # Find and extract just the JSON data
+                try:
+                    parsed_data = json.loads(chat_only_detection_data)
+                    chat_only_detection_data = {
+                        "rationale": parsed_data.get("rationale", ""),
+                        "legitimate": parsed_data.get("legitimate", True)
+                    }
+                except json.JSONDecodeError:
+                    raise ValueError(f"Failed to parse response as JSON: {chat_only_detection_data}")
+            
             model = ChatOnlyDetectionModel(
                 rationale=chat_only_detection_data["rationale"],
                 legitimate=chat_only_detection_data["legitimate"]
             )
             
             print(f"[{video_id}] ChatOnlyCheck result: {model}")
+            
             return model.legitimate, model.rationale
 
         except Exception as e:
