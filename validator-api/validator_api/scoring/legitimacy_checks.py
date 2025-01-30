@@ -40,7 +40,7 @@ class ChatOnlyCheck(LegitimacyCheck):
     Fails if a user is talking about completing a task (e.g. in a notepad or AI chat), but not actually completing it.
     """
     async def passes_check(self, video_id: str, detailed_video_description: Optional[DetailedVideoDescription] = None) -> Tuple[bool, str]:
-        chat_only_check_prompt = f"""You are an expert in analyzing task performance videos.
+        chat_only_check_prompt = """You are an expert in analyzing task performance videos.
 Your current task is to determine if the user is cheating by talking about completing a task, but not actually completing it.
 Verify that the video shows actual evidence of task completion, not just chat interactions claiming completion.
 
@@ -60,10 +60,10 @@ Red flags for chat-only submissions:
 Limit your critique to the existence of chat-only submissions; the full video scoring and rating will be done in another step.
 
 OUTPUT JSON FORMAT:
-{{
+{
     "rationale": "Detailed explanation of the analysis",
     "legitimate": true/false; False if the user is cheating by talking about completing a task, but not actually completing it, True otherwise
-}}
+}
 """
 # important: above, we need to provide an example of the output JSON format
         

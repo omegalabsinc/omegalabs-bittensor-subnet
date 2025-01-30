@@ -45,6 +45,7 @@ from vertexai.vision_models import (MultiModalEmbeddingModel, Video,
                                     VideoSegmentConfig)
 from validator_api.database.models.scoring import DetailedVideoDescription, CompletionScore, CompletionScoreWithoutRange, VideoScore, FocusVideoEmbeddings, VideoUniquenessError, LegitimacyCheckError
 from validator_api.scoring.legitimacy_checks import ChatOnlyCheck
+from validator_api.scoring.deepseek_chat import query_deepseek
 
 
 TWO_MINUTES = 120  # in seconds
@@ -126,21 +127,20 @@ async def _make_gemini_request(system_prompt: str, user_prompt: str, video_id: s
         An instance of OutputClassSchema containing the parsed model response
     """
     model_name = "gemini-1.5-pro-001"
-    print(f"Scoring is using model: {model_name}")
+    # print(f"Video text annotation is using model: {model_name}")
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
     }
-    temperature = 1.3
     
     model = GenerativeModel(
         model_name,
         system_instruction=system_prompt.strip(),
         safety_settings=safety_settings,
         generation_config=GenerationConfig(
-            temperature=temperature,
+            temperature=0.5,
             response_mime_type="application/json",
             response_schema=OutputClassSchema.model_json_schema(),
         ),
@@ -226,20 +226,16 @@ async def get_detailed_video_description(video_id: str, task_overview: str, reco
 
 async def _get_completion_score_breakdown(
     task_overview: str,
-    openai_client: AsyncOpenAI,
     detailed_video_description: Optional[DetailedVideoDescription] = None,
-    # system_prompt: str = focus_scoring_prompts.TASK_COMPLETION_SYSTEM_PROMPT,
-    # user_prompt: str = focus_scoring_prompts.TASK_COMPLETION_USER_PROMPT,
     system_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT,
     user_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_USER_PROMPT,
 ) -> CompletionScore:
     """
-    This function generates a completion score breakdown for a given video using OpenAI's reasoning model.
+    This function generates a completion score breakdown using the DeepSeek model via Chutes API.
 
     Args:
-        video_id (str): The ID of the video to be scored.
         task_overview (str): An overview of the task associated with the video.
-        openai_client (AsyncOpenAI): The OpenAI client instance
+        openai_client (AsyncOpenAI): Kept for compatibility but no longer used
         detailed_video_description (Optional[DetailedVideoDescription], optional): A detailed description of the video content.
         system_prompt (str, optional): The system prompt to be used for generating the completion score.
         user_prompt (str, optional): The user prompt to be used for generating the completion score.
@@ -247,36 +243,21 @@ async def _get_completion_score_breakdown(
     Returns:
         CompletionScore: The completion score breakdown for the video.
     """
-
-    # return await _make_gemini_request_with_retries(
-    #     system_prompt=system_prompt,
-    #     user_prompt=user_prompt.format(
-    #         task_overview=task_overview,
-    #         completion_sequence_steps=completion_sequence_steps_string,
-    #     ),
-    #     video_id=video_id,
-    #     OutputClassSchema=CompletionScore,
-    # )
-    
     messages = [
         {"role": "system", "content": system_prompt},
         {"role": "user", "content": user_prompt.format(
             task_overview=task_overview,
+            applications_used=detailed_video_description.applications_used,
             completion_sequence_steps=detailed_video_description.completion_sequence_steps,
         )}
     ]
 
     try:
-        response = await openai_client.beta.chat.completions.parse(
-            model="o1-2024-12-17",
+        completion_score = await query_deepseek(
             messages=messages,
-            response_format=CompletionScoreWithoutRange, # o1 doesn't support ranges in the model
+            output_model=CompletionScore
         )
-        if not response.choices[0].message.content:
-            raise Exception("Empty response from API")
-
-        completion_score_data = json.loads(response.choices[0].message.content)
-        return CompletionScore(**completion_score_data)
+        return completion_score
 
     except Exception as e:
         print(f"Error getting completion score: {str(e)}")
@@ -477,7 +458,6 @@ class FocusScoringService:
         
         completion_score_breakdown = await _get_completion_score_breakdown(
             task_overview,
-            self.openai_client,
             detailed_video_description=video_description,
         )
         

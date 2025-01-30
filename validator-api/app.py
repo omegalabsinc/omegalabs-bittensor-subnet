@@ -32,7 +32,7 @@ from validator_api.database.crud.focusvideo import (
 )
 from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
-from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError
+from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError, LegitimacyCheckError
 from validator_api.communex.client import CommuneClient
 from validator_api.communex._common import get_node_url
 
@@ -260,11 +260,20 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         exception_string = traceback.format_exc()
         error_string = f"{str(e)}\n{exception_string}"
         print(f"Error scoring focus video <{video_id}>: {error_string}")
+        
+        # Determine appropriate rejection reason based on error type
+        if isinstance(e, VideoUniquenessError):
+            rejection_reason = "Task recording is not unique. If you believe this is an error, please contact a team member."
+        elif isinstance(e, LegitimacyCheckError):
+            rejection_reason = "An anomaly was detected in the video. If you believe this is an error, please contact a team member via the OMEGA Focus Discord channel."
+        else:
+            rejection_reason = "Error scoring video"
+            
         with get_db_context() as db:
             mark_video_rejected(
                 db,
                 video_id,
-                "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
+                rejection_reason,
                 score_details=score_details,
                 embeddings=embeddings,
                 exception_string=exception_string,

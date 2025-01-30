@@ -1,4 +1,3 @@
-
 TASK_VALUATION_CRITERIA = """The kind of tasks that we want to see:
 - Tasks that contribute to scientific discovery or AI advancement
 - Creative acts that result in the creation of something new
@@ -226,6 +225,12 @@ Scoring rubric:
 - 0.4-0.6: Moderate task completion, somewhat helpful but not ideal, maybe the user was distracted or did not follow the task description
 - 0.6-0.8: Good task completion, the task was diligently completed
 - 0.8-1.0: Excellent task completion, the task was completed with high quality and efficiency
+
+OUTPUT JSON FORMAT:
+{
+    "rationale": "Detailed explanation of how well the user completed the task, including specific strengths and areas for improvement",
+    "completion_score": float between 0.0 and 1.0
+}
 """
 
 DESC_ONLY_TASK_COMPLETION_USER_PROMPT = """Based on the provided annotated transcript, please provide a completion score breakdown.
@@ -236,6 +241,11 @@ This is the task overview:
 <task_overview>
 {task_overview}
 </task_overview>
+
+This is a list of some of the applications used by the user:
+<applications_used>
+{applications_used}
+</applications_used>
 
 This is the detailed description of the user's actions in the video:
 <annotated_transcript>
