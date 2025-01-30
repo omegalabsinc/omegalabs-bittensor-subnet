@@ -24,6 +24,7 @@ class FocusVideoStateExternal(enum.Enum):
 
 class FocusVideoStateInternal(enum.Enum):
     # OMEGA Focus user facing states
+    IN_PROGRESS = "IN_PROGRESS"
     PROCESSING = "PROCESSING"  # User has completed task, we are currently calculating their score and checking if the video is legit
     READY = "READY"  # Score has been calculated and task is eligible for submission
     REJECTED = "REJECTED"  # Turns out that the task was NOT eligible for submission, lifecycle ended here
@@ -33,9 +34,6 @@ class FocusVideoStateInternal(enum.Enum):
     PURCHASE_PENDING = "PURCHASE_PENDING"  # a miner has request to buy the video, and we have sent them the amount of tao that they need to send the focus user
     PURCHASED = "PURCHASED"  # our background cron has confirmed that the miner has bought the focus video
 
-    # I think that these 2 states don't even need to exist?
-    # VALIDATING = "VALIDATING"
-    # CONSUMED = "CONSUMED"
 
 def map_focus_video_state(state: FocusVideoStateInternal) -> FocusVideoStateExternal:
     """

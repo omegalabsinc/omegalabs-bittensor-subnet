@@ -1,5 +1,4 @@
 import asyncio
-import requests
 import os
 import json
 from datetime import datetime
@@ -9,15 +8,11 @@ import random
 import json
 from pydantic import BaseModel
 import traceback
-from threading import Lock
-
 from tempfile import TemporaryDirectory
 import huggingface_hub
 from datasets import load_dataset
 import ulid
-
 from traceback import print_exception
-
 import bittensor
 import uvicorn
 from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks, Request
@@ -27,9 +22,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from starlette import status
 from substrateinterface import Keypair
-
 import sentry_sdk
-
 from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
@@ -39,8 +32,7 @@ from validator_api.database.crud.focusvideo import (
 )
 from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
-from validator_api.services.scoring_service import FocusScoringService, VideoUniquenessError
-
+from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError, LegitimacyCheckError
 from validator_api.communex.client import CommuneClient
 from validator_api.communex._common import get_node_url
 
@@ -268,11 +260,20 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         exception_string = traceback.format_exc()
         error_string = f"{str(e)}\n{exception_string}"
         print(f"Error scoring focus video <{video_id}>: {error_string}")
+        
+        # Determine appropriate rejection reason based on error type
+        if isinstance(e, VideoUniquenessError):
+            rejection_reason = "Task recording is not unique. If you believe this is an error, please contact a team member."
+        elif isinstance(e, LegitimacyCheckError):
+            rejection_reason = "An anomaly was detected in the video. If you believe this is an error, please contact a team member via the OMEGA Focus Discord channel."
+        else:
+            rejection_reason = "Error scoring video"
+            
         with get_db_context() as db:
             mark_video_rejected(
                 db,
                 video_id,
-                "Task recording is not unique. If you believe this is an error, please contact a team member." if isinstance(e, VideoUniquenessError) else "Error scoring video",
+                rejection_reason,
                 score_details=score_details,
                 embeddings=embeddings,
                 exception_string=exception_string,
@@ -1022,10 +1023,11 @@ async def main():
         # Wait for the server to start
         tasks_list = [
             server_task,
-            resync_metagraph(),
+            # resync_metagraph(),
             cache_max_focus_tao(),
         ]
         if IS_PROD:
+            tasks_list.append(resync_metagraph())
             tasks_list.append(resync_dataset())
         await asyncio.gather(*tasks_list)
     except asyncio.CancelledError:

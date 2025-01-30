@@ -12,7 +12,7 @@ from validator_api.database.models.focus_video_record import FocusVideoRecord, F
 from validator_api.database.models.user import UserRecord
 from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao, get_max_focus_points_available_today
 from pydantic import BaseModel
-from validator_api.services.scoring_service import VideoScore, FocusVideoEmbeddings
+from validator_api.scoring.scoring_service import VideoScore, FocusVideoEmbeddings
 
 
 MIN_REWARD_TAO = 0.001
