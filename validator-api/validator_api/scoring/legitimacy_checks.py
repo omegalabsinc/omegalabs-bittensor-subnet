@@ -101,33 +101,11 @@ OUTPUT JSON FORMAT:
 
             # chat_only_detection_data = json.loads(response.choices[0].message.content)
             
-            chat_only_detection_data = await query_deepseek(messages)
+            chat_only_detection_data = await query_deepseek(messages, ChatOnlyDetectionModel)
             
-            if isinstance(chat_only_detection_data, str):
-                # Remove markdown code block formatting if present
-                chat_only_detection_data = chat_only_detection_data.replace('```json', '').replace('```', '').strip()
-                
-                if '</think>' in chat_only_detection_data:
-                    chat_only_detection_data = chat_only_detection_data.split('</think>')[-1].strip()
-                
-                # Find and extract just the JSON data
-                try:
-                    parsed_data = json.loads(chat_only_detection_data)
-                    chat_only_detection_data = {
-                        "rationale": parsed_data.get("rationale", ""),
-                        "legitimate": parsed_data.get("legitimate", True)
-                    }
-                except json.JSONDecodeError:
-                    raise ValueError(f"Failed to parse response as JSON: {chat_only_detection_data}")
+            print(f"[{video_id}] ChatOnlyCheck result: {chat_only_detection_data}")
             
-            model = ChatOnlyDetectionModel(
-                rationale=chat_only_detection_data["rationale"],
-                legitimate=chat_only_detection_data["legitimate"]
-            )
-            
-            print(f"[{video_id}] ChatOnlyCheck result: {model}")
-            
-            return model.legitimate, model.rationale
+            return chat_only_detection_data.legitimate, chat_only_detection_data.rationale
 
         except Exception as e:
             print(f"[{video_id}] ❌ Error during chat-only check: {str(e)}")
