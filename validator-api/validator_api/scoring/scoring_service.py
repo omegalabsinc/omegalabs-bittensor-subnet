@@ -45,7 +45,7 @@ from vertexai.vision_models import (MultiModalEmbeddingModel, Video,
                                     VideoSegmentConfig)
 from validator_api.database.models.scoring import DetailedVideoDescription, CompletionScore, CompletionScoreWithoutRange, VideoScore, FocusVideoEmbeddings, VideoUniquenessError, LegitimacyCheckError
 from validator_api.scoring.legitimacy_checks import ChatOnlyCheck
-from validator_api.scoring.deepseek_chat import query_deepseek
+from validator_api.scoring.query_llm import query_llm
 
 
 TWO_MINUTES = 120  # in seconds
@@ -253,11 +253,15 @@ async def _get_completion_score_breakdown(
     ]
 
     try:
-        completion_score = await query_deepseek(
+        completion_score_without_range = await query_llm(
             messages=messages,
-            output_model=CompletionScore
+            # OpenAI API doesn't like it when there's a range in the Pydantic model
+            output_model=CompletionScoreWithoutRange
         )
-        return completion_score
+        return CompletionScore(
+            rationale=completion_score_without_range.rationale,
+            completion_score=max(0.0, min(1.0, completion_score_without_range.completion_score))
+        )
 
     except Exception as e:
         print(f"Error getting completion score: {str(e)}")

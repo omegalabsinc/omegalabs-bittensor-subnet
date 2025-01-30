@@ -1,18 +1,10 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Optional
 from pydantic import BaseModel, Field
-from openai import AsyncOpenAI
-import os
-import json
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord
 from validator_api.database.models.scoring import DetailedVideoDescription
-from validator_api.scoring.deepseek_chat import query_deepseek
-
-OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
-openai_client = AsyncOpenAI(
-    api_key=OPENAI_API_KEY,
-)
+from validator_api.scoring.query_llm import query_llm
 
 class LegitimacyCheck(ABC):
     @abstractmethod
@@ -91,17 +83,7 @@ OUTPUT JSON FORMAT:
         ]
 
         try:
-            # response = await openai_client.beta.chat.completions.parse(
-            #     model="o1-2024-12-17",
-            #     messages=messages,
-            #     response_format=ChatOnlyDetectionModel,
-            # )
-            # if not response.choices[0].message.content:
-            #     raise Exception("Empty response from API")
-
-            # chat_only_detection_data = json.loads(response.choices[0].message.content)
-            
-            chat_only_detection_data = await query_deepseek(messages, ChatOnlyDetectionModel)
+            chat_only_detection_data = await query_llm(messages, ChatOnlyDetectionModel)
             
             print(f"[{video_id}] ChatOnlyCheck result: {chat_only_detection_data}")
             
