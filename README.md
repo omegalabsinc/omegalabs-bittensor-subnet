@@ -97,6 +97,7 @@ By harnessing the power of the Bittensor network and a global community of miner
 ## SN24: Ω Focus Videos Submission
 
 We're excited to introduce a new feature in the SN24 ecosystem: the Focus Video submission and reward process. This system creates a robust marketplace for task-completion videos, leveraging the strengths of the Bittensor network. Here's how it works:
+OMEGA Focus can be accessed [here](https://focus.omega.inc/)
 
 ### The Players
 1. Ω Focus users: Individuals who complete tasks and record their work
