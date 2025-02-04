@@ -16,10 +16,41 @@
 - [Miner and Validator Functionality](#miner-and-validator-functionality)
   - [Miner](#miner)
   - [Validator](#validator)
+- [SN24: Ω Focus Videos Submission](#sn24-ω-focus-videos-submission)
+  - [The Players](#the-players)
+  - [The Process](#the-process)
+    - [1. Task Completion and Recording](#1-task-completion-and-recording)
+    - [2. Submission and Initial Processing](#2-submission-and-initial-processing)
+    - [3. Scoring](#3-scoring)
+    - [4. User Notification and Marketplace Listing](#4-user-notification-and-marketplace-listing)
+    - [5. Miner Purchase](#5-miner-purchase)
+    - [6. Transaction Verification](#6-transaction-verification)
+    - [7. Miner Scoring and Reimbursement](#7-miner-scoring-and-reimbursement)
+    - [8. Impact on Miner Scores](#8-impact-on-miner-scores)
+    - [9. Video Availability for External Buyers](#9-video-availability-for-external-buyers)
+  - [Benefits](#benefits)
+  - [Scoring Algorithm](#scoring-algorithm)
+  - [Why so Complicated?](#why-so-complicated)
+  - [Hmmm, this doesn't feel like it's fully decentralized](#hmmm-this-doesnt-feel-like-its-fully-decentralized)
 - [Roadmap](#roadmap)
+  - [Phase 1: Foundation (Q1 2024)](#phase-1-foundation-q1-2024)
+  - [Phase 2: Expansion (Q2 2024)](#phase-2-expansion-q2-2024)
+  - [Phase 3: Refinement (Q3 2024)](#phase-3-refinement-q3-2024)
+  - [Phase 4: Application (Q4 2024)](#phase-4-application-q4-2024)
+  - [Phase 5: Democratization (Q1 2025)](#phase-5-democratization-q1-2025)
 - [Running Miners and Validators](#running-miners-and-validators)
   - [Running a Miner](#running-a-miner)
+    - [Requirements](#requirements)
+    - [Setup](#setup)
+    - [Run with PM2](#run-with-pm2)
+    - [Tips for Better Incentive](#tips-for-better-incentive)
+    - [Common Troubleshooting Tips](#common-troubleshooting-tips)
   - [Running a Validator](#running-a-validator)
+    - [Requirements](#requirements-1)
+    - [Recommended](#recommended)
+    - [Setup](#setup-1)
+    - [Run auto-updating validator with PM2 (recommended)](#run-auto-updating-validator-with-pm2-recommended)
+    - [Run basic validator with PM2](#run-basic-validator-with-pm2)
 - [Contributing](#contributing)
 - [License](#license)
 
@@ -88,7 +119,7 @@ Once a task is completed, the user's screen recording and task metadata are uplo
 The Ω Focus user receives their score and an estimate of the potential TAO reward. They can then choose to submit their video to the SN24 Focus Videos marketplace.
 
 #### 5. Miner Purchase
-SN24 miners can browse and purchase videos from the marketplace. To make a purchase, a miner notifies the SN24 validator API of their intent. The API informs the miner of the TAO amount to transfer to the Ω Focus user's wallet. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/focus_app_v1_integration/purchase_focus_video.py)
+SN24 miners can browse and purchase videos from the marketplace. To make a purchase, a miner notifies the SN24 validator API of their intent. The API informs the miner of the TAO amount to transfer to the Ω Focus user's wallet. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/main/purchase_focus_video.py)
 
 #### 6. Transaction Verification
 Once the miner transfers the TAO, they provide the transaction's block hash to the SN24 validator API. The API then verifies this transaction on the Bittensor chain's public ledger. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/cron/confirm_purchase.py#L55)
@@ -97,7 +128,7 @@ Once the miner transfers the TAO, they provide the transaction's block hash to t
 SN24 validators, while sending their YouTube scraping requests to miners, also check with the validator API to see if miners have purchased Focus Videos. Miners' scores are adjusted based on these purchases. Via validators increasing the miners' scores for purchasing videos from the marketplace, the Bittensor chain effectively then reimburses miners for their Focus Video purchases over the following 24-hour period. [Code here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/omega/base/validator.py#L322-L326)
 
 #### 8. Impact on Miner Scores
-Focus Video scores currently make up 2.5% of a miner's total SN24 score. We plan to increase this percentage as the system proves successful.
+Focus Video scores currently make up 5% of a miner's total SN24 score. We plan to increase this percentage as the system proves successful.
 
 #### 9. Video Availability for External Buyers
 Once a Focus Video submission is marked as COMPLETED (which happens when a miner transfers TAO to the Ω Focus user), the video becomes available for purchase by external data buyers, such as AI research labs. (Note: This feature will be implemented in the future.)
@@ -146,20 +177,8 @@ flowchart TD
 
 ### Scoring Algorithm
 
-A task completion video's final score is a geometric average of five components:
+A task completion video's final score is based on an evaluation by a reasoning model (OpenAI or DeepSeek) on a detailed text annotation of the submitted task video, comparing the work shown being done to the task description. The prompt can be found [here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/60faf83be24b895c1745fc110e04b31b4c2f75ea/validator-api/validator_api/scoring/focus_scoring_prompts.py#L208)
 
-#### gemini based scores
-1. task_gemini_score: Gemini's evaluation of the task's quality, based on the task overview and how it feeds into the community's goals and its relevance to teaching AI systems ([prompt](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/services/focus_scoring_prompts.py#L2))
-2. completion_gemini_score: Gemini's evaluation of how well the task was completed and how relevant the video content is to the task and the community's goals ([prompt](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/services/focus_scoring_prompts.py#L88))
-
-#### embeddding based scores
-3. task_uniqueness_score: Uniqueness of the task based on embedding similarity of the task overview with existing tasks in the system
-4. description_uniqueness_score: Uniqueness of the video description based on embedding similarity of the detailed video description with existing video annotations in the system
-5. video_uniqueness_score: Uniqueness of the video content based on embedding similarity of the video with existing videos in the system
-
-Each component contributes equally to the final score. We chose to use a geometric average to ensure that no individual component dominates the final score.
-
-You can dig into the code implementation [here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/8ecf61b5846e2eb226aaa30f01e23df850f3c435/validator-api/validator_api/services/scoring_service.py#L240).
 
 ### Why so Complicated?
 
@@ -245,9 +264,9 @@ pm2 start neurons/miner.py --name omega-miner -- \
 The subnet has become quite competitive, and the basic miner template is no longer sufficient to earn good emissions and avoid deregistration. Here are some tips to consider improving your miner:
 1. Use proxies or frequently change your pod.
   a) We've heard good things about [Storm Proxies](https://stormproxies.com/).
-2. Make sure your videos are unique. You can de-duplicate your collected video with this [video ID index](https://huggingface.co/datasets/jondurbin/omega-multimodal-ids) graciously offered by Jon, one of the miners on the OMEGA subnet.
-3. Improve the descriptions you are submitting alongside your uploaded videos. You can try doing this by using video captioning models or incorporating the transcript. Lots of experimentation room here.
-4. You can use the `check_score` endpoint that we offer to check your score breakdown. See [this gist](https://gist.github.com/salmanshah1d/f5a8e83cb4af6444ffdef4325a59b489).
+1. Make sure your videos are unique.
+2. Improve the descriptions you are submitting alongside your uploaded videos. You can try doing this by using video captioning models or incorporating the transcript. Lots of experimentation room here.
+3. You can use the `check_score` endpoint that we offer to check your score breakdown. See [this gist](https://gist.github.com/salmanshah1d/f5a8e83cb4af6444ffdef4325a59b489).
 
 #### Common Troubleshooting Tips
 1. If you've been running for several minutes and have not received any requests, make sure your port is open to receiving requests. You can try hitting your IP and port with `curl`. If you get no response, it means your port is not open.
