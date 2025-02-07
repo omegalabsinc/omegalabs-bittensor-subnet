@@ -1,4 +1,4 @@
-bittensor[torch]==8.5.1
+bittensor[torch]==9.0.0rc3
 torch==2.5.1
 torchaudio==2.5.1
 torchvision==0.20.1
