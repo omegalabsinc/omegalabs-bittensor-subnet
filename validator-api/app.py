@@ -1,3 +1,6 @@
+import mysql.connector
+from validator_api.limiter import limiter
+from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 import asyncio
 import os
 import json
@@ -35,17 +38,16 @@ from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_
 from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError, LegitimacyCheckError
 from validator_api.communex.client import CommuneClient
 from validator_api.communex._common import get_node_url
-
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
 from validator_api.imagebind_loader import ImageBindLoader
-
 from validator_api.config import (
-    NETWORK, NETUID, 
+    NETWORK, NETUID,
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
-    TOPICS_LIST, PROXY_LIST, IS_PROD, 
+    TOPICS_LIST, PROXY_LIST, IS_PROD,
     FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS,
-    SENTRY_DSN, IMPORT_SCORE
+    SENTRY_DSN, IMPORT_SCORE,
+    FIXED_ALPHA_TAO_ESTIMATE,
 )
 
 print("IMPORT_SCORE:", IMPORT_SCORE)
@@ -56,9 +58,6 @@ else:
     # remove cuda error on mac
     score = None
 
-from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
-from validator_api.limiter import limiter
-
 
 ### Constants for OMEGA Metadata Dashboard ###
 HF_DATASET = "omegalabsinc/omega-multimodal"
@@ -67,7 +66,6 @@ MAX_FILES = 1
 CACHE_FILE = "desc_embeddings_recent.json"
 MIN_AGE = 60 * 60 * 48  # 2 days in seconds
 
-import mysql.connector
 
 def connect_to_db():
     try:
@@ -75,6 +73,7 @@ def connect_to_db():
         return connection
     except mysql.connector.Error as err:
         print("Error in connect_to_db while creating MySQL database connection:", err)
+
 
 # define the APIKeyHeader for API authorization to our multi-modal endpoints
 api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
@@ -93,28 +92,34 @@ sentry_sdk.init(
 )
 
 # region Utility functions for OMEGA Metadata Dashboard
+
+
 def get_timestamp_from_filename(filename: str):
     return ulid.from_str(os.path.splitext(filename.split("/")[-1])[0]).timestamp().timestamp
 
+
 def pull_and_cache_dataset() -> List[str]:
     # Get the list of files in the dataset repository
-    omega_ds_files = huggingface_hub.repo_info(repo_id=HF_DATASET, repo_type="dataset").siblings
-    
+    omega_ds_files = huggingface_hub.repo_info(
+        repo_id=HF_DATASET, repo_type="dataset").siblings
+
     # Filter files that match the DATA_FILES_PREFIX
     recent_files = [
         f.rfilename
         for f in omega_ds_files if
-        f.rfilename.startswith(DATA_FILES_PREFIX) and 
+        f.rfilename.startswith(DATA_FILES_PREFIX) and
         time.time() - get_timestamp_from_filename(f.rfilename) < MIN_AGE
     ][:MAX_FILES]
-    
+
     # Randomly sample up to MAX_FILES from the matching files
-    sampled_files = random.sample(recent_files, min(MAX_FILES, len(recent_files)))
-    
+    sampled_files = random.sample(
+        recent_files, min(MAX_FILES, len(recent_files)))
+
     # Load the dataset using the sampled files
     video_metadata = []
     with TemporaryDirectory() as temp_dir:
-        omega_dataset = load_dataset(HF_DATASET, data_files=sampled_files, cache_dir=temp_dir)["train"]
+        omega_dataset = load_dataset(
+            HF_DATASET, data_files=sampled_files, cache_dir=temp_dir)["train"]
         for i, entry in enumerate(omega_dataset):
             metadata = []
             if "description" in entry and "description_embed" in entry:
@@ -128,13 +133,14 @@ def pull_and_cache_dataset() -> List[str]:
                 metadata.append(entry["query"])
                 metadata.append(entry["submitted_at"])
                 video_metadata.append(metadata)
-    
+
     # Cache the descriptions to a local file
     with open(CACHE_FILE, "w") as f:
         json.dump(video_metadata, f)
-    
+
     return True
 # endregion Utility functions for OMEGA Metadata Dashboard
+
 
 async def get_api_key(api_key_header: str = Security(api_key_header)):
     if api_key_header in API_KEYS:
@@ -144,7 +150,8 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
             status_code=401,
             detail="Invalid API Key"
         )
-    
+
+
 async def get_focus_api_key(focus_api_key_header: str = Security(focus_api_key_header)):
     if focus_api_key_header in FOCUS_API_KEYS:
         return focus_api_key_header
@@ -154,6 +161,7 @@ async def get_focus_api_key(focus_api_key_header: str = Security(focus_api_key_h
             detail="Invalid API Key"
         )
 
+
 class VideoMetadataUpload(BaseModel):
     metadata: List[VideoMetadata]
     description_relevance_scores: List[float]
@@ -162,6 +170,7 @@ class VideoMetadataUpload(BaseModel):
     novelty_score: Optional[float] = None
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
+
 
 class AudioMetadataUpload(BaseModel):
     metadata: List[AudioMetadata]
@@ -173,13 +182,16 @@ class AudioMetadataUpload(BaseModel):
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
 
+
 class FocusScoreResponse(BaseModel):
     video_id: str
     video_score: float
     video_details: dict
 
+
 class VideoPurchaseRevert(BaseModel):
     video_id: str
+
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
     keypair = Keypair(ss58_address=credentials.username)
@@ -192,11 +204,13 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
         detail="Signature mismatch",
     )
 
+
 def check_commune_validator_hotkey(hotkey: str, modules_keys):
     if hotkey not in modules_keys.values():
         print("Commune validator key not found")
         return False
     return True
+
 
 def authenticate_with_bittensor(hotkey, metagraph):
     if hotkey not in metagraph.hotkeys:
@@ -206,17 +220,19 @@ def authenticate_with_bittensor(hotkey, metagraph):
     if not metagraph.validator_permit[uid] and NETWORK != "test":
         print("Bittensor validator permit required")
         return False
-    
+
     if metagraph.S[uid] < 1000 and NETWORK != "test":
         print("Bittensor validator requires 1000+ staked TAO")
         return False
-    
+
     return True
+
 
 def authenticate_with_commune(hotkey, commune_keys):
     if ENABLE_COMMUNE and not check_commune_validator_hotkey(hotkey, commune_keys):
         return False
     return True
+
 
 def update_commune_keys(commune_client, commune_keys):
     try:
@@ -224,6 +240,7 @@ def update_commune_keys(commune_client, commune_keys):
     except Exception as err:
         print("Error during commune keys update", str(err))
         return commune_keys
+
 
 async def run_focus_scoring(
     video_id: Annotated[str, Body()],
@@ -235,7 +252,8 @@ async def run_focus_scoring(
     embeddings = None
     try:
         score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
-        print(f"Score for focus video <{video_id}>: {score_details.final_score}")
+        print(
+            f"Score for focus video <{video_id}>: {score_details.final_score}")
         MIN_FINAL_SCORE = 0.1
         # todo: measure and tune these
         MIN_TASK_UNIQUENESS_SCORE = 0
@@ -254,13 +272,13 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                 )
             else:
                 set_focus_video_score(db, video_id, score_details, embeddings)
-        return { "success": True }
+        return {"success": True}
 
     except Exception as e:
         exception_string = traceback.format_exc()
         error_string = f"{str(e)}\n{exception_string}"
         print(f"Error scoring focus video <{video_id}>: {error_string}")
-        
+
         # Determine appropriate rejection reason based on error type
         if isinstance(e, VideoUniquenessError):
             rejection_reason = "Task recording is not unique. If you believe this is an error, please contact a team member."
@@ -268,7 +286,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             rejection_reason = "An anomaly was detected in the video. If you believe this is an error, please contact a team member via the OMEGA Focus Discord channel."
         else:
             rejection_reason = "Error scoring video"
-            
+
         with get_db_context() as db:
             mark_video_rejected(
                 db,
@@ -278,12 +296,14 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                 embeddings=embeddings,
                 exception_string=exception_string,
             )
-        return { "success": False, "error": error_string }
+        return {"success": False, "error": error_string}
+
 
 async def main():
     app = FastAPI()
     # Mount the static directory to serve static files
-    app.mount("/static", StaticFiles(directory="validator-api/static"), name="static")
+    app.mount(
+        "/static", StaticFiles(directory="validator-api/static"), name="static")
 
     subtensor = bittensor.subtensor(network=NETWORK)
     metagraph: bittensor.metagraph = subtensor.metagraph(NETUID)
@@ -291,7 +311,8 @@ async def main():
     commune_client = None
     commune_keys = None
     if ENABLE_COMMUNE:
-        commune_client = CommuneClient(get_node_url(use_testnet=True if COMMUNE_NETWORK == "test" else False))
+        commune_client = CommuneClient(get_node_url(
+            use_testnet=True if COMMUNE_NETWORK == "test" else False))
         commune_keys = update_commune_keys(commune_client, commune_keys)
 
     async def resync_metagraph():
@@ -307,16 +328,17 @@ async def main():
 
                 # Sync latest commune keys
                 if ENABLE_COMMUNE:
-                    commune_keys = update_commune_keys(commune_client, commune_keys)
+                    commune_keys = update_commune_keys(
+                        commune_client, commune_keys)
                     print("commune keys synced")
-            
+
             # In case of unforeseen errors, the api will log the error and continue operations.
             except Exception as err:
                 print("Error during metagraph sync", str(err))
                 print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
-    
+
     @app.on_event("shutdown")
     async def shutdown_event():
         print("Shutdown event fired, attempting dataset upload of current batch.")
@@ -333,13 +355,13 @@ async def main():
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> List[float]:
         print("get_pinecone_novelty()")
-        
+
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Valid hotkey required.",
             )
-        
+
         uid = None
         if ENABLE_COMMUNE and hotkey in commune_keys.values():
             # get uid of commune validator
@@ -352,11 +374,12 @@ async def main():
             # get uid of bittensor validator
             uid = metagraph.hotkeys.index(hotkey)
             validator_chain = "bittensor"
-        
+
         start_time = time.time()
         # query the pinecone index to get novelty scores
         novelty_scores = await score.get_pinecone_novelty(metadata)
-        print(f"Returning novelty scores={novelty_scores} for {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        print(
+            f"Returning novelty scores={novelty_scores} for {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
         return novelty_scores
 
     @app.post("/api/upload_video_metadata")
@@ -370,7 +393,7 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Valid hotkey required.",
             )
-        
+
         uid = None
         is_bittensor = 0
         is_commune = 0
@@ -395,17 +418,20 @@ async def main():
 
         start_time = time.time()
         video_ids = await score.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, topic_query)
-        print(f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-        
+        print(
+            f"Uploaded {len(video_ids)} video metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+
         if upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
             datapoints = len(video_ids)
-            avg_desc_relevance = sum(description_relevance_scores) / len(description_relevance_scores)
-            avg_query_relevance = sum(query_relevance_scores) / len(query_relevance_scores)
+            avg_desc_relevance = sum(
+                description_relevance_scores) / len(description_relevance_scores)
+            avg_query_relevance = sum(
+                query_relevance_scores) / len(query_relevance_scores)
             novelty_score = upload_data.novelty_score
             total_score = upload_data.total_score
             miner_hotkey = upload_data.miner_hotkey
-            
+
             try:
                 start_time = time.time()
                 connection = connect_to_db()
@@ -446,18 +472,19 @@ async def main():
                     total_score
                 ))
                 connection.commit()
-                print(f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-                
+                print(
+                    f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+
             except mysql.connector.Error as err:
-                raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+                raise HTTPException(
+                    status_code=500, detail=f"Error fetching data from MySQL database: {err}")
             finally:
                 if connection:
                     connection.close()
         else:
             print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
-        
-        return True
 
+        return True
 
     @app.post("/api/upload_audio_metadata")
     async def upload_audio_metadata(
@@ -465,13 +492,13 @@ async def main():
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
         print("upload_audio_metadata()")
-        
+
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Valid hotkey required.",
             )
-        
+
         uid = None
         is_bittensor = 0
         is_commune = 0
@@ -499,14 +526,15 @@ async def main():
 
         start_time = time.time()
         audio_ids = await score.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, topic_query, total_score)
-        print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-        
+        print(
+            f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+
         if upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
             datapoints = len(audio_ids)
             total_score = upload_data.total_score
             miner_hotkey = upload_data.miner_hotkey
-            
+
             try:
                 start_time = time.time()
                 connection = connect_to_db()
@@ -550,32 +578,48 @@ async def main():
                     total_score
                 ))
                 connection.commit()
-                print(f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
-                
+                print(
+                    f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+
             except mysql.connector.Error as err:
-                raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+                raise HTTPException(
+                    status_code=500, detail=f"Error fetching data from MySQL database: {err}")
             finally:
                 if connection:
                     connection.close()
         else:
             print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
-        
+
         return True
 
     @app.post("/api/get_proxy")
     async def get_proxy(
         hotkey: Annotated[str, Depends(get_hotkey)]
     ) -> str:
-        
+
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Valid hotkey required.",
             )
-        
+
         return random.choice(PROXY_LIST)
-    
+
     ################ START OMEGA FOCUS ENDPOINTS ################
+    @app.get("/api/focus/get_alpha_to_tao_rate")
+    async def get_alpha_to_tao_rate(
+        request: Request,
+    ):
+        try:
+            sub = bittensor.subtensor(network=NETWORK)
+            subnet = sub.subnet(NETUID)
+            balance = subnet.alpha_to_tao(1)
+            # print(f"one alpha is worth {balance.tao} tao")
+            return balance.tao
+        except Exception as e:
+            print(e)
+            return FIXED_ALPHA_TAO_ESTIMATE
+
     @app.post("/api/focus/get_focus_score")
     async def get_focus_score(
         api_key: str = Security(get_focus_api_key),
@@ -584,14 +628,15 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
-        background_tasks.add_task(run_focus_scoring, video_id, focusing_task, focusing_description)
-        return { "success": True }
+        background_tasks.add_task(
+            run_focus_scoring, video_id, focusing_task, focusing_description)
+        return {"success": True}
 
     @app.get("/api/focus/get_list")
     @limiter.limit("1000/minute")
     async def _get_available_focus_video_list(
         request: Request,
-        db: Session=Depends(get_db)
+        db: Session = Depends(get_db)
     ):
         """
         Return all available focus videos
@@ -610,15 +655,19 @@ async def main():
     ):
         if await already_purchased_max_focus_tao():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
-            raise HTTPException(400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
+            raise HTTPException(
+                400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
 
         with get_db_context() as db:
-            availability = await check_availability(db, video_id, miner_hotkey, True) # run with_lock True
+            # run with_lock True
+            availability = await check_availability(db, video_id, miner_hotkey, True)
             print('availability', availability)
             if availability['status'] == 'success':
                 amount = availability['price']
-                video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
-                background_tasks.add_task(confirm_video_purchased, video_id, True) # run with_lock True
+                video_owner_coldkey = get_video_owner_coldkey(
+                    db, video_id)  # run with_lock True
+                background_tasks.add_task(
+                    confirm_video_purchased, video_id, True)  # run with_lock True
                 return {
                     'status': 'success',
                     'address': video_owner_coldkey,
@@ -626,16 +675,17 @@ async def main():
                 }
             else:
                 return availability
-        
+
     @app.post("/api/focus/revert-pending-purchase")
     @limiter.limit("100/minute")
     async def revert_pending_purchase(
         request: Request,
         video: VideoPurchaseRevert,
-        db: Session=Depends(get_db),
+        db: Session = Depends(get_db),
     ):
-        return mark_video_submitted(db, video.video_id, True) # run with_lock True
-        
+        # run with_lock True
+        return mark_video_submitted(db, video.video_id, True)
+
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("100/minute")
     async def verify_purchase(
@@ -643,9 +693,10 @@ async def main():
         miner_hotkey: Annotated[str, Body()],
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
-        db: Session=Depends(get_db),
+        db: Session = Depends(get_db),
     ):
-        video_owner_coldkey = get_video_owner_coldkey(db, video_id) # run with_lock True
+        video_owner_coldkey = get_video_owner_coldkey(
+            db, video_id)  # run with_lock True
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:
             return {
@@ -678,15 +729,15 @@ async def main():
     @app.get('/api/focus/get_rewards_percent')
     async def get_rewards_percent():
         return FOCUS_REWARDS_PERCENT
-    
+
     @app.get('/api/focus/get_max_focus_tao')
     async def _get_max_focus_tao() -> float:
         return await get_max_focus_tao()
-    
+
     @app.get('/api/focus/get_purchase_max_focus_tao')
     async def _get_purchase_max_focus_tao() -> float:
         return await get_purchase_max_focus_tao()
-    
+
     async def cache_max_focus_tao():
         while True:
             """Re-caches the value of max_focus_tao."""
@@ -703,16 +754,18 @@ async def main():
                 # In case of unforeseen errors, the api will log the error and continue operations.
                 except Exception as err:
                     attempt += 1
-                    print(f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
+                    print(
+                        f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
 
                     if attempt >= max_attempts:
-                        print("Max attempts reached. Skipping this caching this cycle.")
+                        print(
+                            "Max attempts reached. Skipping this caching this cycle.")
                         break
 
             # Sleep in seconds
-            await asyncio.sleep(1800) # 30 minutes
+            await asyncio.sleep(1800)  # 30 minutes
     ################ END OMEGA FOCUS ENDPOINTS ################
-    
+
     """ TO BE DEPRECATED """
     @app.post("/api/validate")
     async def validate(
@@ -725,19 +778,20 @@ async def main():
                 detail=f"Valid hotkey required.",
             )
         uid = metagraph.hotkeys.index(hotkey)
-        
+
         start_time = time.time()
-        
+
         youtube_rewards = await score.score_and_upload_videos(videos, await imagebind_loader.get_imagebind())
 
         if youtube_rewards is None:
             print("YouTube rewards are empty, returning None")
             return None
-        
+
         total_rewards: float = youtube_rewards
-        
+
         print(f"Total Rewards: {total_rewards}")
-        print(f"Returning score={total_rewards} for validator={uid} in {time.time() - start_time:.2f}s")
+        print(
+            f"Returning score={total_rewards} for validator={uid} in {time.time() - start_time:.2f}s")
 
         return total_rewards
 
@@ -759,7 +813,7 @@ async def main():
     @app.get("/api/topic")
     async def get_topic() -> str:
         return random.choice(TOPICS_LIST)
-    
+
     @app.get("/api/topics")
     async def get_topics() -> List[str]:
         return TOPICS_LIST
@@ -777,13 +831,13 @@ async def main():
             cursor = connection.cursor()
             cursor.execute(query)
             data = [row[0] for row in cursor.fetchall()]
-            
+
             cursor.close()
             connection.close()
             return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
-        
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching data from MySQL database: {err}")
 
     @app.get("/api/mm/topic_video_count")
     async def get_mm_topic_video_count(api_key: str = Security(get_api_key)):
@@ -793,13 +847,13 @@ async def main():
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query)
             data = cursor.fetchall()
-            
+
             cursor.close()
             connection.close()
-            return data        
+            return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
-
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching data from MySQL database: {err}")
 
     @app.get("/api/mm/topic_relevant/{topic}")
     async def get_mm_topic_relevant(api_key: str = Security(get_api_key), topic: str = Path(...)):
@@ -809,12 +863,13 @@ async def main():
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query)
             data = cursor.fetchall()
-            
+
             cursor.close()
             connection.close()
-            return data        
+            return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching data from MySQL database: {err}")
     ################ END MULTI-MODAL API / OPENTENSOR CONNECTOR ################
 
     ################ START LEADERBOARD ################
@@ -853,24 +908,26 @@ async def main():
                     "asc": "ASC",
                     "desc": "DESC"
                 }
-                sort_order = valid_sort_orders.get(sort_order.lower(), sort_order)
-            
+                sort_order = valid_sort_orders.get(
+                    sort_order.lower(), sort_order)
+
             query += f" ORDER BY {sort_column} {sort_order}"
 
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query, params)
             data = cursor.fetchall()
-            
+
             cursor.close()
             connection.close()
-            return data        
+            return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching data from MySQL database: {err}")
-    
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+
     @app.get("/leaderboard")
     def leaderboard():
         return FileResponse('./validator-api/static/leaderboard.html')
-    
+
     @app.get("/api/leaderboard-dataset-data")
     async def get_leaderboard_dataset_data():
         try:
@@ -879,13 +936,14 @@ async def main():
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query)
             data = cursor.fetchall()
-            
+
             cursor.close()
             connection.close()
-            return data        
+            return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching leaderboard dataset data from MySQL database: {err}")
-        
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching leaderboard dataset data from MySQL database: {err}")
+
     @app.get("/api/leaderboard-miner-data")
     async def get_leaderboard_miner_data(hotkey: Optional[str] = None):
         try:
@@ -894,7 +952,7 @@ async def main():
 
             query = "SELECT * FROM miner_leaderboard_snapshots wHERE 1=1"
 
-             # Filter by hotkey if provided
+            # Filter by hotkey if provided
             if hotkey:
                 query += " AND hotkey = %s"
                 params.append(hotkey)
@@ -904,13 +962,14 @@ async def main():
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query, params)
             data = cursor.fetchall()
-            
+
             cursor.close()
             connection.close()
-            return data        
+            return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching leaderboard miner data from MySQL database: {err}")
-        
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching leaderboard miner data from MySQL database: {err}")
+
     @app.get("/api/leaderboard-focus-data")
     async def get_leaderboard_focus_data():
         try:
@@ -919,12 +978,13 @@ async def main():
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query)
             data = cursor.fetchall()
-            
+
             cursor.close()
             connection.close()
-            return data        
+            return data
         except mysql.connector.Error as err:
-            raise HTTPException(status_code=500, detail=f"Error fetching focus kpi data from MySQL database: {err}")
+            raise HTTPException(
+                status_code=500, detail=f"Error fetching focus kpi data from MySQL database: {err}")
     ################ END LEADERBOARD ################
 
     ################ START DASHBOARD ################
@@ -944,15 +1004,16 @@ async def main():
                 # In case of unforeseen errors, the api will log the error and continue operations.
                 except Exception as err:
                     attempt += 1
-                    print(f"Error during dataset sync (Attempt {attempt}/{max_attempts}):", str(err))
-                    #print_exception(type(err), err, err.__traceback__)
+                    print(
+                        f"Error during dataset sync (Attempt {attempt}/{max_attempts}):", str(err))
+                    # print_exception(type(err), err, err.__traceback__)
 
                     if attempt >= max_attempts:
                         print("Max attempts reached. Skipping this sync cycle.")
                         break
 
             # Sleep in seconds
-            await asyncio.sleep(1800) # 30 minutes
+            await asyncio.sleep(1800)  # 30 minutes
 
     @app.get("/dashboard/get-video-metadata")
     async def get_video_metadata(
@@ -965,7 +1026,7 @@ async def main():
         if os.path.exists(CACHE_FILE):
             with open(CACHE_FILE, "r") as f:
                 descriptions = json.load(f)
-            
+
             # Define a mapping from sort_by parameter to the index in the metadata list
             sort_index_mapping = {
                 "video_id": 0,
@@ -978,12 +1039,12 @@ async def main():
                 "query": 7,
                 "submitted_at": 8
             }
-            
+
             if sort_by and sort_by in sort_index_mapping:
                 index = sort_index_mapping[sort_by]
                 reverse = sort_order == "desc"
                 descriptions.sort(key=lambda x: x[index], reverse=reverse)
-            
+
             # Pagination logic
             total_items = len(descriptions)
             start = (page - 1) * items_per_page
@@ -992,11 +1053,13 @@ async def main():
 
             for video in paginated_descriptions:
                 video[0] = ".." + str(video[0])[:6]
-                video[5] = round(video[5], 4)  # Round description_relevance_score
+                # Round description_relevance_score
+                video[5] = round(video[5], 4)
                 video[6] = round(video[6], 4)  # Round query_relevance_score
                 date_time = datetime.fromtimestamp(video[8])
-                video[8] = date_time.strftime('%Y-%m-%d %H:%M:%S')  # Format submitted_at
-            
+                video[8] = date_time.strftime(
+                    '%Y-%m-%d %H:%M:%S')  # Format submitted_at
+
             return {
                 "total_items": total_items,
                 "page": page,
@@ -1005,7 +1068,7 @@ async def main():
             }
         else:
             return {"error": "Cache file not found"}
-    
+
     @app.get("/dashboard")
     def dashboard():
         print("dashboard()")
@@ -1017,7 +1080,7 @@ async def main():
         config = uvicorn.Config(app=app, host="0.0.0.0", port=8001)
         server = uvicorn.Server(config)
         await server.serve()
-    
+
     server_task = asyncio.create_task(run_server())
     try:
         # Wait for the server to start
