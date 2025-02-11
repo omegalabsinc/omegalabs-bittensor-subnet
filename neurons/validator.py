@@ -139,9 +139,9 @@ class Validator(BaseValidatorNeuron):
         self.imagebind = None
         
         self.load_focus_rewards_start = dt.datetime.now()
-        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent() # 2.5%
-        self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT # 12.5%
-        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT # 85%
+        self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
+        self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT
+        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT
 
         if not self.config.neuron.decentralization.off:
             if torch.cuda.is_available():
