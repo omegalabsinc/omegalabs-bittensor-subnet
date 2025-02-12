@@ -10,12 +10,14 @@ import asyncio
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal, TaskType
 from validator_api.database.models.user import UserRecord
-from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao, get_max_focus_points_available_today
+# from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao, get_max_focus_points_available_today
+from validator_api.utils.marketplace import get_max_focus_alpha_per_day, get_purchase_max_focus_alpha, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.scoring.scoring_service import VideoScore, FocusVideoEmbeddings
 
 
-MIN_REWARD_TAO = 0.001
+# MIN_REWARD_TAO = 0.001
+MIN_REWARD_ALPHA = .5
 
 
 class CachedValue:
@@ -52,7 +54,8 @@ async def _fetch_available_focus(db: Session):
     items = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,
         FocusVideoRecord.deleted_at.is_(None),
-        FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+        # FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+        FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
     ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
     return [FocusVideoInternal.model_validate(record) for record in items]
 
@@ -89,7 +92,8 @@ async def check_availability(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
             FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,  # is available for purchase
-            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            # FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
         )
         if with_lock:
             video_record = video_record.with_for_update()
@@ -101,8 +105,11 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        if video_record.expected_reward_tao is None:
-            raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
+        # if video_record.expected_reward_tao is None:
+        #     raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
+        
+        if video_record.expected_reward_alpha is None:
+            raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
 
         # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
         video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING
@@ -117,7 +124,8 @@ async def check_availability(
 
         return {
             'status': 'success',
-            'price': video_record.expected_reward_tao
+            # 'price': video_record.expected_reward_tao
+            "price": video_record.expected_reward_alpha
         }
 
     except Exception as e:
@@ -293,18 +301,32 @@ def get_video_owner_coldkey(db: Session, video_id: str) -> str:
 
 _already_purchased_cache = CachedValue()
 
-async def _already_purchased_max_focus_tao() -> bool:
+# async def _already_purchased_max_focus_tao() -> bool:
+#     with get_db_context() as db:
+#         effective_max_focus_tao = await get_purchase_max_focus_tao()
+#         total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+#             FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+#             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+#         ).scalar() or 0
+#         return total_earned_tao >= effective_max_focus_tao
+
+# async def already_purchased_max_focus_tao() -> bool:
+#     return await _already_purchased_cache.get_or_update(
+#         lambda: _already_purchased_max_focus_tao()
+#     )
+
+async def _already_purchased_max_focus_alpha() -> bool:
     with get_db_context() as db:
-        effective_max_focus_tao = await get_purchase_max_focus_tao()
-        total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+        effective_max_focus_alpha = await get_purchase_max_focus_alpha()
+        total_earned_alpha = db.query(func.sum(FocusVideoRecord.earned_reward_alpha)).filter(
             FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
         ).scalar() or 0
-        return total_earned_tao >= effective_max_focus_tao
+        return total_earned_alpha >= effective_max_focus_alpha
 
-async def already_purchased_max_focus_tao() -> bool:
+async def already_purchased_max_focus_alpha() -> bool:
     return await _already_purchased_cache.get_or_update(
-        lambda: _already_purchased_max_focus_tao()
+        lambda: _already_purchased_max_focus_alpha()
     )
 
 class MinerPurchaseStats(BaseModel):
@@ -331,8 +353,10 @@ async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurch
     total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
 
     # Calculate percentage
-    max_focus_tao = await get_max_focus_tao()
-    max_focus_points = get_max_focus_points_available_today(max_focus_tao)
+    # max_focus_tao = await get_max_focus_tao()
+    # max_focus_points = get_max_focus_points_available_today(max_focus_tao)
+    max_focus_alpha = await get_max_focus_alpha_per_day()
+    max_focus_points = get_max_focus_points_available_today(max_focus_alpha)
     focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
 
     return MinerPurchaseStats(

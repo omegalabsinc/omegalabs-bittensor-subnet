@@ -30,10 +30,11 @@ from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_video_owner_coldkey,
-    already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
+    already_purchased_max_focus_alpha, get_miner_purchase_stats, MinerPurchaseStats,
     set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType
 )
-from validator_api.utils.marketplace import get_max_focus_tao, TASK_TYPE_MAP, get_purchase_max_focus_tao
+from validator_api.utils.marketplace import TASK_TYPE_MAP, get_max_focus_alpha_per_day, get_purchase_max_focus_alpha
+# from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
 from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError, LegitimacyCheckError
 from validator_api.communex.client import CommuneClient
@@ -653,7 +654,7 @@ async def main():
         video_id: Annotated[str, Body()],
         miner_hotkey: Annotated[str, Body()],
     ):
-        if await already_purchased_max_focus_tao():
+        if await already_purchased_max_focus_alpha():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
@@ -730,32 +731,67 @@ async def main():
     async def get_rewards_percent():
         return FOCUS_REWARDS_PERCENT
 
-    @app.get('/api/focus/get_max_focus_tao')
-    async def _get_max_focus_tao() -> float:
-        return await get_max_focus_tao()
+    # @app.get('/api/focus/get_max_focus_tao')
+    # async def _get_max_focus_tao() -> float:
+    #     return await get_max_focus_tao()
 
-    @app.get('/api/focus/get_purchase_max_focus_tao')
-    async def _get_purchase_max_focus_tao() -> float:
-        return await get_purchase_max_focus_tao()
+    # @app.get('/api/focus/get_purchase_max_focus_tao')
+    # async def _get_purchase_max_focus_tao() -> float:
+    #     return await get_purchase_max_focus_tao()
 
-    async def cache_max_focus_tao():
+    # async def cache_max_focus_tao():
+    #     while True:
+    #         """Re-caches the value of max_focus_tao."""
+    #         print("cache_max_focus_tao()")
+
+    #         max_attempts = 3
+    #         attempt = 0
+
+    #         while attempt < max_attempts:
+    #             try:
+    #                 max_focus_tao = await get_max_focus_tao()
+    #                 break  # Exit the loop if the function succeeds
+
+    #             # In case of unforeseen errors, the api will log the error and continue operations.
+    #             except Exception as err:
+    #                 attempt += 1
+    #                 print(
+    #                     f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
+
+    #                 if attempt >= max_attempts:
+    #                     print(
+    #                         "Max attempts reached. Skipping this caching this cycle.")
+    #                     break
+
+    #         # Sleep in seconds
+    #         await asyncio.sleep(1800)  # 30 minutes
+
+    @app.get('/api/focus/get_max_focus_alpha')
+    async def _get_max_focus_alpha() -> float:
+        return await get_max_focus_alpha_per_day()
+
+    @app.get('/api/focus/get_purchase_max_focus_alpha')
+    async def _get_purchase_max_focus_alpha() -> float:
+        return await get_purchase_max_focus_alpha()
+    
+    async def cache_max_focus_alpha():
         while True:
             """Re-caches the value of max_focus_tao."""
-            print("cache_max_focus_tao()")
+            print("cache_max_focus_alpha()")
 
             max_attempts = 3
             attempt = 0
 
             while attempt < max_attempts:
                 try:
-                    max_focus_tao = await get_max_focus_tao()
+                    max_focus_alpha = await get_max_focus_alpha_per_day()
                     break  # Exit the loop if the function succeeds
 
                 # In case of unforeseen errors, the api will log the error and continue operations.
                 except Exception as err:
                     attempt += 1
                     print(
-                        f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
+                        f"Error during recaching of max_focus_alpha (Attempt {attempt}/{max_attempts}):", str(err))
 
                     if attempt >= max_attempts:
                         print(
@@ -764,6 +800,8 @@ async def main():
 
             # Sleep in seconds
             await asyncio.sleep(1800)  # 30 minutes
+                    
+            
     ################ END OMEGA FOCUS ENDPOINTS ################
 
     """ TO BE DEPRECATED """
@@ -1087,7 +1125,7 @@ async def main():
         tasks_list = [
             server_task,
             # resync_metagraph(),
-            cache_max_focus_tao(),
+            cache_max_focus_alpha(),
         ]
         if IS_PROD:
             tasks_list.append(resync_metagraph())
