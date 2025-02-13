@@ -41,12 +41,13 @@ from validator_api.communex.client import CommuneClient
 from validator_api.communex._common import get_node_url
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
 from validator_api.imagebind_loader import ImageBindLoader
+import aiohttp
 from validator_api.config import (
     NETWORK, NETUID,
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
     TOPICS_LIST, PROXY_LIST, IS_PROD,
-    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS,
+    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS, FOCUS_API_URL,
     SENTRY_DSN, IMPORT_SCORE,
     FIXED_ALPHA_TAO_ESTIMATE,
 )
@@ -695,11 +696,22 @@ async def main():
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
         db: Session = Depends(get_db),
+        background_tasks: BackgroundTasks = BackgroundTasks(),
     ):
+        async def run_stake(video_id):
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    f"{FOCUS_API_URL}/api/auth/stake",
+                    json={"video_id": video_id},
+                    headers={"FOCUS_API_KEY": FOCUS_API_KEYS[0]}
+                ) as response:
+                    return await response.json()
+
         video_owner_coldkey = get_video_owner_coldkey(
             db, video_id)  # run with_lock True
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:
+            background_tasks.add_task(run_stake, video_id)
             return {
                 'status': 'success',
                 'message': 'Video purchase verification was successful'

@@ -36,6 +36,7 @@ def parse_proxies(proxy_list: List[str]) -> List[str]:
 
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
+STAKE_HOTKEY = os.environ["STAKE_HOTKEY"]
 
 ENABLE_COMMUNE = True if os.environ["ENABLE_COMMUNE"] == "True" else False
 print("Running with ENABLE_COMMUNE:", ENABLE_COMMUNE)
@@ -83,6 +84,7 @@ TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10)
 
 FOCUS_REWARDS_PERCENT = float(os.getenv('FOCUS_REWARDS_PERCENT', constants.FOCUS_REWARDS_PERCENT))
 FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
+FOCUS_API_URL = os.environ["FOCUS_API_URL"]
 GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
