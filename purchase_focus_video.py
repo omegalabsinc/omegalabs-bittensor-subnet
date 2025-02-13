@@ -22,16 +22,16 @@ Using the OMEGA Focus Video Purchase System:
 
    Option 1: View Focus Videos
    - Displays a list of available focus videos with details like Video ID, Score, Cost, and Expected Reward.
-   - The displayed cost is the amount of TAO tokens required to purchase the video.
-   - The expected reward is the amount of TAO tokens you'll earn from SN24 emissions for purchasing the video.
+   - The displayed cost is the amount of ΩTAO/Alpha tokens required to purchase the video.
+   - The expected reward is the amount of ΩTAO/Alpha tokens you'll earn from SN24 emissions for purchasing the video.
    - Select a number from the list next to the video you want to purchase.
 
    Option 2: Purchase Focus Video
    - Allows you to purchase a video by entering its ID.
    - You'll need to provide your wallet information (name, hotkey, path).
-   - The script will initiate a transfer of TAO tokens to the OMEGA Focus App user who created the video. This secures the purchase of the video.
+   - The script will initiate a transfer of ΩTAO/Alpha tokens to the OMEGA Focus App user who created the video. This secures the purchase of the video.
    - After the transfer is complete, the script will attempt to verify the purchase. 
-   - Once successful, you're all set! SN24 validators will automatically detect your purchase and reward your expected TAO emissions.
+   - Once successful, you're all set! SN24 validators will automatically detect your purchase and reward your expected ΩTAO/Alpha emissions.
 
    Option 3: Verify Purchase
    - This option is used when there are issues with the purchase verification during the purchase process. 
@@ -47,8 +47,8 @@ Using the OMEGA Focus Video Purchase System:
 5. Important Notes:
    - The script can be ran using Bittensor mainnet or testnet based on the SUBTENSOR_NETWORK variable. Set it to "test" for testnet. Set to None for mainnet.
    - Purchases are saved locally in '~/.omega/focus_videos.json'.
-   - Always ensure you have sufficient TAO tokens in your wallet before making a purchase.
-   - Once a purchase has been verified successful, SN24 validators will automatically detect your purchase and reward your expected TAO emissions.
+   - Always ensure you have sufficient ΩTAO/Alpha tokens in your wallet before making a purchase.
+   - Once a purchase has been verified successful, SN24 validators will automatically detect your purchase and reward your expected ΩTAO/Alpha emissions.
 
 6. Wallet Information:
    - When purchasing, you'll need to provide your Bittensor wallet details.
@@ -127,8 +127,8 @@ def display_videos(videos_data):
             idx,
             video['video_id'],
             f"{video['video_score']:.3f}",
-            f"{video['expected_reward_tao']:.5f}",
-            f"{float(video['expected_reward_tao']) / 0.9:.5f}",
+            # f"{video['expected_reward_tao']:.5f}",
+            # f"{float(video['expected_reward_tao']) / 0.9:.5f}",
             #formatted_date
         ])
     

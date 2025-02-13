@@ -13,43 +13,43 @@ tao_usd_cache = {
 
 CACHE_DURATION = 30 * 60  # 30 minutes in seconds
 
-async def get_tao_usd_rate() -> float:
-    global tao_usd_cache
-    current_time = time.time()
+# async def get_tao_usd_rate() -> float:
+#     global tao_usd_cache
+#     current_time = time.time()
 
-    # Check if cached data is still valid
-    if tao_usd_cache['rate'] is not None and current_time - tao_usd_cache['timestamp'] < CACHE_DURATION:
-        return tao_usd_cache['rate']
+#     # Check if cached data is still valid
+#     if tao_usd_cache['rate'] is not None and current_time - tao_usd_cache['timestamp'] < CACHE_DURATION:
+#         return tao_usd_cache['rate']
 
-    try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get('https://taostats.io/data.json') as response:
-                if response.status == 200:
-                    data = await response.json()
-                    rate = float(data[0]['price'])
+#     try:
+#         async with aiohttp.ClientSession() as session:
+#             async with session.get('https://taostats.io/data.json') as response:
+#                 if response.status == 200:
+#                     data = await response.json()
+#                     rate = float(data[0]['price'])
 
-                    # Update cache
-                    tao_usd_cache['rate'] = rate
-                    tao_usd_cache['timestamp'] = current_time
+#                     # Update cache
+#                     tao_usd_cache['rate'] = rate
+#                     tao_usd_cache['timestamp'] = current_time
 
-                    return rate
-                else:
-                    print(f"Failed to fetch TAO/USD rate. Status code: {response.status}")
-                    return tao_usd_cache['rate']
-    except Exception as e:
-        print(f"Error fetching TAO/USD rate: {str(e)}")
-        return tao_usd_cache['rate']
+#                     return rate
+#                 else:
+#                     print(f"Failed to fetch TAO/USD rate. Status code: {response.status}")
+#                     return tao_usd_cache['rate']
+#     except Exception as e:
+#         print(f"Error fetching TAO/USD rate: {str(e)}")
+#         return tao_usd_cache['rate']
 
-async def check_wallet_tao_balance(wallet_key: str, subtensor_network: str) -> float:
-    def _internal_sync() -> float:
-        subtensor = bt.subtensor(network=subtensor_network)
-        balance = subtensor.get_balance(wallet_key).tao
-        return balance
+# async def check_wallet_tao_balance(wallet_key: str, subtensor_network: str) -> float:
+#     def _internal_sync() -> float:
+#         subtensor = bt.subtensor(network=subtensor_network)
+#         balance = subtensor.get_balance(wallet_key).tao
+#         return balance
 
-    async def _internal_async() -> float:
-        return await run_async(_internal_sync)
+#     async def _internal_async() -> float:
+#         return await run_async(_internal_sync)
 
-    return await run_with_retries(_internal_async)
+#     return await run_with_retries(_internal_async)
 
 
 API_URL = "https://api.subquery.network/sq/TaoStats/bittensor-indexer"

@@ -90,6 +90,8 @@ class FocusVideoBase(BaseModel):
     rejection_reason: Optional[str]
     expected_reward_tao: Optional[float]
     earned_reward_tao: Optional[float]
+    expected_reward_alpha: Optional[float]
+    earned_reward_alpha: Optional[float]
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime]

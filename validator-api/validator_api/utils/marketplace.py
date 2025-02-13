@@ -151,7 +151,7 @@ async def get_max_focus_alpha_per_day() -> float:
         return await run_async(_internal_sync)
 
     max_focus_alpha_per_day = await run_with_retries(_internal_async)
-    print(f"max_focus_alpha_per_day: {max_focus_alpha_per_day}")
+    # print(f"max_focus_alpha_per_day: {max_focus_alpha_per_day}")
     # Update cache
     max_focus_alpha_per_day_cache['value'] = max_focus_alpha_per_day
     max_focus_alpha_per_day_cache['timestamp'] = current_time
