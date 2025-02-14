@@ -204,17 +204,15 @@ class Validator(BaseValidatorNeuron):
     def load_focus_rewards_percent(self):
         # get focus rewards percent from API endpoint or fallback to default
         try:
-            response = requests.get(f"{self.api_root}/api/focus/get_rewards_percent")
+            focus_rewards_percent_endpoint = f"{self.api_root}/api/focus/get_rewards_percent"
+            response = requests.get(focus_rewards_percent_endpoint)
             response.raise_for_status()
             rewards_percent = float(response.text)
-            bt.logging.info(
-                f"Loaded focus rewards percent of {rewards_percent} from {self.focus_rewards_percent_endpoint}")
+            bt.logging.info(f"Loaded focus rewards percent of {rewards_percent} from {focus_rewards_percent_endpoint}")
         except Exception as e:
-            bt.logging.error(
-                f"Error loading topics from URL {self.config.topics_url}: {e}")
+            bt.logging.error(f"Error loading rewards percent from {focus_rewards_percent_endpoint}: {e}")
             traceback.print_exc()
-            bt.logging.info(
-                f"Using fallback focus rewards percent of {FOCUS_REWARDS_PERCENT}")
+            bt.logging.info(f"Using fallback focus rewards percent of {FOCUS_REWARDS_PERCENT}")
             rewards_percent = FOCUS_REWARDS_PERCENT
         return rewards_percent
 
