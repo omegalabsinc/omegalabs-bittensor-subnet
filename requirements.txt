@@ -26,3 +26,4 @@ tabulate
 soundfile==0.12.1
 pyannote-audio==3.1.1
 librosa==0.10.2.post1
+substrate-interface==1.7.11
