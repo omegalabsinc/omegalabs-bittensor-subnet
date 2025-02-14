@@ -616,7 +616,6 @@ async def main():
             sub = bittensor.subtensor(network=NETWORK)
             subnet = sub.subnet(NETUID)
             balance = subnet.alpha_to_tao(1)
-            # print(f"one alpha is worth {balance.tao} tao")
             return balance.tao
         except Exception as e:
             print(e)

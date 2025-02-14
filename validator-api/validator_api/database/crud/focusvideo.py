@@ -105,8 +105,8 @@ async def check_availability(
                 'message': f'video {video_id} not found or not available for purchase'
             }
 
-        # if video_record.expected_reward_tao is None:
-        #     raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
+        if video_record.expected_reward_tao is None:
+            raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
         
         if video_record.expected_reward_alpha is None:
             raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
@@ -124,8 +124,8 @@ async def check_availability(
 
         return {
             'status': 'success',
-            # 'price': video_record.expected_reward_tao
-            "price": video_record.expected_reward_alpha
+            'price': video_record.expected_reward_tao,
+            'price_alpha': video_record.expected_reward_alpha,
         }
 
     except Exception as e:
