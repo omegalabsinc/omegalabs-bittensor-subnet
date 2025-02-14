@@ -16,6 +16,10 @@
 # OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
 # DEALINGS IN THE SOFTWARE.
 
+import os
+os.environ["USE_TORCH"] = "1"
+
+
 from omega.base.validator import BaseValidatorNeuron
 from omega.audio_scoring import AudioScore
 from omega.diarization_metric import calculate_diarization_metrics
