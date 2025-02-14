@@ -248,7 +248,7 @@ class Validator(BaseValidatorNeuron):
         # The dendrite client queries the network.
         query = random.choice(self.all_topics) + " podcast"
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        audio_input_synapse = Audios(query=query, num_audios=self.num_audios)
+        audio_input_synapse = Audios(query=query, num_audios=NUM_AUDIOS)
         bt.logging.info(f"audio_input_synapse: {audio_input_synapse}")
         # exit(0)
         axons = [self.metagraph.axons[uid] for uid in miner_uids]
