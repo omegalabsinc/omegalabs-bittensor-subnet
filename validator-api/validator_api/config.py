@@ -94,7 +94,7 @@ AWS_S3_BUCKET_NAME = os.environ["AWS_S3_BUCKET_NAME"]
 
 MAX_FOCUS_POINTS_PER_HOUR = int(os.getenv("MAX_FOCUS_POINTS_PER_HOUR", 80))  # $80 / hour
 FIXED_TAO_USD_ESTIMATE = float(os.getenv("FIXED_TAO_USD_ESTIMATE", 300.0))
-FIXED_ALPHA_TAO_ESTIMATE = float(os.getenv("FIXED_ALPHA_TAO_ESTIMATE", 0.001))  # 1 alpha to tao, changes over time, you can find this with `btcli subnet list`
+FIXED_ALPHA_TAO_ESTIMATE = float(os.getenv("FIXED_ALPHA_TAO_ESTIMATE", 0.0208))  # 1 alpha to tao, changes over time, you can find this with `btcli subnet list`
 FIXED_TAO_ALPHA_ESTIMATE = 1 / FIXED_ALPHA_TAO_ESTIMATE
 FIXED_ALPHA_USD_ESTIMATE = FIXED_ALPHA_TAO_ESTIMATE * FIXED_TAO_USD_ESTIMATE
 BOOSTED_TASKS_PERCENTAGE = float(os.getenv("BOOSTED_TASKS_PERCENTAGE", 0.7))
