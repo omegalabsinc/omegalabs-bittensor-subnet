@@ -698,7 +698,7 @@ async def main():
         async def run_stake(video_id):
             async with aiohttp.ClientSession() as session:
                 async with session.post(
-                    f"{FOCUS_API_URL}/api/auth/stake",
+                    f"{FOCUS_API_URL}/auth/stake",
                     json={"video_id": video_id},
                     headers={"FOCUS_API_KEY": FOCUS_API_KEYS[0]}
                 ) as response:
