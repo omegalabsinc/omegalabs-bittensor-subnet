@@ -30,8 +30,9 @@ from sqlalchemy.orm import Session
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     get_all_available_focus, check_availability, get_video_owner_coldkey,
-    already_purchased_max_focus_alpha, get_miner_purchase_stats, MinerPurchaseStats,
-    set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType
+    already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
+    set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType,
+    alpha_to_tao_rate,
 )
 from validator_api.utils.marketplace import TASK_TYPE_MAP, get_max_focus_alpha_per_day, get_purchase_max_focus_alpha
 # from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
@@ -611,12 +612,9 @@ async def main():
     @app.get("/api/focus/get_alpha_to_tao_rate")
     async def get_alpha_to_tao_rate(
         request: Request,
-    ):
+    ) -> float:
         try:
-            sub = bittensor.subtensor(network=NETWORK)
-            subnet = sub.subnet(NETUID)
-            balance = subnet.alpha_to_tao(1)
-            return balance.tao
+            return await alpha_to_tao_rate()
         except Exception as e:
             print(e)
             return FIXED_ALPHA_TAO_ESTIMATE
@@ -654,7 +652,7 @@ async def main():
         video_id: Annotated[str, Body()],
         miner_hotkey: Annotated[str, Body()],
     ):
-        if await already_purchased_max_focus_alpha():
+        if await already_purchased_max_focus_tao():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
