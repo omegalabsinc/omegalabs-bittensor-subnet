@@ -36,6 +36,7 @@ def parse_proxies(proxy_list: List[str]) -> List[str]:
 
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
+STAKE_HOTKEY = os.environ["STAKE_HOTKEY"]
 
 ENABLE_COMMUNE = True if os.environ["ENABLE_COMMUNE"] == "True" else False
 print("Running with ENABLE_COMMUNE:", ENABLE_COMMUNE)
@@ -83,6 +84,7 @@ TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10)
 
 FOCUS_REWARDS_PERCENT = float(os.getenv('FOCUS_REWARDS_PERCENT', constants.FOCUS_REWARDS_PERCENT))
 FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
+FOCUS_API_URL = os.environ["FOCUS_API_URL"]
 GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
 AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
@@ -92,6 +94,9 @@ AWS_S3_BUCKET_NAME = os.environ["AWS_S3_BUCKET_NAME"]
 
 MAX_FOCUS_POINTS_PER_HOUR = int(os.getenv("MAX_FOCUS_POINTS_PER_HOUR", 80))  # $80 / hour
 FIXED_TAO_USD_ESTIMATE = float(os.getenv("FIXED_TAO_USD_ESTIMATE", 300.0))
+FIXED_ALPHA_TAO_ESTIMATE = float(os.getenv("FIXED_ALPHA_TAO_ESTIMATE", 0.001))  # 1 alpha to tao, changes over time, you can find this with `btcli subnet list`
+FIXED_TAO_ALPHA_ESTIMATE = 1 / FIXED_ALPHA_TAO_ESTIMATE
+FIXED_ALPHA_USD_ESTIMATE = FIXED_ALPHA_TAO_ESTIMATE * FIXED_TAO_USD_ESTIMATE
 BOOSTED_TASKS_PERCENTAGE = float(os.getenv("BOOSTED_TASKS_PERCENTAGE", 0.7))
 
 GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")

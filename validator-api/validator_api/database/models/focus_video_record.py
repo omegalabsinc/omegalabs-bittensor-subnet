@@ -69,7 +69,9 @@ class FocusVideoRecord(Base):
     embeddings = Column(JSONB, nullable=True)
     rejection_reason = Column(String(1000), nullable=True)
     expected_reward_tao = Column(Float, nullable=True)
+    expected_reward_alpha = Column(Float, nullable=True)
     earned_reward_tao = Column(Float, nullable=True)
+    earned_reward_alpha = Column(Float, nullable=True)
     miner_hotkey = Column(String(DB_STRING_LENGTH), nullable=True)
     extrinsic_id = Column(String(DB_STRING_LENGTH), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
@@ -88,6 +90,8 @@ class FocusVideoBase(BaseModel):
     rejection_reason: Optional[str]
     expected_reward_tao: Optional[float]
     earned_reward_tao: Optional[float]
+    expected_reward_alpha: Optional[float]
+    earned_reward_alpha: Optional[float]
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime]

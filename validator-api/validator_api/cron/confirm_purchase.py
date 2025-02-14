@@ -74,7 +74,7 @@ async def confirm_transfer(
         print(f"Video <{video_id}> not found")
         return False
     
-    amount = video.expected_reward_tao
+    tao_amount = video.expected_reward_tao
 
     current_time = datetime.utcnow()
     print(f"[{current_time}] | Scanning block hash <{block_hash}> for address <{video_owner_coldkey}> payment transaction from  ...")    
@@ -83,14 +83,16 @@ async def confirm_transfer(
             miner_coldkey = subtensor.get_hotkey_owner(miner_hotkey)
             print(f"Miner coldkey: {miner_coldkey}")
             
-            extrinsic_id = await check_payment(db, video_owner_coldkey, miner_coldkey, amount, block_hash)
+            extrinsic_id = await check_payment(db, video_owner_coldkey, miner_coldkey, tao_amount, block_hash)
             if extrinsic_id is not None:
                 print(f"Miner <{miner_hotkey}> successfully purchased focus recording <{video_id}>!")
                 video.miner_hotkey = miner_hotkey
                 video.processing_state = FocusVideoStateInternal.PURCHASED
                 video.updated_at = datetime.utcnow()
                 video.extrinsic_id = extrinsic_id
-                video.earned_reward_tao = amount
+                video.earned_reward_tao = tao_amount
+                # TODO: this is only theoretical, actually do this properly by setting it when the specific earned tao amount is actually staked via OFB
+                video.earned_reward_alpha = video.expected_reward_alpha
                 db.add(video)
                 db.commit()
                 return True
