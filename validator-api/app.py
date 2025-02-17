@@ -1,5 +1,6 @@
 import mysql.connector
 from validator_api.limiter import limiter
+from validator_api.check_blocking import detect_blocking
 from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 import asyncio
 import os
@@ -354,6 +355,11 @@ async def main():
                 print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
+
+    @app.middleware("http")
+    async def detect_blocking_middleware(request: Request, call_next):
+        async with detect_blocking(request.url.path):
+            return await call_next(request)
 
     @app.get("/sentry-debug")
     async def trigger_error():
@@ -740,7 +746,7 @@ async def main():
         task_type_map: Dict[TaskType, float]
 
     @app.get('/api/focus/get_task_percentage_map')
-    def get_task_percentage_map():
+    async def get_task_percentage_map():
         return TaskTypeMap(task_type_map=TASK_TYPE_MAP)
 
     @app.get('/api/focus/get_rewards_percent')
@@ -873,7 +879,7 @@ async def main():
         return TOPICS_LIST
 
     @app.get("/")
-    def healthcheck():
+    async def healthcheck():
         return datetime.utcnow()
 
     ################ START MULTI-MODAL API / OPENTENSOR CONNECTOR ################
@@ -979,7 +985,7 @@ async def main():
                 status_code=500, detail=f"Error fetching data from MySQL database: {err}")
 
     @app.get("/leaderboard")
-    def leaderboard():
+    async def leaderboard():
         return FileResponse('./validator-api/static/leaderboard.html')
 
     @app.get("/api/leaderboard-dataset-data")
@@ -1124,7 +1130,7 @@ async def main():
             return {"error": "Cache file not found"}
 
     @app.get("/dashboard")
-    def dashboard():
+    async def dashboard():
         print("dashboard()")
         return FileResponse('validator-api/static/dashboard.html')
     ################ END DASHBOARD ################
