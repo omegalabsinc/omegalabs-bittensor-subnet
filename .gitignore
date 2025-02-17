@@ -169,3 +169,4 @@ run_cmd.md
 gcp_service_account.json
 desc_embeddings_recent.json
 .idea/
+api_logs/
