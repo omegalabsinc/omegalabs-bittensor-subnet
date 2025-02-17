@@ -303,7 +303,20 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
 
 
 async def main():
-    app = FastAPI()
+    async def startup_event():
+        print("Startup event fired, API starting.")
+
+    async def shutdown_event():
+        print("Shutdown event fired, attempting dataset upload of current batch.")
+        video_dataset_uploader.submit()
+        audio_dataset_uploader.submit()
+    
+    async def lifespan(app: FastAPI):
+        await startup_event()
+        yield
+        await shutdown_event()
+
+    app = FastAPI(lifespan=lifespan)
     # Mount the static directory to serve static files
     app.mount(
         "/static", StaticFiles(directory="validator-api/static"), name="static")
@@ -341,12 +354,6 @@ async def main():
                 print_exception(type(err), err, err.__traceback__)
 
             await asyncio.sleep(90)
-
-    @app.on_event("shutdown")
-    async def shutdown_event():
-        print("Shutdown event fired, attempting dataset upload of current batch.")
-        video_dataset_uploader.submit()
-        audio_dataset_uploader.submit()
 
     @app.get("/sentry-debug")
     async def trigger_error():
