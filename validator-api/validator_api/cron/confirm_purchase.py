@@ -20,10 +20,8 @@ async def check_payment(db: Session, recipient_address: str, sender_address: str
     try:
         print(f"Checking payment of {amount} from {sender_address} to {recipient_address}")
 
-        sub = bt.subtensor(network=config.NETWORK)
-
         # Get all transfers associated with the recipient address
-        transfers = await get_transaction_from_block_hash(sub, recipient_address, block_hash)
+        transfers = await get_transaction_from_block_hash(recipient_address, block_hash)
 
         # Filter transfers to find the specific payment
         for transfer in transfers:

@@ -15,7 +15,7 @@ miner_coldkey = subtensor.get_hotkey_owner(miner_hotkey)
 breakpoint()
 
 from validator_api.config import NETWORK, NETUID, STAKE_HOTKEY
-from validator_api.utils.wallet import get_transaction_from_block_hash
+# from validator_api.utils.wallet import get_transaction_from_block_hash
 
 from bittensor_cli.src.commands.stake import add as add_stake
 
