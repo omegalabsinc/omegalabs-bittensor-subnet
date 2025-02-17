@@ -42,8 +42,8 @@ async def check_payment(db: Session, recipient_address: str, sender_address: str
         print(f'Error in checking payment: {e}')
         return None
 
-    finally:
-        sub.close()
+    # finally:
+    #     sub.close()
 
 SUBTENSOR_RETRIES = 5
 SUBTENSOR_DELAY_SECS = 2
