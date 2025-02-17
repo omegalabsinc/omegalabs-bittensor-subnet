@@ -4,8 +4,6 @@ import bittensor as bt
 import asyncio
 # from validator_api.utils import run_with_retries, run_async
 from typing import List
-import sys
-sys.path.append("./validator-api")
 from validator_api.config import NETWORK
 
 
