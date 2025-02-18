@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 @asynccontextmanager
 async def detect_blocking(name: str):
+    # this prints a message if an operation/endpoint is blocking for too long
     loop = asyncio.get_running_loop()
     start_time = loop.time()
     last_yield = start_time
