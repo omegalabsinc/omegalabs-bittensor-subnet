@@ -676,7 +676,7 @@ async def main():
             print('availability', availability)
             if availability['status'] == 'success':
                 amount = availability['price']
-                video_owner_coldkey = get_video_owner_coldkey(
+                video_owner_coldkey = await get_video_owner_coldkey(
                     db, video_id)  # run with_lock True
                 background_tasks.add_task(
                     confirm_video_purchased, video_id, True)  # run with_lock True
@@ -717,7 +717,7 @@ async def main():
                 ) as response:
                     return await response.json()
 
-        video_owner_coldkey = get_video_owner_coldkey(
+        video_owner_coldkey = await get_video_owner_coldkey(
             db, video_id)  # run with_lock True
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:

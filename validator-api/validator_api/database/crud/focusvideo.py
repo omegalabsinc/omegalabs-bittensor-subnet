@@ -92,51 +92,54 @@ async def check_availability(
     miner_hotkey: str,
     with_lock: bool = False
 ):
-    try:
-        video_record = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.video_id == video_id,
-            FocusVideoRecord.deleted_at.is_(None),
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,  # is available for purchase
-            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-            # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
-        )
-        if with_lock:
-            video_record = video_record.with_for_update()
-        video_record = video_record.first()
+    def db_operation():
+        try:
+            video_record = db.query(FocusVideoRecord).filter(
+                FocusVideoRecord.video_id == video_id,
+                FocusVideoRecord.deleted_at.is_(None),
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,  # is available for purchase
+                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+                # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+            )
+            if with_lock:
+                video_record = video_record.with_for_update()
+            video_record = video_record.first()
 
-        if video_record is None:
+            if video_record is None:
+                return {
+                    'status': 'error',
+                    'message': f'video {video_id} not found or not available for purchase'
+                }
+
+            if video_record.expected_reward_tao is None:
+                raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
+            
+            # TODO: This is commented out because expected_reward_alpha is not filled in for all videos yet, need to migrate
+            # if video_record.expected_reward_alpha is None:
+            #     raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
+
+            # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
+            video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING
+            video_record.miner_hotkey = miner_hotkey
+            video_record.updated_at = datetime.utcnow()
+
+            # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
+            # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
+
+            db.add(video_record)
+            db.commit()
+
             return {
-                'status': 'error',
-                'message': f'video {video_id} not found or not available for purchase'
+                'status': 'success',
+                'price': video_record.expected_reward_tao,
+                'price_alpha': video_record.expected_reward_alpha,
             }
 
-        if video_record.expected_reward_tao is None:
-            raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
-        
-        # TODO: This is commented out because expected_reward_alpha is not filled in for all videos yet, need to migrate
-        # if video_record.expected_reward_alpha is None:
-        #     raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
+        except Exception as e:
+            print(e)
+            raise HTTPException(500, detail="Internal error")
 
-        # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
-        video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING
-        video_record.miner_hotkey = miner_hotkey
-        video_record.updated_at = datetime.utcnow()
-
-        # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
-        # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
-
-        db.add(video_record)
-        db.commit()
-
-        return {
-            'status': 'success',
-            'price': video_record.expected_reward_tao,
-            'price_alpha': video_record.expected_reward_alpha,
-        }
-
-    except Exception as e:
-        print(e)
-        raise HTTPException(500, detail="Internal error")
+    return await asyncio.to_thread(db_operation)
 
 def get_purchased_list(
     db: Session,
@@ -289,34 +292,41 @@ async def check_video_metadata(
 #     video.task_str = task.focusing_task
 #     return video
 
-def get_video_owner_coldkey(db: Session, video_id: str) -> str:
-    video_record = db.query(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id,
-        FocusVideoRecord.deleted_at.is_(None)
-    )
-    video_record = video_record.first()
+async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
+    def db_operation():
+        video_record = db.query(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.deleted_at.is_(None)
+        ).first()
 
-    if video_record is None:
-        raise HTTPException(404, detail="Focus video not found")
+        if video_record is None:
+            raise HTTPException(404, detail="Focus video not found")
 
-    user_record = db.query(UserRecord).filter(UserRecord.email == video_record.user_email,).first()
-    if user_record is None:
-        raise HTTPException(404, detail="User not found")
+        user_record = db.query(UserRecord).filter(UserRecord.email == video_record.user_email,).first()
+        if user_record is None:
+            raise HTTPException(404, detail="User not found")
 
-    return user_record.coldkey
+        return user_record.coldkey
+
+    return await asyncio.to_thread(db_operation)
 
 _already_purchased_cache = CachedValue()
 
 async def _already_purchased_max_focus_tao() -> bool:
-    with get_db_context() as db:
-        effective_max_focus_alpha = await get_purchase_max_focus_alpha()
-        effective_max_focus_tao = effective_max_focus_alpha * await alpha_to_tao_rate()
-        total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).scalar() or 0
-        print(total_earned_tao, effective_max_focus_tao)
-        return total_earned_tao >= effective_max_focus_tao
+    def db_operation():
+        with get_db_context() as db:
+            return db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+                FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+            ).scalar() or 0
+
+    # Run database query in thread pool
+    total_earned_tao = await asyncio.to_thread(db_operation)
+    effective_max_focus_alpha = await get_purchase_max_focus_alpha()
+    effective_max_focus_tao = effective_max_focus_alpha * await alpha_to_tao_rate()
+    
+    print(total_earned_tao, effective_max_focus_tao)
+    return total_earned_tao >= effective_max_focus_tao
 
 async def already_purchased_max_focus_tao() -> bool:
     return await _already_purchased_cache.get_or_update(
