@@ -312,13 +312,12 @@ async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
 
 _already_purchased_cache = CachedValue()
 
-async def _already_purchased_max_focus_tao() -> bool:
+async def _already_purchased_max_focus_tao(db: Session) -> bool:
     def db_operation():
-        with get_db_context() as db:
-            return db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-                FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-            ).scalar() or 0
+        return db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+        ).scalar() or 0
 
     # Run database query in thread pool
     total_earned_tao = await asyncio.to_thread(db_operation)
@@ -328,9 +327,9 @@ async def _already_purchased_max_focus_tao() -> bool:
     print(total_earned_tao, effective_max_focus_tao)
     return total_earned_tao >= effective_max_focus_tao
 
-async def already_purchased_max_focus_tao() -> bool:
+async def already_purchased_max_focus_tao(db: Session) -> bool:
     return await _already_purchased_cache.get_or_update(
-        lambda: _already_purchased_max_focus_tao()
+        lambda: _already_purchased_max_focus_tao(db)
     )
 
 _alpha_to_tao_cache = CachedValue()

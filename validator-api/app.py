@@ -664,29 +664,29 @@ async def main():
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body()],
         miner_hotkey: Annotated[str, Body()],
+        db: Session = Depends(get_db),
     ):
-        if await already_purchased_max_focus_tao():
+        if await already_purchased_max_focus_tao(db):
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
 
-        with get_db_context() as db:
-            # run with_lock True
-            availability = await check_availability(db, video_id, miner_hotkey, True)
-            print('availability', availability)
-            if availability['status'] == 'success':
-                amount = availability['price']
-                video_owner_coldkey = await get_video_owner_coldkey(
-                    db, video_id)  # run with_lock True
-                background_tasks.add_task(
-                    confirm_video_purchased, video_id, True)  # run with_lock True
-                return {
-                    'status': 'success',
-                    'address': video_owner_coldkey,
-                    'amount': amount,
-                }
-            else:
-                return availability
+        # run with_lock True
+        availability = await check_availability(db, video_id, miner_hotkey, True)
+        print('availability', availability)
+        if availability['status'] == 'success':
+            amount = availability['price']
+            video_owner_coldkey = await get_video_owner_coldkey(
+                db, video_id)  # run with_lock True
+            background_tasks.add_task(
+                confirm_video_purchased, video_id, True)  # run with_lock True
+            return {
+                'status': 'success',
+                'address': video_owner_coldkey,
+                'amount': amount,
+            }
+        else:
+            return availability
 
     @app.post("/api/focus/revert-pending-purchase")
     @limiter.limit("100/minute")
