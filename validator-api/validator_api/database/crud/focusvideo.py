@@ -52,14 +52,17 @@ class CachedValue:
             raise HTTPException(500, detail="Internal error")
 
 async def _fetch_available_focus(db: Session):
-    # Show oldest videos first so they get rewarded fastest
-    items = db.query(FocusVideoRecord).filter(
-        FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,
-        FocusVideoRecord.deleted_at.is_(None),
-        FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-        # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
-    ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
-    return [FocusVideoInternal.model_validate(record) for record in items]
+    def db_operation():
+        # Show oldest videos first so they get rewarded fastest
+        items = db.query(FocusVideoRecord).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,
+            FocusVideoRecord.deleted_at.is_(None),
+            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
+        return [FocusVideoInternal.model_validate(record) for record in items]
+
+    return await asyncio.to_thread(db_operation)
 
 _available_focus_cache = CachedValue()
 
