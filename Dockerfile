@@ -1,4 +1,4 @@
-FROM nvcr.io/nvidia/cuda:12.1.0-devel-ubuntu20.04
+FROM --platform=linux/amd64 nvcr.io/nvidia/cuda:12.1.0-devel-ubuntu20.04
 
 ENV DEBIAN_FRONTEND=noninteractive
 
