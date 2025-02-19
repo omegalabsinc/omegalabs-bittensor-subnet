@@ -10,13 +10,15 @@ DB_NAME = config.FOCUS_DB_NAME
 DB_USER = config.FOCUS_DB_USER
 DB_PASSWORD = config.FOCUS_DB_PASSWORD
 DB_PORT = config.FOCUS_DB_PORT
+DB_POOL_SIZE = config.FOCUS_DB_POOL_SIZE
+DB_MAX_OVERFLOW = config.FOCUS_DB_MAX_OVERFLOW
 
 DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
 engine = create_engine(
     DATABASE_URL,
-    pool_size=20,  # bumped up from default of 5
-    max_overflow=25,  # bumped up from default of 10
+    pool_size=DB_POOL_SIZE,
+    max_overflow=DB_MAX_OVERFLOW,
     pool_timeout=15,  # bumped down from default of 30
     pool_pre_ping=True,  # Good practice for most scenarios
     pool_recycle=3600,  # Recycle connections after 1 hour

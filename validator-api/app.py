@@ -45,7 +45,7 @@ from omega.protocol import Videos, VideoMetadata, AudioMetadata
 from validator_api.imagebind_loader import ImageBindLoader
 import aiohttp
 from validator_api.config import (
-    NETWORK, NETUID,
+    NETWORK, NETUID, PORT,
     ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
     API_KEY_NAME, API_KEYS, DB_CONFIG,
     TOPICS_LIST, PROXY_LIST, IS_PROD,
@@ -1137,7 +1137,7 @@ async def main():
 
     async def run_server():
         print("run_server()")
-        config = uvicorn.Config(app=app, host="0.0.0.0", port=8001)
+        config = uvicorn.Config(app=app, host="0.0.0.0", port=PORT)
         server = uvicorn.Server(config)
         await server.serve()
 

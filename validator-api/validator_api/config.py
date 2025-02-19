@@ -34,6 +34,7 @@ def parse_proxies(proxy_list: List[str]) -> List[str]:
         transformed_proxies.append(f"http://{proxy_user}:{proxy_pass}@{proxy_ip}:{proxy_port}")
     return transformed_proxies
 
+PORT = int(os.environ.get("PORT", 8002))
 NETWORK = os.environ["NETWORK"]
 NETUID = int(os.environ["NETUID"])
 STAKE_HOTKEY = os.environ["STAKE_HOTKEY"]
@@ -72,7 +73,9 @@ FOCUS_DB_HOST = os.environ["FOCUS_DB_HOST"]
 FOCUS_DB_NAME = os.environ["FOCUS_DB_NAME"]
 FOCUS_DB_USER = os.environ["FOCUS_DB_USER"]
 FOCUS_DB_PASSWORD = os.environ["FOCUS_DB_PASSWORD"]
-FOCUS_DB_PORT = os.getenv("FOCUS_DB_PORT", 5432)
+FOCUS_DB_PORT = int(os.getenv("FOCUS_DB_PORT", 5432))
+FOCUS_DB_POOL_SIZE = int(os.getenv("FOCUS_DB_POOL_SIZE", 10))
+FOCUS_DB_MAX_OVERFLOW = int(os.getenv("FOCUS_DB_MAX_OVERFLOW", 15))
 DB_STRING_LENGTH = 200
 DB_STRING_LENGTH_LONG = 500
 ENCRYPTION_KEY = os.environ["ENCRYPTION_KEY"]

@@ -29,6 +29,10 @@ RUN python -m uv pip install -r requirements_api.txt --prerelease=allow --no-cac
 COPY . .
 RUN python -m pip install -e . --no-cache-dir
 
+# Runtime env variables
+ENV PORT=8002
+
+EXPOSE 8002
 ENTRYPOINT bash
-# Run the miner launch command like this inside the container:
-# python -m miner.miner --netuid 1 --wallet.name miner --wallet.hotkey default --logging.debug
+
+CMD ["python", "validator-api/app.py"]
