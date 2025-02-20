@@ -653,7 +653,7 @@ async def main():
         return {"success": True}
 
     @app.get("/api/focus/get_list")
-    @limiter.limit("1000/minute")
+    @limiter.limit("2/minute")
     async def _get_available_focus_video_list(
         request: Request,
         db: Session = Depends(get_db)
@@ -666,7 +666,7 @@ async def main():
     # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
     # retrieve the coldkey and use that to confirm the transfer
     @app.post("/api/focus/purchase")
-    @limiter.limit("20/minute")
+    @limiter.limit("2/minute")
     async def purchase_video(
         request: Request,
         background_tasks: BackgroundTasks,
@@ -697,7 +697,7 @@ async def main():
             return availability
 
     @app.post("/api/focus/revert-pending-purchase")
-    @limiter.limit("100/minute")
+    @limiter.limit("5/minute")
     async def revert_pending_purchase(
         request: Request,
         video: VideoPurchaseRevert,
@@ -707,7 +707,7 @@ async def main():
         return mark_video_submitted(db, video.video_id, True)
 
     @app.post("/api/focus/verify-purchase")
-    @limiter.limit("100/minute")
+    @limiter.limit("5/minute")
     async def verify_purchase(
         request: Request,
         miner_hotkey: Annotated[str, Body()],
