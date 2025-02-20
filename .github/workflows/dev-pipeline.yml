@@ -8,7 +8,7 @@ on:
   workflow_dispatch:
 
 env:
-  REGION: us-central1-a
+  REGION: us-central1
   REPO_NAME: bittensor
   IMAGE_NAME: sn24-vali-api
   DEPLOYMENT_NAME: dev-sn24-vali-api
@@ -57,7 +57,7 @@ jobs:
       uses: google-github-actions/get-gke-credentials@v1
       with:
         cluster_name: ${{ env.DEV_CLUSTER }}
-        location: ${{ env.REGION }}
+        location: ${{ env.REGION }}-a
 
     - name: Deploy to Dev
       run: |
