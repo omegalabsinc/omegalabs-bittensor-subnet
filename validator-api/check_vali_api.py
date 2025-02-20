@@ -5,7 +5,7 @@ import os
 import time
 import matplotlib.pyplot as plt
 
-API_URL = "https://validator.api.omega-labs.ai"
+# API_URL = "https://validator.api.omega-labs.ai"
 # API_URL = "http://localhost:8001"
 API_URL = "https://sn24-api.omegatron.ai"
 NUM_REQUESTS = 1000
