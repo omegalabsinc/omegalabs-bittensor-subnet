@@ -42,7 +42,7 @@ jobs:
 
     - name: Create .env file
       run: |
-        echo "${{ secrets.ENV_VARIABLES }}" > .env
+        echo '${{ secrets.ENV_VARIABLES }}' > .env
 
     - name: Build Docker image
       run: |
