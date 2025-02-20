@@ -34,6 +34,9 @@ def parse_proxies(proxy_list: List[str]) -> List[str]:
         transformed_proxies.append(f"http://{proxy_user}:{proxy_pass}@{proxy_ip}:{proxy_port}")
     return transformed_proxies
 
+def robust_json_loads(json_str: str) -> List[str]:
+    return json.loads(json_str.replace("\\\"", '"'))
+
 PORT = int(os.environ.get("PORT", 8002))
 NETWORK = os.environ["NETWORK"]
 print(f"Running with NETWORK={NETWORK}")
@@ -46,7 +49,7 @@ COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
 COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
 
 API_KEY_NAME = "OMEGA_MM_API_KEY"
-API_KEYS = json.loads(os.environ["API_KEYS"])
+API_KEYS = robust_json_loads(os.environ["API_KEYS"])
 
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 PINECONE_INDEX = os.environ["PINECONE_INDEX"]
@@ -55,8 +58,8 @@ HF_TOKEN = os.environ["HF_TOKEN"]
 HF_REPO = os.environ["HF_REPO"]
 HF_AUDIO_REPO = os.environ["HF_AUDIO_REPO"]
 REPO_TYPE = "dataset"
-TOPICS_LIST = json.loads(os.environ["TOPICS_LIST"])
-PROXY_LIST = parse_proxies(json.loads(os.environ["PROXY_LIST"]))
+TOPICS_LIST = robust_json_loads(os.environ["TOPICS_LIST"])
+PROXY_LIST = parse_proxies(robust_json_loads(os.environ["PROXY_LIST"]))
 IS_PROD = os.environ.get("IS_PROD", "false").lower() == "true"
 CHECK_PROBABILITY = float(os.environ.get("CHECK_PROBABILITY", 0.1))
 UPLOAD_BATCH_SIZE = int(os.environ.get("UPLOAD_BATCH_SIZE", 1024))
@@ -87,7 +90,7 @@ assert NETWORK in [BT_TESTNET, BT_MAINNET], "SUBTENSOR_NETWORK must be either te
 TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10))
 
 FOCUS_REWARDS_PERCENT = float(os.getenv('FOCUS_REWARDS_PERCENT', constants.FOCUS_REWARDS_PERCENT))
-FOCUS_API_KEYS = json.loads(os.environ["FOCUS_API_KEYS"])
+FOCUS_API_KEYS = robust_json_loads(os.environ["FOCUS_API_KEYS"])
 FOCUS_API_URL = os.environ["FOCUS_API_URL"]
 GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
