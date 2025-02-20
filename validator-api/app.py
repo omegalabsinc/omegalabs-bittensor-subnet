@@ -835,7 +835,10 @@ async def main():
     ################ END OMEGA FOCUS ENDPOINTS ################
 
     @app.get("/")
-    async def healthcheck():
+    # @limiter.limit("10/minute")
+    async def healthcheck(
+        request: Request,
+    ):
         return datetime.utcnow()
 
     ################ START MULTI-MODAL API / OPENTENSOR CONNECTOR ################
