@@ -52,7 +52,7 @@ class FocusVideoEmbeddings(BaseModel):
     # embeddings
     task_overview_embedding: Optional[List[float]]
     detailed_video_description_embedding: Optional[List[float]]
-    video_embedding: List[float]
+    video_embedding: Optional[List[float]]
 
 class BoostedTaskIndex(BaseModel):
     index: int

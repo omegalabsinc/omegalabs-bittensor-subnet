@@ -390,8 +390,12 @@ class FocusScoringService:
         return embedding, await self._get_task_uniqueness_score(embedding)
 
     async def embed_and_get_video_uniqueness_score(self, video_id: str, video_duration_seconds: int):
-        embedding = await get_video_embedding(video_id, video_duration_seconds)
-        return embedding, await self.get_video_uniqueness_score(embedding)
+        try:
+            embedding = await get_video_embedding(video_id, video_duration_seconds)
+            return embedding, await self.get_video_uniqueness_score(embedding)
+        except Exception as e:
+            print(f"Failed to create video embedding for {video_id}: {str(e)}")
+            return None, 0.1  # Assumes unique if we can't check
 
     async def get_detailed_video_description_embedding_score(self, video_id, task_overview):
         detailed_video_description = await get_detailed_video_description(video_id, task_overview)
