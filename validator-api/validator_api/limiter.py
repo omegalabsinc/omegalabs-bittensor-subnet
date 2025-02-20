@@ -10,12 +10,12 @@ def get_rate_limit_key(request: Request) -> str:
     For unauthenticated requests, falls back to their IP address.
     """
     user_id = _extract_user_id(request)
-    # if user_id:
-    #     print(f"Rate limiting key: {user_id}")
-    #     return f"user:{user_id}"
+    if user_id:
+        print(f"Rate limiting key: user:{user_id}")
+        return f"user:{user_id}"
     
     ip = _get_client_ip(request)
-    print(f"Rate limiting key: {ip}")
+    print(f"Rate limiting key: ip:{ip}")
     return f"ip:{ip}"
 
 def _extract_user_id(request: Request) -> Optional[str]:
