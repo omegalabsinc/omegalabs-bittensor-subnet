@@ -1,9 +1,11 @@
 FROM --platform=linux/amd64 python@sha256:370c586a6ffc8c619e6d652f81c094b34b14b8f2fb9251f092de23f16e299b78
 
-# Install software-properties-common to add repositories
-RUN apt-get -y update && apt-get install -y \
+# Install software-properties-common to add repositories.
+# Note that mariadb is compatible with mysql which is why we use it
+RUN apt-get -y update && apt-get install -y software-properties-common && \
+    apt-get -y update && apt-get install -y \
     git libsndfile1 build-essential ffmpeg libpq-dev \
-    pkg-config libmysqlclient-dev curl && \
+    pkg-config libmariadb-dev curl && \
     apt-get clean && \
     rm -rf /var/lib/apt/lists/*
 
