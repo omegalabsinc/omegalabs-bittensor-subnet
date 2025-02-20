@@ -76,9 +76,9 @@ args = parser.parse_args()
 SUBTENSOR_NETWORK = None # "test" or None
 
 API_BASE = (
-    "https://dev-validator.api.omega-labs.ai"
+    "https://dev-sn24-api.omegatron.ai"
     if SUBTENSOR_NETWORK == "test" else
-    "https://validator.api.omega-labs.ai"
+    "https://sn24-api.omegatron.ai"
 )
 
 CYAN = "\033[96m"

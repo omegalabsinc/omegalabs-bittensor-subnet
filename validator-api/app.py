@@ -42,7 +42,6 @@ from validator_api.scoring.scoring_service import FocusScoringService, VideoUniq
 from validator_api.communex.client import CommuneClient
 from validator_api.communex._common import get_node_url
 from omega.protocol import Videos, VideoMetadata, AudioMetadata
-from validator_api.imagebind_loader import ImageBindLoader
 import aiohttp
 from validator_api.config import (
     NETWORK, NETUID, PORT,
@@ -84,7 +83,6 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-imagebind_loader = ImageBindLoader()
 
 focus_scoring_service = FocusScoringService()
 
@@ -825,58 +823,6 @@ async def main():
                     
             
     ################ END OMEGA FOCUS ENDPOINTS ################
-
-    """ TO BE DEPRECATED """
-    @app.post("/api/validate")
-    async def validate(
-        videos: Videos,
-        hotkey: Annotated[str, Depends(get_hotkey)],
-    ) -> float:
-        if not authenticate_with_bittensor(hotkey, metagraph):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
-            )
-        uid = metagraph.hotkeys.index(hotkey)
-
-        start_time = time.time()
-
-        youtube_rewards = await score.score_and_upload_videos(videos, await imagebind_loader.get_imagebind())
-
-        if youtube_rewards is None:
-            print("YouTube rewards are empty, returning None")
-            return None
-
-        total_rewards: float = youtube_rewards
-
-        print(f"Total Rewards: {total_rewards}")
-        print(
-            f"Returning score={total_rewards} for validator={uid} in {time.time() - start_time:.2f}s")
-
-        return total_rewards
-
-    if not IS_PROD:
-        @app.get("/api/count_unique")
-        async def count_unique(
-            videos: Videos,
-        ) -> str:
-            nunique = await score.get_num_unique_videos(videos)
-            return f"{nunique} out of {len(videos.video_metadata)} submitted videos are unique"
-
-        @app.get("/api/check_score")
-        async def check_score(
-            videos: Videos,
-        ) -> dict:
-            detailed_score = await score.score_videos_for_testing(videos, await imagebind_loader.get_imagebind())
-            return detailed_score
-
-    @app.get("/api/topic")
-    async def get_topic() -> str:
-        return random.choice(TOPICS_LIST)
-
-    @app.get("/api/topics")
-    async def get_topics() -> List[str]:
-        return TOPICS_LIST
 
     @app.get("/")
     async def healthcheck():

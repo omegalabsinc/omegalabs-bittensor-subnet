@@ -108,13 +108,6 @@ def add_args(cls, parser):
     )
 
     parser.add_argument(
-        "--neuron.decentralization.off",
-        action="store_true",
-        help="Disable decentralization (not recommended).",
-        default=False,
-    )
-
-    parser.add_argument(
         "--neuron.focus_videos",
         action="store_true",
         help="If set, we will enable OMEGA Focus app video logic.",

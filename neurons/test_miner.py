@@ -26,7 +26,7 @@ if len(video_metadata_list) == 0:
 else:
     videos = Videos(query=query, num_videos=num_videos, video_metadata=video_metadata_list)
     response = requests.get(
-        "https://dev-validator.api.omega-labs.ai/api/count_unique",
+        "https://dev-sn24-api.omegatron.ai/api/count_unique",
         json=videos.to_serializable_dict(videos)
     )
     print(response.json())
