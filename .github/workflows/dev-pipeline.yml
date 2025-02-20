@@ -13,6 +13,7 @@ env:
   IMAGE_NAME: sn24-vali-api
   DEPLOYMENT_NAME: dev-sn24-vali-api
   DEV_CLUSTER: dev-sn24-vali-api
+  NAMESPACE: dev-sn24-vali-api
 
 jobs:
   build-and-deploy:
@@ -63,8 +64,8 @@ jobs:
       run: |
         kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
           backend=${{ env.REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:prod-${{ steps.git_sha.outputs.sha }} \
-          -n dev
-        kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n dev
+          -n ${{ env.NAMESPACE }}
+        kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }}
 
     - name: Cleanup sensitive files
       if: always()
