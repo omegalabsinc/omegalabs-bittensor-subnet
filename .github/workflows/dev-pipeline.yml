@@ -63,7 +63,7 @@ jobs:
     - name: Deploy to Dev
       run: |
         kubectl set image deployment/${{ env.DEPLOYMENT_NAME }} \
-          backend=${{ env.REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:prod-${{ steps.git_sha.outputs.sha }} \
+          ${{ env.IMAGE_NAME }}=${{ env.REGION }}-docker.pkg.dev/${{ secrets.PROJECT_ID }}/${{ env.REPO_NAME }}/${{ env.IMAGE_NAME }}:prod-${{ steps.git_sha.outputs.sha }} \
           -n ${{ env.NAMESPACE }}
         kubectl rollout status deployment/${{ env.DEPLOYMENT_NAME }} -n ${{ env.NAMESPACE }}
 
