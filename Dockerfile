@@ -33,6 +33,5 @@ RUN python -m pip install -e . --no-cache-dir
 ENV PORT=8002
 
 EXPOSE 8002
-ENTRYPOINT bash
 
 CMD ["python", "validator-api/app.py"]
