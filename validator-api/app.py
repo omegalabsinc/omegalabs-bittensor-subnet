@@ -835,7 +835,7 @@ async def main():
     ################ END OMEGA FOCUS ENDPOINTS ################
 
     @app.get("/")
-    # @limiter.limit("10/minute")
+    @limiter.limit("10/minute")
     async def healthcheck(
         request: Request,
     ):
