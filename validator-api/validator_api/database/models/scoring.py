@@ -1,6 +1,12 @@
 from typing import List, Optional
 from pydantic import BaseModel, Field
 
+class VideoTooShortError(Exception):
+    pass
+
+class VideoTooLongError(Exception):
+    pass
+
 class VideoUniquenessError(Exception):
     pass
 
