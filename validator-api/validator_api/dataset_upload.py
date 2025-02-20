@@ -29,7 +29,6 @@ def get_random_batch_size(batch_size: int) -> int:
     return random.choice([
         batch_size // 2,
         batch_size,
-        batch_size * 2,
     ])
 
 def create_repo(name: str) -> None:
