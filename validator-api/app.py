@@ -1,57 +1,63 @@
-import mysql.connector
-from validator_api.limiter import limiter
-from validator_api.check_blocking import detect_blocking
-from validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 import asyncio
+import json
 import os
-import json
-from datetime import datetime
-import time
-from typing import Annotated, List, Optional, Dict, Any
 import random
-import json
-from pydantic import BaseModel
+import time
 import traceback
+from datetime import datetime
 from tempfile import TemporaryDirectory
-import huggingface_hub
-from datasets import load_dataset
-import ulid
 from traceback import print_exception
+from typing import Annotated, Any, Dict, List, Optional
+
+import aiohttp
 import bittensor
+import huggingface_hub
+import mysql.connector
+import sentry_sdk
+import ulid
 import uvicorn
-from fastapi import FastAPI, HTTPException, Depends, Body, Path, Security, BackgroundTasks, Request
-from fastapi.security import HTTPBasicCredentials, HTTPBasic
+from datasets import load_dataset
+from fastapi import (BackgroundTasks, Body, Depends, FastAPI, HTTPException,
+                     Path, Request, Security)
+from fastapi.responses import FileResponse
+from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from pydantic import BaseModel
+from sqlalchemy.orm import Session
 from starlette import status
 from substrateinterface import Keypair
-import sentry_sdk
-from sqlalchemy.orm import Session
+from validator_api.check_blocking import detect_blocking
+from validator_api.communex._common import get_node_url
+from validator_api.communex.client import CommuneClient
+from validator_api.config import (API_KEY_NAME, API_KEYS, COMMUNE_NETUID,
+                                  COMMUNE_NETWORK, DB_CONFIG, ENABLE_COMMUNE,
+                                  FIXED_ALPHA_TAO_ESTIMATE, FOCUS_API_KEYS,
+                                  FOCUS_API_URL, FOCUS_REWARDS_PERCENT,
+                                  IMPORT_SCORE, IS_PROD, NETUID, NETWORK, PORT,
+                                  PROXY_LIST, SENTRY_DSN, TOPICS_LIST)
+# from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
+from validator_api.cron.confirm_purchase import (confirm_transfer,
+                                                 confirm_video_purchased)
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
-    get_all_available_focus, check_availability, get_video_owner_coldkey,
-    already_purchased_max_focus_tao, get_miner_purchase_stats, MinerPurchaseStats,
-    set_focus_video_score, mark_video_rejected, mark_video_submitted, TaskType,
-    alpha_to_tao_rate,
-)
-from validator_api.utils.marketplace import TASK_TYPE_MAP, get_max_focus_alpha_per_day, get_purchase_max_focus_alpha
-# from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
-from validator_api.cron.confirm_purchase import confirm_transfer, confirm_video_purchased
-from validator_api.scoring.scoring_service import FocusScoringService, VideoUniquenessError, LegitimacyCheckError
-from validator_api.communex.client import CommuneClient
-from validator_api.communex._common import get_node_url
-from omega.protocol import Videos, VideoMetadata, AudioMetadata
-import aiohttp
-from validator_api.config import (
-    NETWORK, NETUID, PORT,
-    ENABLE_COMMUNE, COMMUNE_NETWORK, COMMUNE_NETUID,
-    API_KEY_NAME, API_KEYS, DB_CONFIG,
-    TOPICS_LIST, PROXY_LIST, IS_PROD,
-    FOCUS_REWARDS_PERCENT, FOCUS_API_KEYS, FOCUS_API_URL,
-    SENTRY_DSN, IMPORT_SCORE,
-    FIXED_ALPHA_TAO_ESTIMATE,
-)
+    MinerPurchaseStats, TaskType, alpha_to_tao_rate,
+    already_purchased_max_focus_tao, check_availability,
+    get_all_available_focus, get_miner_purchase_stats, get_video_owner_coldkey,
+    mark_video_rejected, mark_video_submitted, set_focus_video_score)
+from validator_api.dataset_upload import (audio_dataset_uploader,
+                                          video_dataset_uploader)
+from validator_api.limiter import limiter
+from validator_api.scoring.scoring_service import (FocusScoringService,
+                                                   LegitimacyCheckError,
+                                                   VideoTooLongError,
+                                                   VideoTooShortError,
+                                                   VideoUniquenessError)
+from validator_api.utils.marketplace import (TASK_TYPE_MAP,
+                                             get_max_focus_alpha_per_day,
+                                             get_purchase_max_focus_alpha)
+
+from omega.protocol import AudioMetadata, VideoMetadata
 
 print("IMPORT_SCORE:", IMPORT_SCORE)
 
@@ -282,7 +288,11 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         print(f"Error scoring focus video <{video_id}>: {error_string}")
 
         # Determine appropriate rejection reason based on error type
-        if isinstance(e, VideoUniquenessError):
+        if isinstance(e, VideoTooShortError):
+            rejection_reason = "Video is too short. Please ensure the video is at least 10 seconds long."
+        elif isinstance(e, VideoTooLongError):
+            rejection_reason = "Video is too long. Please ensure the video is less than 10 minutes long."
+        elif isinstance(e, VideoUniquenessError):
             rejection_reason = "Task recording is not unique. If you believe this is an error, please contact a team member."
         elif isinstance(e, LegitimacyCheckError):
             rejection_reason = "An anomaly was detected in the video. If you believe this is an error, please contact a team member via the OMEGA Focus Discord channel."
@@ -826,7 +836,10 @@ async def main():
     ################ END OMEGA FOCUS ENDPOINTS ################
 
     @app.get("/")
-    async def healthcheck():
+    @limiter.limit("10/minute")
+    async def healthcheck(
+        request: Request,
+    ):
         return datetime.utcnow()
 
     ################ START MULTI-MODAL API / OPENTENSOR CONNECTOR ################
