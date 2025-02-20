@@ -36,6 +36,7 @@ def parse_proxies(proxy_list: List[str]) -> List[str]:
 
 PORT = int(os.environ.get("PORT", 8002))
 NETWORK = os.environ["NETWORK"]
+print(f"Running with NETWORK={NETWORK}")
 NETUID = int(os.environ["NETUID"])
 STAKE_HOTKEY = os.environ["STAKE_HOTKEY"]
 
