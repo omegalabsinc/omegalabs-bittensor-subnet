@@ -49,7 +49,9 @@ COMMUNE_NETWORK = os.environ["COMMUNE_NETWORK"]
 COMMUNE_NETUID = int(os.environ["COMMUNE_NETUID"])
 
 API_KEY_NAME = "OMEGA_MM_API_KEY"
-API_KEYS = robust_json_loads(os.environ["API_KEYS"])
+API_KEYS_STR = os.environ["API_KEYS"]
+print(f"API_KEYS_STR={API_KEYS_STR}")
+API_KEYS = robust_json_loads(API_KEYS_STR)
 
 PINECONE_API_KEY = os.environ["PINECONE_API_KEY"]
 PINECONE_INDEX = os.environ["PINECONE_INDEX"]
