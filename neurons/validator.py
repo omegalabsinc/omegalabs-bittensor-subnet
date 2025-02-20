@@ -127,9 +127,9 @@ class Validator(BaseValidatorNeuron):
             self.successfully_started_wandb = False
 
         self.api_root = (
-            "https://dev-validator.api.omega-labs.ai"
+            "https://dev-sn24-api.omegatron.ai"
             if self.config.subtensor.network == "test" else
-            "https://validator.api.omega-labs.ai"
+            "https://sn24-api.omegatron.ai"
         )
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()

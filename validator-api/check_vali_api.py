@@ -7,7 +7,8 @@ import matplotlib.pyplot as plt
 
 API_URL = "https://validator.api.omega-labs.ai"
 # API_URL = "http://localhost:8001"
-NUM_REQUESTS = 100
+API_URL = "https://sn24-api.omegatron.ai"
+NUM_REQUESTS = 1000
 SAVE_DIR = "api_logs"
 
 async def check_validator_api():
