@@ -713,10 +713,11 @@ async def main():
                     json={"video_id": video_id},
                     headers={"FOCUS_API_KEY": FOCUS_API_KEYS[0]}
                 ) as response:
-                    return await response.json()
+                    res = await response.json()
+                    print(f"Got res={res} from {FOCUS_API_URL}/auth/stake")
+                    return res
 
-        video_owner_coldkey = await get_video_owner_coldkey(
-            db, video_id)  # run with_lock True
+        video_owner_coldkey = await get_video_owner_coldkey(db, video_id)
         result = await confirm_transfer(db, video_owner_coldkey, video_id, miner_hotkey, block_hash)
         if result:
             background_tasks.add_task(run_stake, video_id)
