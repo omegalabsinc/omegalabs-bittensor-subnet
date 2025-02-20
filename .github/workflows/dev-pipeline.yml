@@ -12,6 +12,7 @@ env:
   REPO_NAME: bittensor
   IMAGE_NAME: sn24-vali-api
   DEPLOYMENT_NAME: dev-sn24-vali-api
+  DEV_CLUSTER: dev-sn24-vali-api
 
 jobs:
   build-and-deploy:
@@ -55,7 +56,7 @@ jobs:
     - name: Get GKE credentials
       uses: google-github-actions/get-gke-credentials@v1
       with:
-        cluster_name: ${{ secrets.DEV_CLUSTER }}
+        cluster_name: ${{ env.DEV_CLUSTER }}
         location: ${{ env.REGION }}
 
     - name: Deploy to Dev
