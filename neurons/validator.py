@@ -135,26 +135,11 @@ class Validator(BaseValidatorNeuron):
         self.load_topics_start = dt.datetime.now()
         self.all_topics = self.load_topics()
 
-        self.imagebind = None
+        self.imagebind = ImageBind(v2=True)
         self.load_focus_rewards_start = dt.datetime.now()
         self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
         self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT
         self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT
-
-        if not self.config.neuron.decentralization.off:
-            if torch.cuda.is_available():
-                bt.logging.info(
-                    f"Running with decentralization enabled, thank you Bittensor Validator!")
-                self.decentralization = True
-                self.imagebind = ImageBind(v2=True)
-            else:
-                bt.logging.warning(
-                    f"Attempting to run decentralization, but no GPU found. Please see min_compute.yml for minimum resource requirements.")
-                self.decentralization = False
-        else:
-            bt.logging.warning(
-                "Running with --decentralization.off. It is strongly recommended to run with decentralization enabled.")
-            self.decentralization = False
 
     def new_wandb_run(self):
         # Shoutout SN13 for the wandb snippet!
@@ -344,13 +329,7 @@ class Validator(BaseValidatorNeuron):
 
         # Adjust the scores based on responses from miners.
         try:
-            # Check if this validator is running decentralization
-            if not self.decentralization:
-                # if not, use validator API get_rewards system
-                rewards_list = await self.get_rewards(input_synapse=input_synapse, responses=finished_responses)
-            else:
-                # if so, use decentralization logic with local GPU
-                rewards_list = await self.handle_checks_and_rewards_youtube(input_synapse=input_synapse, responses=finished_responses)
+            rewards_list = await self.handle_checks_and_rewards_youtube(input_synapse=input_synapse, responses=finished_responses)
         except Exception as e:
             bt.logging.error(
                 f"Error in handle_checks_and_rewards_youtube: {e}")
