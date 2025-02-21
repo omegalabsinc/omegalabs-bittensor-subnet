@@ -58,17 +58,19 @@ Using the OMEGA Focus Video Purchase System:
 Remember to keep your wallet information secure and never share your private keys.
 """
 
-import os
-import requests
-import bittensor as bt
-from bittensor import wallet as btcli_wallet
 import argparse
-import time
 import json
-from tabulate import tabulate
-from datetime import datetime
 import multiprocessing
+import os
 import sys
+import time
+from datetime import datetime
+
+import bittensor as bt
+import requests
+from aiohttp import BasicAuth
+from bittensor import wallet as btcli_wallet
+from tabulate import tabulate
 
 parser = argparse.ArgumentParser(description='Interact with the OMEGA Focus Videos API.')
 args = parser.parse_args()
@@ -80,6 +82,7 @@ API_BASE = (
     if SUBTENSOR_NETWORK == "test" else
     "https://sn24-api.omegatron.ai"
 )
+# API_BASE = "http://localhost:8000"
 
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -185,7 +188,12 @@ def transfer_with_timeout(wallet, transfer_address_to, transfer_balance):
     else:
         return False, None, "Transfer process exited without result"
 
-def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_path=None):
+def purchase_video(
+    video_id=None,
+    wallet_name=None,
+    wallet_hotkey=None,
+    wallet_path=None
+):
     if not video_id:
         video_id = input(f"{CYAN}Enter focus video id: {RESET}")
 
@@ -210,15 +218,20 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
         return
 
     miner_hotkey = hotkey.ss58_address
-    
+    signature = f"0x{hotkey.sign(miner_hotkey).hex()}"
     print(f"Purchasing video {video_id}...")
     print(f"{RED}You will only have 2 minutes and 30 seconds to complete the transfer of TAO tokens, otherwise the purchase will be reverted.{RESET}")
     purchase_response = requests.post(
-        API_BASE + "/api/focus/purchase", 
-        json={"video_id": video_id, "miner_hotkey": miner_hotkey}, 
+        API_BASE + "/api/focus/purchase",
+        auth=BasicAuth(hotkey, signature),
+        json={
+            "video_id": video_id,
+            # "miner_hotkey": miner_hotkey,
+        }, 
         headers={"Content-Type": "application/json"},
         timeout=60
     )
+    time.sleep(20)
 
     purchase_data = purchase_response.json()
     if purchase_response.status_code != 200:

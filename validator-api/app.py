@@ -202,11 +202,18 @@ class VideoPurchaseRevert(BaseModel):
 
 
 def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) -> str:
-    keypair = Keypair(ss58_address=credentials.username)
-
-    if keypair.verify(credentials.username, credentials.password):
-        return credentials.username
-
+    # print(f"Username: {credentials.username}, Password: {credentials.password}")
+    try:
+        keypair = Keypair(ss58_address=credentials.username)
+        # print(f"Keypair: {keypair}")
+        if keypair.verify(credentials.username, credentials.password):
+            return credentials.username
+    except Exception as e:
+        print(f"Error verifying keypair: {e}")
+        raise HTTPException(
+            status_code=status.HTTP_401_UNAUTHORIZED,
+            detail=f"Error verifying keypair: {e}"
+        )
     raise HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="Signature mismatch",
@@ -670,17 +677,25 @@ async def main():
     async def purchase_video(
         request: Request,
         background_tasks: BackgroundTasks,
-        video_id: Annotated[str, Body()],
-        miner_hotkey: Annotated[str, Body()],
+        video_id: Annotated[str, Body(embed=True)],
+        # miner_hotkey: Annotated[str, Body()],
+        hotkey: Annotated[str, Depends(get_hotkey)],
         db: Session = Depends(get_db),
     ):
+        # print(f"purchase_video() with hotkey={hotkey}")
+        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Valid hotkey required.",
+            )
+
         if await already_purchased_max_focus_tao(db):
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
 
         # run with_lock True
-        availability = await check_availability(db, video_id, miner_hotkey, True)
+        availability = await check_availability(db, video_id, hotkey, True)
         print('availability', availability)
         if availability['status'] == 'success':
             amount = availability['price']
