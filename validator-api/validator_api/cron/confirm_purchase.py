@@ -11,6 +11,7 @@ from validator_api.database.models.focus_video_record import FocusVideoRecord, F
 import bittensor as bt
 
 from validator_api.utils.wallet import get_transaction_from_block_hash
+from validator_api.database.models.miner_bans import increment_failed_purchases, reset_failed_purchases
 
 def extrinsic_already_confirmed(db: Session, extrinsic_id: str) -> bool:
     record = db.query(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id)
@@ -146,6 +147,7 @@ async def confirm_video_purchased(
                     
                     if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
                         print(f"Video <{video_id}> has been marked as PURCHASED. Stopping background task.")
+                        reset_failed_purchases(db, video.miner_hotkey)
                         return True
                     elif video is not None and video.processing_state == FocusVideoStateInternal.SUBMITTED:
                         print(f"Video <{video_id}> has been marked as SUBMITTED. Stopping background task.")
@@ -161,6 +163,7 @@ async def confirm_video_purchased(
         # we got here because we could not confirm the payment in time, so we need to revert
         # the video back to the SUBMITTED state (i.e. mark available for purchase)
         print(f"Video <{video_id}> has NOT been marked as PURCHASED. Reverting to SUBMITTED state...")
+        increment_failed_purchases(db, video.miner_hotkey)
         video.processing_state = FocusVideoStateInternal.SUBMITTED
         video.updated_at = datetime.utcnow()
         db.add(video)
