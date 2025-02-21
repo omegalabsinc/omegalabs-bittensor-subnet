@@ -271,7 +271,7 @@ The subnet has become quite competitive, and the basic miner template is no long
 
 #### Common Troubleshooting Tips
 1. If you've been running for several minutes and have not received any requests, make sure your port is open to receiving requests. You can try hitting your IP and port with `curl`. If you get no response, it means your port is not open.
-2. You can use our [validator logs W&B](https://wandb.ai/omega-labs/omega-sn24-validator-logs) to see how your miner is scoring in practice.
+2. You can use our [validator logs on W&B](https://wandb.ai/omega-labs/omega-sn24-validator-logs) to see how your miner is scoring in practice.
 
 ### Running a Validator
 #### Requirements
