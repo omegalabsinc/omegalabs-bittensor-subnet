@@ -52,7 +52,7 @@ def get_random_uids(
             if uid_is_not_excluded:
                 candidate_uids.append(uid)
 
-    # Check if candidate_uids contain enough for querying, if not grab all avaliable uids
+    # Check if candidate_uids contain enough for querying, if not grab all available uids
     available_uids = candidate_uids
     if len(candidate_uids) < k:
         new_avail_uids = [uid for uid in avail_uids if uid not in candidate_uids]
