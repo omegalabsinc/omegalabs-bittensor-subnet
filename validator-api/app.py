@@ -686,14 +686,6 @@ async def main():
         hotkey: Annotated[str, Depends(get_hotkey)],
         db: Session = Depends(get_db),
     ):
-        # print(f"purchase_video() with hotkey={hotkey}")
-        # this verifies that the miner owns the hotkey
-        if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
-            raise HTTPException(
-                status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
-            )
-        
         banned_until = miner_banned_until(db, hotkey)
         if banned_until:
             raise HTTPException(
