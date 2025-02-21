@@ -683,7 +683,6 @@ async def main():
         request: Request,
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body(embed=True)],
-        # miner_hotkey: Annotated[str, Body()],
         hotkey: Annotated[str, Depends(get_hotkey)],
         db: Session = Depends(get_db),
     ):
@@ -728,17 +727,17 @@ async def main():
     @limiter.limit("4/minute")
     async def revert_pending_purchase(
         request: Request,
+        miner_hotkey: Annotated[str, Depends(get_hotkey)],
         video: VideoPurchaseRevert,
         db: Session = Depends(get_db),
     ):
-        # run with_lock True
-        return mark_video_submitted(db, video.video_id, True)
+        return mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
 
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("4/minute")
     async def verify_purchase(
         request: Request,
-        miner_hotkey: Annotated[str, Body()],
+        miner_hotkey: Annotated[str, Depends(get_hotkey)],
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
         db: Session = Depends(get_db),
