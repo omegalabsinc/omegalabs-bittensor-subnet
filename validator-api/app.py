@@ -56,6 +56,7 @@ from validator_api.scoring.scoring_service import (FocusScoringService,
 from validator_api.utils.marketplace import (TASK_TYPE_MAP,
                                              get_max_focus_alpha_per_day,
                                              get_purchase_max_focus_alpha)
+from validator_api.database.models.miner_bans import miner_banned_until
 
 from omega.protocol import AudioMetadata, VideoMetadata
 
@@ -212,12 +213,8 @@ def get_hotkey(credentials: Annotated[HTTPBasicCredentials, Depends(security)]) 
         print(f"Error verifying keypair: {e}")
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail=f"Error verifying keypair: {e}"
+            detail=f"Error verifying keypair: {e}, make sure Basic Auth username is your hotkey SS58 address and the password is your hotkey's signature hex string (not private key!)."
         )
-    raise HTTPException(
-        status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="Signature mismatch",
-    )
 
 
 def check_commune_validator_hotkey(hotkey: str, modules_keys):
@@ -670,8 +667,6 @@ async def main():
         """
         return await get_all_available_focus(db)
 
-    # FV TODO: let's do proper miner auth here instead, and then from the retrieved hotkey, we can also
-    # retrieve the coldkey and use that to confirm the transfer
     @app.post("/api/focus/purchase")
     @limiter.limit("2/minute")
     async def purchase_video(
@@ -683,10 +678,18 @@ async def main():
         db: Session = Depends(get_db),
     ):
         # print(f"purchase_video() with hotkey={hotkey}")
+        # this verifies that the miner owns the hotkey
         if not authenticate_with_bittensor(hotkey, metagraph) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Valid hotkey required.",
+            )
+        
+        banned_until = miner_banned_until(db, hotkey)
+        if banned_until:
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Miner is banned from purchasing focus videos until {banned_until} due to too many failed purchases in a row. Contact a team member if you believe this is an error.",
             )
 
         if await already_purchased_max_focus_tao(db):
