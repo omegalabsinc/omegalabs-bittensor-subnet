@@ -33,8 +33,19 @@ from validator_api.database import get_db_context
 from validator_api.database.models.boosted_task import BoostedTask
 from validator_api.database.models.focus_video_record import (
     FocusVideoInternal, FocusVideoRecord)
+from validator_api.database.models.scoring import (CompletionScore,
+                                                   CompletionScoreWithoutRange,
+                                                   DetailedVideoDescription,
+                                                   FocusVideoEmbeddings,
+                                                   LegitimacyCheckError,
+                                                   VideoScore,
+                                                   VideoTooLongError,
+                                                   VideoTooShortError,
+                                                   VideoUniquenessError)
 from validator_api.database.models.task import TaskRecordPG
 from validator_api.scoring import focus_scoring_prompts
+from validator_api.scoring.legitimacy_checks import ChatOnlyCheck
+from validator_api.scoring.query_llm import query_llm
 from validator_api.utils import run_async, run_with_retries
 from vertexai.generative_models import Part
 from vertexai.preview.generative_models import (GenerationConfig,
@@ -43,10 +54,6 @@ from vertexai.preview.generative_models import (GenerationConfig,
                                                 HarmCategory)
 from vertexai.vision_models import (MultiModalEmbeddingModel, Video,
                                     VideoSegmentConfig)
-from validator_api.database.models.scoring import DetailedVideoDescription, CompletionScore, CompletionScoreWithoutRange, VideoScore, FocusVideoEmbeddings, VideoUniquenessError, LegitimacyCheckError
-from validator_api.scoring.legitimacy_checks import ChatOnlyCheck
-from validator_api.scoring.query_llm import query_llm
-
 
 TWO_MINUTES = 120  # in seconds
 NINETY_MINUTES = 5400  # in seconds
@@ -383,8 +390,12 @@ class FocusScoringService:
         return embedding, await self._get_task_uniqueness_score(embedding)
 
     async def embed_and_get_video_uniqueness_score(self, video_id: str, video_duration_seconds: int):
-        embedding = await get_video_embedding(video_id, video_duration_seconds)
-        return embedding, await self.get_video_uniqueness_score(embedding)
+        try:
+            embedding = await get_video_embedding(video_id, video_duration_seconds)
+            return embedding, await self.get_video_uniqueness_score(embedding)
+        except Exception as e:
+            print(f"Failed to create video embedding for {video_id}: {str(e)}")
+            return None, 0.1  # Assumes unique if we can't check
 
     async def get_detailed_video_description_embedding_score(self, video_id, task_overview):
         detailed_video_description = await get_detailed_video_description(video_id, task_overview)
@@ -429,10 +440,10 @@ class FocusScoringService:
         video_duration_seconds = get_video_duration_seconds(video_id)
 
         if video_duration_seconds < TWO_MINUTES:
-            raise ValueError(f"Video duration is too short: {video_duration_seconds} seconds")
+            raise VideoTooShortError(f"Video duration is too short: {video_duration_seconds} seconds")
 
         if video_duration_seconds > NINETY_MINUTES:
-            raise ValueError(f"Video duration is too long: {video_duration_seconds} seconds")
+            raise VideoTooLongError(f"Video duration is too long: {video_duration_seconds} seconds")
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
 
@@ -448,8 +459,8 @@ class FocusScoringService:
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
         
-        # if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
-        #     raise VideoUniquenessError("Video uniqueness score is too low.")
+        if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
+            raise VideoUniquenessError("Video uniqueness score is too low.")
         
         if self.legitimacy_checks:
             check_results = await asyncio.gather(
