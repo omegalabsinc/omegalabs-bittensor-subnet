@@ -653,7 +653,7 @@ async def main():
         return {"success": True}
 
     @app.get("/api/focus/get_list")
-    @limiter.limit("2/minute")
+    @limiter.limit("5/minute")
     async def _get_available_focus_video_list(
         request: Request,
         db: Session = Depends(get_db)
