@@ -1,5 +1,6 @@
 import asyncio
 import json
+import psutil
 import os
 import random
 import time
@@ -366,8 +367,6 @@ async def main():
 
     @app.middleware("http")
     async def detect_blocking_middleware(request: Request, call_next):
-        import psutil
-        import os
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss
 
@@ -376,7 +375,7 @@ async def main():
 
         mem_after = process.memory_info().rss
         mem_diff = mem_after - mem_before
-        print(f"Memory change for {request.url.path}: {mem_diff / 1024 / 1024:.2f} MB")
+        print(f"Memory change for {request.url.path}: {mem_diff / 1024 / 1024:.2f} MB, now at {mem_after / 1024 / 1024:.2f} MB")
 
         return response
 
