@@ -183,3 +183,37 @@ class AudioDatasetUploader:
 
 audio_dataset_uploader = AudioDatasetUploader()
 video_dataset_uploader = DatasetUploader()
+
+
+if __name__ == "__main__":
+    audio_wav_file = "../example.wav"
+    with open(audio_wav_file, "rb") as f:
+        audio_bytes = base64.b64encode(f.read()).decode('utf-8')
+    for _ in range(100):
+        audio_dataset_uploader.add_audios(
+            metadata=[
+                AudioMetadata(
+                    video_id="123",
+                    start_time=0,
+                    end_time=10,
+                    audio_bytes=audio_bytes,
+                    audio_emb=[],
+                    views=0,
+                    diar_timestamps_start=[],
+                    diar_timestamps_end=[],
+                    diar_speakers=[],
+                )
+            ] * 10,
+            audio_ids=list(range(10)),
+            inverse_der=0.0,
+            audio_length_score=0.0,
+            audio_quality_total_score=0.0,
+            audio_query_score=0.0,
+            query="",
+            total_score=0.0,
+        )
+        # audio_dataset_uploader.submit()
+        import psutil
+        import os
+        process = psutil.Process(os.getpid())
+        print(f"Current RAM usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")
