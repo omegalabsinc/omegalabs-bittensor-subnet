@@ -697,7 +697,7 @@ async def main():
             return availability
 
     @app.post("/api/focus/revert-pending-purchase")
-    @limiter.limit("5/minute")
+    @limiter.limit("4/minute")
     async def revert_pending_purchase(
         request: Request,
         video: VideoPurchaseRevert,
@@ -707,7 +707,7 @@ async def main():
         return mark_video_submitted(db, video.video_id, True)
 
     @app.post("/api/focus/verify-purchase")
-    @limiter.limit("5/minute")
+    @limiter.limit("4/minute")
     async def verify_purchase(
         request: Request,
         miner_hotkey: Annotated[str, Body()],
