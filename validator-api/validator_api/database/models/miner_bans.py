@@ -16,15 +16,6 @@ class MinerBan(Base):
     purchases_failed_in_a_row = Column(Integer, nullable=False)
     banned_until = Column(DateTime(timezone=True), nullable=True)
 
-
-class MinerBanModel(BaseModel):
-    model_config = ConfigDict(from_attributes=True)
-
-    miner_hotkey: str
-    purchases_failed_since_last_ban: int
-    banned_until: Optional[datetime]
-
-
 def miner_banned_until(db: Session, miner_hotkey: str) -> Optional[datetime]:
     """
     Check if a miner is currently banned and return their ban expiration time if they are.
@@ -78,8 +69,8 @@ def increment_failed_purchases(db: Session, miner_hotkey: str):
     """
     miner = get_or_create_miner(db, miner_hotkey)
     miner.purchases_failed_in_a_row += 1
+    check_and_ban_miner(miner)
     db.commit()
-    check_and_ban_miner(db, miner_hotkey)
 
 def reset_failed_purchases(db: Session, miner_hotkey: str):
     """
@@ -91,14 +82,12 @@ def reset_failed_purchases(db: Session, miner_hotkey: str):
     miner.banned_until = None
     db.commit()
 
-BAN_PURCHASES_FAILED_IN_A_ROW = 3
-def check_and_ban_miner(db: Session, miner_hotkey: str):
+BAN_PURCHASES_FAILED_IN_A_ROW = 5
+def check_and_ban_miner(miner: MinerBan):
     """
     If a miner fails more than BAN_PURCHASES_FAILED_IN_A_ROW purchases in a row, ban them for 24 hours.
     Creates the miner record if it doesn't exist.
     """
-    miner = get_or_create_miner(db, miner_hotkey)
     if miner.purchases_failed_in_a_row >= BAN_PURCHASES_FAILED_IN_A_ROW:
         miner.purchases_failed_in_a_row = 0
         miner.banned_until = datetime.utcnow() + timedelta(hours=24)
-        db.commit()
