@@ -185,10 +185,7 @@ def transfer_with_timeout(wallet, transfer_address_to, transfer_balance):
     else:
         return False, None, "Transfer process exited without result"
 
-def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_path=None):
-    if not video_id:
-        video_id = input(f"{CYAN}Enter focus video id: {RESET}")
-
+def get_wallet(wallet_name=None, wallet_hotkey=None, wallet_path=None):
     if wallet_name is not None:
         name = wallet_name
     else:
@@ -208,14 +205,27 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
     except Exception as e:
         print(f"{RED}Error loading hotkey: {e} {RESET}")
         return
+    return wallet, name, hotkey_name, path
 
+def get_auth_headers(wallet):
+    hotkey = wallet.get_hotkey()
     miner_hotkey = hotkey.ss58_address
+    miner_hotkey_signature = f"0x{hotkey.sign(miner_hotkey).hex()}"
+    return miner_hotkey, miner_hotkey_signature
+
+def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_path=None):
+    if not video_id:
+        video_id = input(f"{CYAN}Enter focus video id: {RESET}")
+
+    wallet, name, hotkey_name, path = get_wallet(wallet_name, wallet_hotkey, wallet_path)
+    miner_hotkey, miner_hotkey_signature = get_auth_headers(wallet)
     
     print(f"Purchasing video {video_id}...")
     print(f"{RED}You will only have 2 minutes and 30 seconds to complete the transfer of TAO tokens, otherwise the purchase will be reverted.{RESET}")
     purchase_response = requests.post(
-        API_BASE + "/api/focus/purchase", 
-        json={"video_id": video_id, "miner_hotkey": miner_hotkey}, 
+        API_BASE + "/api/focus/purchase",
+        auth=(miner_hotkey, miner_hotkey_signature),
+        json={"video_id": video_id, "miner_hotkey": miner_hotkey},
         headers={"Content-Type": "application/json"},
         timeout=60
     )
@@ -245,7 +255,7 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
         except TransferTimeout:
             print(f"\n{RED}Transfer operation timed out after 2 minutes and 30 seconds. Aborting purchase.{RESET}")
             reset_terminal()
-            revert_pending_purchase(video_id)
+            revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature)
             repurchase_input(video_id, name, hotkey_name, path)
             return
         
@@ -262,12 +272,12 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
         if success:
             print(f"{GREEN}Transfer finalized. Block Hash: {block_hash}{RESET}")
             save_purchase_info(video_id, miner_hotkey, block_hash, "purchased", transfer_amount)
-            verify_result = verify_purchase(video_id, miner_hotkey, block_hash)
+            verify_result = verify_purchase(video_id, miner_hotkey, block_hash, miner_hotkey_signature)
             if not verify_result:
                 print(f"{RED}There was an error verifying your purchase after successfully transferring TAO. Please try the 'Verify Purchase' option immediately and contact an admin if you are unable to successfully verify.{RESET}")
         else:
             print(f"{RED}Failed to complete transfer for video {video_id}.{RESET}")
-            revert_pending_purchase(video_id)
+            revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature)
             repurchase_input(video_id, name, hotkey_name, path)
 
     except Exception as e:
@@ -275,13 +285,14 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
         if "EOF occurred in violation of protocol" in str(e):
             print(f"{RED}Subtensor connection error detected. Re-initializing subtensor.{RESET}")
             initialize_subtensor()
-        revert_pending_purchase(video_id)
+        revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature)
         repurchase_input(video_id, name, hotkey_name, path)
 
-def revert_pending_purchase(video_id):
+def revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature):
     print(f"Reverting Pending Purchasing of video {video_id}...")
     revert_response = requests.post(
         API_BASE + "/api/focus/revert-pending-purchase",
+        auth=(miner_hotkey, miner_hotkey_signature),
         json={"video_id": video_id},
         headers={"Content-Type": "application/json"},
         timeout=60
@@ -393,7 +404,11 @@ def select_order_for_full_display(purchases):
         else:
             print(f"{RED}Invalid input. Please try again.{RESET}")
 
-def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None):
+def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None, miner_hotkey_signature=None):
+    if miner_hotkey_signature is None:
+        wallet, name, hotkey_name, path = get_wallet()
+        miner_hotkey, miner_hotkey_signature = get_auth_headers(wallet)
+
     if not all([video_id, miner_hotkey, block_hash]):
         video_id, miner_hotkey, block_hash = select_order_for_verification()
         if not all([video_id, miner_hotkey, block_hash]):
@@ -407,6 +422,7 @@ def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None):
         try:
             verify_response = requests.post(
                 API_BASE + "/api/focus/verify-purchase",
+                auth=(miner_hotkey, miner_hotkey_signature),
                 json={"miner_hotkey": miner_hotkey, "video_id": video_id, "block_hash": block_hash},
                 headers={"Content-Type": "application/json"},
                 timeout=90
