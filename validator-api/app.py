@@ -756,10 +756,39 @@ async def main():
         miner_hotkey_list: str,
         db: Session = Depends(get_db)
     ) -> Dict[str, MinerPurchaseStats]:
-        return {
-            hotkey: await get_miner_purchase_stats(db, hotkey)
-            for hotkey in miner_hotkey_list.split(',')
-        }
+        # Validate input
+        if not miner_hotkey_list or not miner_hotkey_list.strip():
+            raise HTTPException(400, detail="No miner hotkeys provided")
+
+        # Split and validate hotkeys
+        hotkeys = [h.strip() for h in miner_hotkey_list.split(',') if h.strip()]
+        if not hotkeys:
+            raise HTTPException(400, detail="No valid miner hotkeys provided")
+
+        # Limit number of hotkeys that can be queried at once
+        if len(hotkeys) > 100:
+            raise HTTPException(400, detail="Too many hotkeys requested. Maximum is 100.")
+
+        try:
+            # Gather stats for each valid hotkey
+            stats = await asyncio.gather(
+                *[get_miner_purchase_stats(db, hotkey) for hotkey in hotkeys],
+                return_exceptions=True
+            )
+
+            # Filter out any failed requests and create response dict
+            result = {}
+            for hotkey, stat in zip(hotkeys, stats):
+                if isinstance(stat, Exception):
+                    print(f"Error getting stats for {hotkey}: {str(stat)}")
+                    continue
+                result[hotkey] = stat
+
+            return result
+
+        except Exception as e:
+            print(f"Error in miner_purchase_scores: {str(e)}")
+            raise HTTPException(500, detail="Internal server error")
 
     class TaskTypeMap(BaseModel):
         task_type_map: Dict[TaskType, float]

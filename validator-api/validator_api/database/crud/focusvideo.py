@@ -366,14 +366,17 @@ class MinerPurchaseStats(BaseModel):
     focus_points_percentage: float
 
 async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseStats:
-    # Get videos purchased by miner in the last 24 hours
-    purchased_videos_records = db.query(FocusVideoRecord).filter(
-        FocusVideoRecord.miner_hotkey == miner_hotkey,
-        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-        FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-    )
-    purchased_videos_records = purchased_videos_records.all()
-    
+    def db_operation():
+        # Get videos purchased by miner in the last 24 hours
+        purchased_videos_records = db.query(FocusVideoRecord).filter(
+            FocusVideoRecord.miner_hotkey == miner_hotkey,
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+        )
+        return purchased_videos_records.all()
+
+    purchased_videos_records = await asyncio.to_thread(db_operation)
+
     purchased_videos = [
         FocusVideoInternal.model_validate(video_record)
         for video_record in purchased_videos_records
