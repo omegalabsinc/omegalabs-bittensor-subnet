@@ -153,22 +153,23 @@ async def upload_audio_metadata(
     audio_query_score: float,
     query: str, 
     total_score: float 
-) -> None:
+) -> List[str]:
     embeddings = Embeddings(
         video=None,
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
         description=None,
     )
-    audio_ids = await run_async(upload_to_pinecone_audio, embeddings, metadata)
-    audio_ids = [str(uuid.uuid4()) for _ in range(len(metadata))]
-    audio_dataset_uploader.add_audios(
-        metadata,
-        audio_ids,
-        inverse_der,
-        audio_length_score,
-        audio_quality_total_score,
-        audio_query_score,
-        query,
-        total_score
-    )
+    audio_ids = await asyncio.to_thread(upload_to_pinecone_audio, embeddings, metadata)
+    def _add_audios():
+        audio_dataset_uploader.add_audios(
+            metadata,
+            audio_ids,
+            inverse_der,
+            audio_length_score,
+            audio_quality_total_score,
+            audio_query_score,
+            query,
+            total_score
+        )
+    await asyncio.to_thread(_add_audios)
     return audio_ids
