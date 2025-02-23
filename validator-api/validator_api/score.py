@@ -160,8 +160,8 @@ async def upload_audio_metadata(
         description=None,
     )
     audio_ids = await asyncio.to_thread(upload_to_pinecone_audio, embeddings, metadata)
-    def _add_audios():
-        audio_dataset_uploader.add_audios(
+    async def _add_audios():
+        await audio_dataset_uploader.add_audios(
             metadata,
             audio_ids,
             inverse_der,
