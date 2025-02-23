@@ -365,11 +365,11 @@ class MinerPurchaseStats(BaseModel):
     max_focus_points: float
     focus_points_percentage: float
 
-async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurchaseStats:
+async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dict[str, MinerPurchaseStats]:
     def db_operation():
-        # Get videos purchased by miner in the last 24 hours
+        # Get videos purchased by miners in the last 24 hours
         purchased_videos_records = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.miner_hotkey == miner_hotkey,
+            FocusVideoRecord.miner_hotkey.in_(miner_hotkeys),
             FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
         )
@@ -377,27 +377,38 @@ async def get_miner_purchase_stats(db: Session, miner_hotkey: str) -> MinerPurch
 
     purchased_videos_records = await asyncio.to_thread(db_operation)
 
-    purchased_videos = [
-        FocusVideoInternal.model_validate(video_record)
-        for video_record in purchased_videos_records
-    ]
+    # Group records by miner hotkey
+    videos_by_miner = {}
+    for record in purchased_videos_records:
+        if record.miner_hotkey not in videos_by_miner:
+            videos_by_miner[record.miner_hotkey] = []
+        videos_by_miner[record.miner_hotkey].append(record)
 
-    # Calculate total score for purchased videos (focus points = score * 100)
-    total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
-
-    # Calculate percentage
-    # max_focus_tao = await get_max_focus_tao()
-    # max_focus_points = get_max_focus_points_available_today(max_focus_tao)
+    # Get max focus points once since it's the same for all miners
     max_focus_alpha = await get_max_focus_alpha_per_day()
     max_focus_points = get_max_focus_points_available_today(max_focus_alpha)
-    focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
 
-    return MinerPurchaseStats(
-        purchased_videos=purchased_videos,
-        total_focus_points=total_focus_points,
-        max_focus_points=max_focus_points,
-        focus_points_percentage=focus_points_percentage
-    )
+    # Process stats for each miner
+    stats = {}
+    for miner_hotkey in miner_hotkeys:
+        miner_videos = videos_by_miner.get(miner_hotkey, [])
+
+        purchased_videos = [
+            FocusVideoInternal.model_validate(video_record)
+            for video_record in miner_videos
+        ]
+
+        total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
+        focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
+
+        stats[miner_hotkey] = MinerPurchaseStats(
+            purchased_videos=purchased_videos,
+            total_focus_points=total_focus_points,
+            max_focus_points=max_focus_points,
+            focus_points_percentage=focus_points_percentage
+        )
+
+    return stats
 
 def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
     video_record = db.query(FocusVideoRecord).filter(

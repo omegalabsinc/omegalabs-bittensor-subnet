@@ -770,21 +770,7 @@ async def main():
             raise HTTPException(400, detail="Too many hotkeys requested. Maximum is 100.")
 
         try:
-            # Gather stats for each valid hotkey
-            stats = await asyncio.gather(
-                *[get_miner_purchase_stats(db, hotkey) for hotkey in hotkeys],
-                return_exceptions=True
-            )
-
-            # Filter out any failed requests and create response dict
-            result = {}
-            for hotkey, stat in zip(hotkeys, stats):
-                if isinstance(stat, Exception):
-                    print(f"Error getting stats for {hotkey}: {str(stat)}")
-                    continue
-                result[hotkey] = stat
-
-            return result
+            return await get_miner_purchase_stats(db, hotkeys)
 
         except Exception as e:
             print(f"Error in miner_purchase_scores: {str(e)}")
