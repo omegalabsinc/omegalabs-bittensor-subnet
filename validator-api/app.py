@@ -343,7 +343,7 @@ async def main():
 
     async def resync_metagraph():
         while True:
-            """Resyncs the metagraph and updates the hotkeys and moving average based on the new metagraph."""
+            """Resyncs the metagraph and updates the hotkeys and moving averages based on the new metagraph."""
             print("resync_metagraph()")
 
             try:
