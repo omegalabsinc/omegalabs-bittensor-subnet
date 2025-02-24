@@ -467,12 +467,13 @@ def mark_video_rejected(
     db.add(video_record)
     db.commit()
 
-def mark_video_submitted(db: Session, video_id: str, with_lock: bool = False):
+def mark_video_submitted(db: Session, video_id: str, miner_hotkey: str, with_lock: bool = False):
     # Mark video as "SUBMITTED" if in the "PURCHASE_PENDING" state.
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
-        FocusVideoRecord.deleted_at.is_(None)
+        FocusVideoRecord.deleted_at.is_(None),
+        FocusVideoRecord.miner_hotkey == miner_hotkey  # make sure the miner requesting the cancellation is the one who was trying to buy it!
     )
     if with_lock:
         video_record = video_record.with_for_update()
