@@ -21,7 +21,7 @@ engine = create_engine(
     max_overflow=DB_MAX_OVERFLOW,
     pool_timeout=15,  # bumped down from default of 30
     pool_pre_ping=True,  # Good practice for most scenarios
-    pool_recycle=3600,  # Recycle connections after 1 hour
+    pool_recycle=300,  # Recycle connections after 5 minutes
 )
 SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
