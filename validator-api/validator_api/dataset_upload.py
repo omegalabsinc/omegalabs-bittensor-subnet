@@ -118,42 +118,41 @@ class AudioDatasetUploader:
             f.write(audio_bytes)
         return temp_audiofile.read()
 
-    async def add_audios(
+    def add_audios(
         self, metadata: List[AudioMetadata], audio_ids: List[str],
         inverse_der: float, audio_length_score: float,
         audio_quality_total_score: float, audio_query_score: float,
         query: str, total_score: float
     ) -> None:
-        async with self.add_audios_mutex:
-            curr_time = datetime.now()
+        curr_time = datetime.now()
 
-            audio_files = [self.convert_audio_to_wav(audio.audio_bytes) for audio in metadata]
+        audio_files = [self.convert_audio_to_wav(audio.audio_bytes) for audio in metadata]
 
-            self.current_batch.extend([
-                {
-                    "audio_id": audio_uuid,
-                    "youtube_id": audio.video_id,
-                    # "audio_bytes": audio.audio_bytes,
-                    "audio": {"path": audio_file, "array": sf.read(BytesIO(base64.b64decode(audio.audio_bytes)))[0], "sampling_rate": 16000},
-                    "start_time": audio.start_time,
-                    "end_time": audio.end_time,
-                    "audio_embed": audio.audio_emb,
-                    "diar_timestamps_start": audio.diar_timestamps_start,
-                    "diar_timestamps_end": audio.diar_timestamps_end,
-                    "diar_speakers": audio.diar_speakers,
-                    "inverse_der": inverse_der,
-                    "audio_length_score": audio_length_score,
-                    "audio_quality_score": audio_quality_total_score,
-                    "query_relevance_score": audio_query_score,
-                    "total_score": total_score,
-                    "query": query,
-                    "submitted_at": int(curr_time.timestamp()),
-                }
-                for audio_uuid, audio_file, audio in zip(audio_ids, audio_files, metadata)
-            ])
-            print(f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}")
-            if len(self.current_batch) >= self.desired_batch_size:
-                self.submit()
+        self.current_batch.extend([
+            {
+                "audio_id": audio_uuid,
+                "youtube_id": audio.video_id,
+                # "audio_bytes": audio.audio_bytes,
+                "audio": {"path": audio_file, "array": sf.read(BytesIO(base64.b64decode(audio.audio_bytes)))[0], "sampling_rate": 16000},
+                "start_time": audio.start_time,
+                "end_time": audio.end_time,
+                "audio_embed": audio.audio_emb,
+                "diar_timestamps_start": audio.diar_timestamps_start,
+                "diar_timestamps_end": audio.diar_timestamps_end,
+                "diar_speakers": audio.diar_speakers,
+                "inverse_der": inverse_der,
+                "audio_length_score": audio_length_score,
+                "audio_quality_score": audio_quality_total_score,
+                "query_relevance_score": audio_query_score,
+                "total_score": total_score,
+                "query": query,
+                "submitted_at": int(curr_time.timestamp()),
+            }
+            for audio_uuid, audio_file, audio in zip(audio_ids, audio_files, metadata)
+        ])
+        print(f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}")
+        if len(self.current_batch) >= self.desired_batch_size:
+            self.submit()
 
     def submit(self) -> None:
         if len(self.current_batch) < self.min_batch_size:
