@@ -196,4 +196,4 @@ async def upload_audio_metadata(request: Request) -> List[str]:
     finally:
         audio_dataset_uploader.current_waiters -= 1
 
-    return audio_ids
+    return audio_ids, upload_data
