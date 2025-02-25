@@ -524,8 +524,8 @@ async def main():
 
         return True
 
-    @limiter.limit("1/minute")
     @app.post("/api/upload_audio_metadata")
+    @limiter.limit("1/minute")
     async def upload_audio_metadata(
         request: Request,
         hotkey: Annotated[str, Depends(get_hotkey)],
