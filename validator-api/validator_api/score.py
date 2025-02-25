@@ -1,11 +1,12 @@
 import asyncio
 import uuid
-from typing import List, Tuple
+from typing import List, Tuple, Optional
 
-from fastapi import HTTPException
+from fastapi import HTTPException, Request
 from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
+from pydantic import BaseModel
 
 from omega.protocol import VideoMetadata, AudioMetadata
 from omega.constants import DIFFERENCE_THRESHOLD
@@ -147,25 +148,29 @@ async def upload_video_metadata(
     )
     return video_ids
 
-async def upload_audio_metadata(
-    metadata: List[AudioMetadata], 
-    inverse_der: float, audio_length_score: float,
-    audio_quality_total_score: float, 
-    audio_query_score: float,
-    query: str, 
-    total_score: float 
-) -> List[str]:
-    def _add_audios():
-        audio_dataset_uploader.add_audios(
-            metadata,
-            audio_ids,
-            inverse_der,
-            audio_length_score,
-            audio_quality_total_score,
-            audio_query_score,
-            query,
-            total_score
-        )
+class AudioMetadataUpload(BaseModel):
+    metadata: List[AudioMetadata]
+    inverse_der: float
+    audio_length_score: float
+    audio_quality_total_score: float
+    audio_query_score: float
+    topic_query: str
+    total_score: Optional[float] = None
+    miner_hotkey: Optional[str] = None
+
+def _add_audios(upload_data: AudioMetadataUpload, audio_ids: List[str]):
+    audio_dataset_uploader.add_audios(
+        upload_data.metadata,
+        audio_ids,
+        upload_data.inverse_der,
+        upload_data.audio_length_score,
+        upload_data.audio_quality_total_score,
+        upload_data.audio_query_score,
+        upload_data.topic_query,
+        upload_data.total_score
+    )
+
+async def upload_audio_metadata(request: Request) -> List[str]:
 
     if audio_dataset_uploader.current_waiters >= audio_dataset_uploader.max_waiters:
         raise HTTPException(
@@ -177,6 +182,9 @@ async def upload_audio_metadata(
     print(f"Current waiters: {audio_dataset_uploader.current_waiters}")
 
     try:
+        request_body = await request.body()
+        upload_data = AudioMetadataUpload.model_validate_json(request_body)
+        metadata = upload_data.metadata
         embeddings = Embeddings(
             video=None,
             audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
@@ -184,7 +192,7 @@ async def upload_audio_metadata(
         )
         audio_ids = await asyncio.to_thread(upload_to_pinecone_audio, embeddings, metadata)
         async with audio_dataset_uploader.add_audios_mutex:
-            await asyncio.to_thread(_add_audios)
+            await asyncio.to_thread(_add_audios, upload_data, audio_ids)
     finally:
         audio_dataset_uploader.current_waiters -= 1
 

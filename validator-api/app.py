@@ -36,7 +36,7 @@ from validator_api.config import (API_KEY_NAME, API_KEYS, COMMUNE_NETUID,
                                   FIXED_ALPHA_TAO_ESTIMATE, FOCUS_API_KEYS,
                                   FOCUS_API_URL, FOCUS_REWARDS_PERCENT,
                                   IMPORT_SCORE, IS_PROD, NETUID, NETWORK, PORT,
-                                  PROXY_LIST, SENTRY_DSN, TOPICS_LIST)
+                                  PROXY_LIST, SENTRY_DSN)
 # from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import (confirm_transfer,
                                                  confirm_video_purchased)
@@ -178,17 +178,6 @@ class VideoMetadataUpload(BaseModel):
     query_relevance_scores: List[float]
     topic_query: str
     novelty_score: Optional[float] = None
-    total_score: Optional[float] = None
-    miner_hotkey: Optional[str] = None
-
-
-class AudioMetadataUpload(BaseModel):
-    metadata: List[AudioMetadata]
-    inverse_der: float
-    audio_length_score: float
-    audio_quality_total_score: float
-    audio_query_score: float
-    topic_query: str
     total_score: Optional[float] = None
     miner_hotkey: Optional[str] = None
 
@@ -374,7 +363,18 @@ async def main():
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss
 
-        async with detect_blocking(request.url.path):
+        # Get basic auth credentials if available
+        auth = request.headers.get("authorization")
+        username = None
+        if auth and auth.startswith("Basic "):
+            try:
+                import base64
+                decoded = base64.b64decode(auth.split()[1]).decode()
+                username = decoded.split(":")[0]
+            except:
+                pass
+
+        async with detect_blocking(request.url.path, username):
             response = await call_next(request)
 
         mem_after = process.memory_info().rss
@@ -524,9 +524,10 @@ async def main():
 
         return True
 
+    @limiter.limit("1/minute")
     @app.post("/api/upload_audio_metadata")
     async def upload_audio_metadata(
-        upload_data: AudioMetadataUpload,
+        request: Request,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
         print("upload_audio_metadata()")
@@ -554,18 +555,16 @@ async def main():
             validator_chain = "bittensor"
             is_bittensor = 1
 
-        metadata = upload_data.metadata
+        start_time = time.time()
+        # Note: by passing in the request object, we can choose to load the body of the request when
+        # we are ready to process it, which is important because the request body here can be huge
+        audio_ids, upload_data = await score.upload_audio_metadata(request)
         inverse_der = upload_data.inverse_der
         audio_length_score = upload_data.audio_length_score
         audio_quality_total_score = upload_data.audio_quality_total_score
         audio_query_score = upload_data.audio_query_score
-        topic_query = upload_data.topic_query
         total_score = upload_data.total_score
-
-        start_time = time.time()
-        audio_ids = await score.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, topic_query, total_score)
-        print(
-            f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
 
         if upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
