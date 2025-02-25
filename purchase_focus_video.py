@@ -58,17 +58,18 @@ Using the OMEGA Focus Video Purchase System:
 Remember to keep your wallet information secure and never share your private keys.
 """
 
-import os
-import requests
-import bittensor as bt
-from bittensor import wallet as btcli_wallet
 import argparse
-import time
 import json
-from tabulate import tabulate
-from datetime import datetime
 import multiprocessing
+import os
 import sys
+import time
+from datetime import datetime
+
+import bittensor as bt
+import requests
+from bittensor import wallet as btcli_wallet
+from tabulate import tabulate
 
 parser = argparse.ArgumentParser(description='Interact with the OMEGA Focus Videos API.')
 args = parser.parse_args()
@@ -80,6 +81,7 @@ API_BASE = (
     if SUBTENSOR_NETWORK == "test" else
     "https://sn24-api.omegatron.ai"
 )
+# API_BASE = "http://localhost:8000"
 
 CYAN = "\033[96m"
 GREEN = "\033[92m"
@@ -213,7 +215,12 @@ def get_auth_headers(wallet):
     miner_hotkey_signature = f"0x{hotkey.sign(miner_hotkey).hex()}"
     return miner_hotkey, miner_hotkey_signature
 
-def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_path=None):
+def purchase_video(
+    video_id=None,
+    wallet_name=None,
+    wallet_hotkey=None,
+    wallet_path=None
+):
     if not video_id:
         video_id = input(f"{CYAN}Enter focus video id: {RESET}")
 
@@ -225,7 +232,7 @@ def purchase_video(video_id=None, wallet_name=None, wallet_hotkey=None, wallet_p
     purchase_response = requests.post(
         API_BASE + "/api/focus/purchase",
         auth=(miner_hotkey, miner_hotkey_signature),
-        json={"video_id": video_id, "miner_hotkey": miner_hotkey},
+        json={"video_id": video_id},
         headers={"Content-Type": "application/json"},
         timeout=60
     )
