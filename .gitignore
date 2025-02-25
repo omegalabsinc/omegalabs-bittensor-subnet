@@ -170,3 +170,4 @@ gcp_service_account.json
 desc_embeddings_recent.json
 .idea/
 api_logs/
+*logs*.txt

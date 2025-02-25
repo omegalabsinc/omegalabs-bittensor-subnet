@@ -3,7 +3,7 @@ from contextlib import asynccontextmanager
 
 
 @asynccontextmanager
-async def detect_blocking(name: str):
+async def detect_blocking(request_name: str, username: str):
     # this prints a message if an operation/endpoint is blocking for too long
     loop = asyncio.get_running_loop()
     start_time = loop.time()
@@ -15,7 +15,7 @@ async def detect_blocking(name: str):
         nonlocal last_yield, yielded
         current = loop.time()
         if current - last_yield > 0.1:  # Blocked for >100ms
-            print(f"Blocking operation detected in {name}! Blocked for {current - last_yield:.2f}s")
+            print(f"Blocking operation detected in {request_name}! Blocked for {current - last_yield:.2f}s (username: {username})")
         last_yield = current
         yielded = True
 

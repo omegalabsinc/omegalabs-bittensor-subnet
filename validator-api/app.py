@@ -36,7 +36,7 @@ from validator_api.config import (API_KEY_NAME, API_KEYS, COMMUNE_NETUID,
                                   FIXED_ALPHA_TAO_ESTIMATE, FOCUS_API_KEYS,
                                   FOCUS_API_URL, FOCUS_REWARDS_PERCENT,
                                   IMPORT_SCORE, IS_PROD, NETUID, NETWORK, PORT,
-                                  PROXY_LIST, SENTRY_DSN, TOPICS_LIST)
+                                  PROXY_LIST, SENTRY_DSN)
 # from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import (confirm_transfer,
                                                  confirm_video_purchased)
@@ -374,7 +374,18 @@ async def main():
         process = psutil.Process(os.getpid())
         mem_before = process.memory_info().rss
 
-        async with detect_blocking(request.url.path):
+        # Get basic auth credentials if available
+        auth = request.headers.get("authorization")
+        username = None
+        if auth and auth.startswith("Basic "):
+            try:
+                import base64
+                decoded = base64.b64decode(auth.split()[1]).decode()
+                username = decoded.split(":")[0]
+            except:
+                pass
+
+        async with detect_blocking(request.url.path, username):
             response = await call_next(request)
 
         mem_after = process.memory_info().rss
@@ -524,8 +535,10 @@ async def main():
 
         return True
 
+    @limiter.limit("1/minute")
     @app.post("/api/upload_audio_metadata")
     async def upload_audio_metadata(
+        request: Request,
         upload_data: AudioMetadataUpload,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
