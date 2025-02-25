@@ -367,15 +367,22 @@ class MinerPurchaseStats(BaseModel):
 
 async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dict[str, MinerPurchaseStats]:
     def db_operation():
-        # Get videos purchased by miners in the last 24 hours
+        # Get total earned tao across all miners in last 24 hours
+        total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+        ).scalar() or 0
+
+        # Get videos purchased by requested miners in the last 24 hours
         purchased_videos_records = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.miner_hotkey.in_(miner_hotkeys),
             FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        )
-        return purchased_videos_records.all()
+        ).all()
 
-    purchased_videos_records = await asyncio.to_thread(db_operation)
+        return total_earned_tao, purchased_videos_records
+
+    total_earned_tao, purchased_videos_records = await asyncio.to_thread(db_operation)
 
     # Group records by miner hotkey
     videos_by_miner = {}
@@ -383,10 +390,6 @@ async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dic
         if record.miner_hotkey not in videos_by_miner:
             videos_by_miner[record.miner_hotkey] = []
         videos_by_miner[record.miner_hotkey].append(record)
-
-    # Get max focus points once since it's the same for all miners
-    max_focus_alpha = await get_max_focus_alpha_per_day()
-    max_focus_points = get_max_focus_points_available_today(max_focus_alpha)
 
     # Process stats for each miner
     stats = {}
@@ -398,14 +401,14 @@ async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dic
             for video_record in miner_videos
         ]
 
-        total_focus_points = sum(video.video_score * 100 for video in purchased_videos)
-        focus_points_percentage = total_focus_points / max_focus_points if max_focus_points > 0 else 0
+        miner_earned_tao = sum(video.earned_reward_tao for video in purchased_videos)
+        tao_percentage = miner_earned_tao / total_earned_tao if total_earned_tao > 0 else 0
 
         stats[miner_hotkey] = MinerPurchaseStats(
             purchased_videos=purchased_videos,
-            total_focus_points=total_focus_points,
-            max_focus_points=max_focus_points,
-            focus_points_percentage=focus_points_percentage
+            total_focus_points=miner_earned_tao,
+            max_focus_points=total_earned_tao,
+            focus_points_percentage=tao_percentage
         )
 
     return stats
