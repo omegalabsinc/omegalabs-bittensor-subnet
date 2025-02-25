@@ -102,15 +102,15 @@ class DatasetUploader:
         self.current_batch = self.current_batch[self.desired_batch_size:]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
 
-    
-
 class AudioDatasetUploader:
     def __init__(self):
         self.current_batch = []
         self.min_batch_size = 8
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
         self.add_audios_mutex = asyncio.Lock()
-    
+        self.current_waiters = 0
+        self.max_waiters = 10
+
     def convert_audio_to_wav(self, audio_bytes: str) -> bytes:
         temp_audiofile = tempfile.NamedTemporaryFile(suffix=".wav")
         audio_bytes = base64.b64decode(audio_bytes)

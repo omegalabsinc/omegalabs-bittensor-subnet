@@ -2,6 +2,7 @@ import asyncio
 import uuid
 from typing import List, Tuple
 
+from fastapi import HTTPException
 from pinecone import Pinecone
 import torch
 import torch.nn.functional as F
@@ -154,12 +155,6 @@ async def upload_audio_metadata(
     query: str, 
     total_score: float 
 ) -> List[str]:
-    embeddings = Embeddings(
-        video=None,
-        audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
-        description=None,
-    )
-    audio_ids = await asyncio.to_thread(upload_to_pinecone_audio, embeddings, metadata)
     def _add_audios():
         audio_dataset_uploader.add_audios(
             metadata,
@@ -171,6 +166,26 @@ async def upload_audio_metadata(
             query,
             total_score
         )
-    async with audio_dataset_uploader.add_audios_mutex:
-        await asyncio.to_thread(_add_audios)
+
+    if audio_dataset_uploader.current_waiters >= audio_dataset_uploader.max_waiters:
+        raise HTTPException(
+            status_code=500,
+            detail="Memory usage is too high. Please try again later."
+        )
+
+    audio_dataset_uploader.current_waiters += 1
+    print(f"Current waiters: {audio_dataset_uploader.current_waiters}")
+
+    try:
+        embeddings = Embeddings(
+            video=None,
+            audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
+            description=None,
+        )
+        audio_ids = await asyncio.to_thread(upload_to_pinecone_audio, embeddings, metadata)
+        async with audio_dataset_uploader.add_audios_mutex:
+            await asyncio.to_thread(_add_audios)
+    finally:
+        audio_dataset_uploader.current_waiters -= 1
+
     return audio_ids
