@@ -182,17 +182,6 @@ class VideoMetadataUpload(BaseModel):
     miner_hotkey: Optional[str] = None
 
 
-class AudioMetadataUpload(BaseModel):
-    metadata: List[AudioMetadata]
-    inverse_der: float
-    audio_length_score: float
-    audio_quality_total_score: float
-    audio_query_score: float
-    topic_query: str
-    total_score: Optional[float] = None
-    miner_hotkey: Optional[str] = None
-
-
 class FocusScoreResponse(BaseModel):
     video_id: str
     video_score: float
@@ -539,7 +528,6 @@ async def main():
     @app.post("/api/upload_audio_metadata")
     async def upload_audio_metadata(
         request: Request,
-        upload_data: AudioMetadataUpload,
         hotkey: Annotated[str, Depends(get_hotkey)],
     ) -> bool:
         print("upload_audio_metadata()")
@@ -567,18 +555,16 @@ async def main():
             validator_chain = "bittensor"
             is_bittensor = 1
 
-        metadata = upload_data.metadata
+        start_time = time.time()
+        # Note: by passing in the request object, we can choose to load the body of the request when
+        # we are ready to process it, which is important because the request body here can be huge
+        audio_ids, upload_data = await score.upload_audio_metadata(request)
         inverse_der = upload_data.inverse_der
         audio_length_score = upload_data.audio_length_score
         audio_quality_total_score = upload_data.audio_quality_total_score
         audio_query_score = upload_data.audio_query_score
-        topic_query = upload_data.topic_query
         total_score = upload_data.total_score
-
-        start_time = time.time()
-        audio_ids = await score.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, topic_query, total_score)
-        print(
-            f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
 
         if upload_data.miner_hotkey is not None:
             # Calculate and upsert leaderboard data
