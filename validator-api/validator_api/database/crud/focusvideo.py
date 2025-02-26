@@ -96,17 +96,17 @@ class FocusVideoCache:
         self._alpha_to_tao_cache = CachedValue(fetch_func=_alpha_to_tao_rate)
         self._already_purchased_cache = CachedValue(fetch_func=_already_purchased_max_focus_tao)
 
-    async def get_all_available_focus(self):
+    def get_all_available_focus(self):
         try:
-            return await self._available_focus_cache.get()
+            return self._available_focus_cache.get()
         except Exception:
             return []
 
-    async def already_purchased_max_focus_tao(self) -> bool:
-        return await self._already_purchased_cache.get()
+    def already_purchased_max_focus_tao(self) -> bool:
+        return self._already_purchased_cache.get()
 
-    async def alpha_to_tao_rate(self) -> float:
-        return await self._alpha_to_tao_cache.get()
+    def alpha_to_tao_rate(self) -> float:
+        return self._alpha_to_tao_cache.get()
 
 
 async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
