@@ -648,7 +648,7 @@ async def main():
         request: Request,
     ) -> float:
         try:
-            return await focus_video_cache.alpha_to_tao_rate()
+            return focus_video_cache.alpha_to_tao_rate()
         except Exception as e:
             print(e)
             return FIXED_ALPHA_TAO_ESTIMATE
@@ -671,7 +671,7 @@ async def main():
         """
         Return all available focus videos
         """
-        return await focus_video_cache.get_all_available_focus()
+        return focus_video_cache.get_all_available_focus()
 
     @app.post("/api/focus/purchase")
     @limiter.limit("2/minute")
@@ -689,7 +689,7 @@ async def main():
                 detail=f"Miner is banned from purchasing focus videos until {banned_until} due to too many failed purchases in a row. Contact a team member if you believe this is an error.",
             )
 
-        if await focus_video_cache.already_purchased_max_focus_tao():
+        if focus_video_cache.already_purchased_max_focus_tao():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
