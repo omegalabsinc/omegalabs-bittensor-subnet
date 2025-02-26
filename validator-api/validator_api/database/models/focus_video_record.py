@@ -14,9 +14,11 @@ import enum
 class TaskType(enum.Enum):
     USER = "USER"
     BOOSTED = "BOOSTED"
+    MARKETPLACE = "MARKETPLACE"
 
 class FocusVideoStateExternal(enum.Enum):
     PROCESSING = "PROCESSING"
+    PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"
     READY = "READY"
     REJECTED = "REJECTED"
     SUBMITTED = "SUBMITTED"
@@ -26,6 +28,7 @@ class FocusVideoStateInternal(enum.Enum):
     # OMEGA Focus user facing states
     IN_PROGRESS = "IN_PROGRESS"
     PROCESSING = "PROCESSING"  # User has completed task, we are currently calculating their score and checking if the video is legit
+    PENDING_HUMAN_REVIEW = "PENDING_HUMAN_REVIEW"  # Video belongs to a marketplace task and needs human review
     READY = "READY"  # Score has been calculated and task is eligible for submission
     REJECTED = "REJECTED"  # Turns out that the task was NOT eligible for submission, lifecycle ended here
     SUBMITTED = "SUBMITTED"  # User has pressed "Submit" and the task is now listed on the marketplace, for SN24 miners to buy
