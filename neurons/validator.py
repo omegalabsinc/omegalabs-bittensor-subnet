@@ -364,51 +364,28 @@ class Validator(BaseValidatorNeuron):
 
         """ START FOCUS VIDEOS PROCESSING AND SCORING """
         bt.logging.info("===== FOCUS VIDEOS PROCESSING AND SCORING =====")
-        # Gather all focus videos purchased by the subset of miners
-        focus_miner_uids = []
-        focus_miner_hotkeys = []
 
         # Get all the focus videos by iteratively calling the get_focus_videos() function.
         miner_hotkeys = []
         for miner_uid in miner_uids:
             miner_hotkeys.append(self.metagraph.hotkeys[miner_uid])
         focus_videos = await self.get_focus_videos(miner_hotkeys, miner_uids)
+        focus_rewards_list = [miner_stats["focus_points_percentage"] for miner_stats in focus_videos]
 
-        # Check responses and mark which miner uids and hotkeys have focus videos
-        for focus_video in focus_videos:
-            if focus_video and focus_video is not None and 'purchased_videos' in focus_video:
-                focus_miner_uids.append(focus_video['miner_uid'])
-                focus_miner_hotkeys.append(focus_video['miner_hotkey'])
-
-        if focus_videos is None or len(focus_miner_uids) == 0:
-            bt.logging.info("No focus videos found for miners.")
-            return
-
-        focus_rewards_list = await self.handle_checks_and_rewards_focus(focus_videos=focus_videos)
         # give reward to all miners with focus videos and had a non-null reward
         focus_rewards = []
         focus_reward_uids = []
-        for r, r_uid in zip(focus_rewards_list, focus_miner_uids):
+        for r, r_uid in zip(focus_rewards_list, miner_uids):
             if r is not None:
                 focus_rewards.append(r)
                 focus_reward_uids.append(r_uid)
         focus_rewards = torch.FloatTensor(focus_rewards).to(self.device)
         self.update_focus_scores(focus_rewards, focus_reward_uids)
 
-        # set focus score to 0 for miners who don't have any focus videos
-        no_focus_videos_miner_uids = [
-            uid for uid in miner_uids if uid not in focus_reward_uids]
-        no_rewards_tensor = torch.FloatTensor(
-            [FOCUS_MIN_SCORE] * len(no_focus_videos_miner_uids)).to(self.device)
-        self.update_focus_scores(no_rewards_tensor, no_focus_videos_miner_uids)
-
         for reward, miner_uid in zip(focus_rewards, focus_reward_uids):
             bt.logging.info(
-                f"Rewarding miner={miner_uid} with reward={reward} for focus videos")
+                f"Scoring miner={miner_uid} with reward={reward} for focus videos")
 
-        for no_reward, miner_uid in zip(no_rewards_tensor, no_focus_videos_miner_uids):
-            bt.logging.info(
-                f"Scoring miner={miner_uid} with reward={no_reward} for no focus videos")
         """ END FOCUS VIDEOS PROCESSING AND SCORING """
 
     def metadata_check(self, metadata: List[VideoMetadata]) -> List[VideoMetadata]:
@@ -865,46 +842,6 @@ class Validator(BaseValidatorNeuron):
                 f"Error in check_videos_and_calculate_rewards_youtube: {e}")
             traceback.print_exc()
             return None
-
-    async def check_videos_and_calculate_rewards_focus(
-        self,
-        videos,
-    ) -> Optional[float]:
-        try:
-            # return if no purchased videos were found
-            if len(videos["purchased_videos"]) == 0:
-                bt.logging.info("No focus videos found for miner.")
-                return None
-
-            total_score = 0
-            # Aggregate scores
-            for video in videos["purchased_videos"]:
-                bt.logging.debug(
-                    f"Focus video score for {video['video_id']}: {video['video_score']}")
-
-                # Set final score, giving minimum if necessary
-                score = max(float(video["video_score"]), MIN_SCORE)
-                total_score += score
-
-            return total_score
-        except Exception as e:
-            bt.logging.error(
-                f"Error in check_videos_and_calculate_rewards_focus: {e}")
-            traceback.print_exc()
-            return None
-
-    # Get all the focus reward results by iteratively calling your check_videos_and_calculate_rewards_focus() function.
-    async def handle_checks_and_rewards_focus(
-        self, focus_videos
-    ) -> torch.FloatTensor:
-
-        rewards = await asyncio.gather(*[
-            self.check_videos_and_calculate_rewards_focus(
-                focus_video
-            )
-            for focus_video in focus_videos
-        ])
-        return rewards
 
     # Get all the reward results by iteratively calling your check_videos_and_calculate_rewards_youtube() function.
     async def handle_checks_and_rewards_youtube(
