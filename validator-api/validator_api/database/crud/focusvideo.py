@@ -23,11 +23,13 @@ MIN_REWARD_ALPHA = .5
 
 
 class CachedValue:
-    def __init__(self, duration: int = 90):
+    def __init__(self, duration: int = 90, max_waiters: int = 10):
         self._value = None
         self._timestamp = 0
         self._duration = duration
         self._mutex = asyncio.Lock()
+        self._waiters_count = 0
+        self._max_waiters = max_waiters
 
     def is_valid(self) -> bool:
         return (
@@ -39,7 +41,12 @@ class CachedValue:
         if self.is_valid():
             return self._value
 
+        # If too many waiters, return default value
+        if self._waiters_count >= self._max_waiters:
+            raise Exception("Too many waiters, please try again later")
+
         try:
+            self._waiters_count += 1
             async with self._mutex:
                 # Double check after acquiring lock
                 if not self.is_valid():
@@ -50,6 +57,8 @@ class CachedValue:
         except Exception as e:
             print(e)
             raise HTTPException(500, detail="Internal error")
+        finally:
+            self._waiters_count -= 1
 
 async def _fetch_available_focus(db: Session):
     def db_operation():
@@ -64,12 +73,15 @@ async def _fetch_available_focus(db: Session):
 
     return await asyncio.to_thread(db_operation)
 
-_available_focus_cache = CachedValue()
+_available_focus_cache = CachedValue(duration=180)
 
 async def get_all_available_focus(db: Session):
-    return await _available_focus_cache.get_or_update(
-        lambda: _fetch_available_focus(db)
-    )
+    try:
+        return await _available_focus_cache.get_or_update(
+            lambda: _fetch_available_focus(db)
+        )
+    except Exception as e:
+        return []
 
 def get_pending_focus(
     db: Session,
