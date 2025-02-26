@@ -42,9 +42,8 @@ from validator_api.cron.confirm_purchase import (confirm_transfer,
                                                  confirm_video_purchased)
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
-    MinerPurchaseStats, TaskType, alpha_to_tao_rate,
-    already_purchased_max_focus_tao, check_availability,
-    get_all_available_focus, get_miner_purchase_stats, get_video_owner_coldkey,
+    MinerPurchaseStats, TaskType, FocusVideoCache,
+    check_availability, get_miner_purchase_stats, get_video_owner_coldkey,
     mark_video_rejected, mark_video_submitted, set_focus_video_score)
 from validator_api.dataset_upload import (audio_dataset_uploader,
                                           video_dataset_uploader)
@@ -326,6 +325,7 @@ async def main():
 
     subtensor = bittensor.subtensor(network=NETWORK)
     metagraph: bittensor.metagraph = subtensor.metagraph(NETUID)
+    focus_video_cache = FocusVideoCache()
 
     commune_client = None
     commune_keys = None
@@ -648,7 +648,7 @@ async def main():
         request: Request,
     ) -> float:
         try:
-            return await alpha_to_tao_rate()
+            return await focus_video_cache.alpha_to_tao_rate()
         except Exception as e:
             print(e)
             return FIXED_ALPHA_TAO_ESTIMATE
@@ -667,14 +667,11 @@ async def main():
 
     @app.get("/api/focus/get_list")
     @limiter.limit("5/minute")
-    async def _get_available_focus_video_list(
-        request: Request,
-        db: Session = Depends(get_db)
-    ):
+    async def _get_available_focus_video_list(request: Request):
         """
         Return all available focus videos
         """
-        return await get_all_available_focus(db)
+        return await focus_video_cache.get_all_available_focus()
 
     @app.post("/api/focus/purchase")
     @limiter.limit("2/minute")
@@ -692,7 +689,7 @@ async def main():
                 detail=f"Miner is banned from purchasing focus videos until {banned_until} due to too many failed purchases in a row. Contact a team member if you believe this is an error.",
             )
 
-        if await already_purchased_max_focus_tao(db):
+        if await focus_video_cache.already_purchased_max_focus_tao():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")

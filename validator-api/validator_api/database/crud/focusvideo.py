@@ -4,7 +4,7 @@ from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, Float
 from typing import List, Optional, Dict
 import json
-import time
+import traceback
 import asyncio
 import bittensor
 
@@ -23,81 +23,110 @@ MIN_REWARD_ALPHA = .5
 
 
 class CachedValue:
-    def __init__(self, duration: int = 90, max_waiters: int = 10):
+    def __init__(self, fetch_func, update_interval: int = 90):
+        """
+        Args:
+            fetch_func: An async function that fetches the new value.
+            update_interval: How often (in seconds) to refresh the cache.
+        """
+        self._fetch_func = fetch_func
+        self._update_interval = update_interval
         self._value = None
-        self._timestamp = 0
-        self._duration = duration
-        self._mutex = asyncio.Lock()
-        self._waiters_count = 0
-        self._max_waiters = max_waiters
+        self.is_initialized = False
+        asyncio.create_task(self._background_update())
 
-    def is_valid(self) -> bool:
-        return (
-            self._value is not None and 
-            time.time() - self._timestamp < self._duration
-        )
+    async def _background_update(self):
+        while True:
+            try:
+                new_value = await self._fetch_func()
+                self._value = new_value
+                if not self.is_initialized:
+                    self.is_initialized = True
+                    print(f"Cache {self._fetch_func.__name__} initialized")
+            except Exception as e:
+                # Log error or handle as needed; do not crash the loop
+                print(f"Background cache update failed: {e}\n{traceback.format_exc()}")
+            await asyncio.sleep(self._update_interval)
 
-    async def get_or_update(self, fetch_func):
-        if self.is_valid():
-            return self._value
+    def get(self):
+        """Return the cached value (raises an exception if not yet initialized)."""
+        if not self.is_initialized:
+            raise Exception("Cache is not initialized yet")
+        return self._value
 
-        # If too many waiters, return default value
-        if self._waiters_count >= self._max_waiters:
-            raise Exception("Too many waiters, please try again later")
-
-        try:
-            self._waiters_count += 1
-            async with self._mutex:
-                # Double check after acquiring lock
-                if not self.is_valid():
-                    self._value = await fetch_func()
-                    self._timestamp = time.time()
-            return self._value
-
-        except Exception as e:
-            print(e)
-            raise HTTPException(500, detail="Internal error")
-        finally:
-            self._waiters_count -= 1
-
-async def _fetch_available_focus(db: Session):
+async def _fetch_available_focus():
     def db_operation():
-        # Show oldest videos first so they get rewarded fastest
-        items = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,
-            FocusVideoRecord.deleted_at.is_(None),
-            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-            # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
-        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
-        return [FocusVideoInternal.model_validate(record) for record in items]
+        with get_db_context() as db:
+            # Show oldest videos first so they get rewarded fastest
+            items = db.query(FocusVideoRecord).filter(
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED,
+                FocusVideoRecord.deleted_at.is_(None),
+                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+                # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+            ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
+            return [FocusVideoInternal.model_validate(record) for record in items]
 
     return await asyncio.to_thread(db_operation)
 
-_available_focus_cache = CachedValue(duration=180)
+async def _alpha_to_tao_rate() -> float:
+    async with bittensor.AsyncSubtensor(network=NETWORK) as subtensor:
+        subnet = await subtensor.subnet(NETUID)
+        balance = subnet.alpha_to_tao(1)
+        return balance.tao
 
-async def get_all_available_focus(db: Session):
-    try:
-        return await _available_focus_cache.get_or_update(
-            lambda: _fetch_available_focus(db)
-        )
-    except Exception as e:
-        return []
+async def _already_purchased_max_focus_tao() -> bool:
+    def db_operation():
+        with get_db_context() as db:
+            return db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+                FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+            ).scalar() or 0
 
-def get_pending_focus(
-    db: Session,
-    miner_hotkey: str
-):
-    try:
-        items = db.query(FocusVideoRecord).filter_by(
-            processing_state=FocusVideoStateInternal.PURCHASE_PENDING,
-            miner_hotkey=miner_hotkey
-        ).all()
-        return items
-    
-    except Exception as e:
-        print(e)
-        raise HTTPException(500, detail="Internal error")
-    
+    # Run database query in thread pool
+    total_earned_tao = await asyncio.to_thread(db_operation)
+    effective_max_focus_alpha = await get_purchase_max_focus_alpha()
+    effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
+
+    return total_earned_tao >= effective_max_focus_tao
+
+
+class FocusVideoCache:
+    def __init__(self):
+        self._available_focus_cache = CachedValue(fetch_func=_fetch_available_focus, update_interval=180)
+        self._alpha_to_tao_cache = CachedValue(fetch_func=_alpha_to_tao_rate)
+        self._already_purchased_cache = CachedValue(fetch_func=_already_purchased_max_focus_tao)
+
+    async def get_all_available_focus(self):
+        try:
+            return await self._available_focus_cache.get()
+        except Exception:
+            return []
+
+    async def already_purchased_max_focus_tao(self) -> bool:
+        return await self._already_purchased_cache.get()
+
+    async def alpha_to_tao_rate(self) -> float:
+        return await self._alpha_to_tao_cache.get()
+
+
+async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
+    def db_operation():
+        video_record = db.query(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.deleted_at.is_(None)
+        ).first()
+
+        if video_record is None:
+            raise HTTPException(404, detail="Focus video not found")
+
+        user_record = db.query(UserRecord).filter(UserRecord.email == video_record.user_email,).first()
+        if user_record is None:
+            raise HTTPException(404, detail="User not found")
+
+        return user_record.coldkey
+
+    return await asyncio.to_thread(db_operation)
+
 async def check_availability(
     db: Session,
     video_id: str,
@@ -152,61 +181,6 @@ async def check_availability(
             raise HTTPException(500, detail="Internal error")
 
     return await asyncio.to_thread(db_operation)
-
-def get_purchased_list(
-    db: Session,
-    miner_hotkey: str
-):
-    try:
-        purchased_list = db.query(FocusVideoRecord).filter_by(
-            processing_state=FocusVideoStateInternal.PURCHASED,
-            miner_hotkey=miner_hotkey
-        ).all()
-        
-        # result = [
-        #     {
-        #         "id": video.id,
-        #         "task_id": video.task_id,
-        #         "link": video.link,
-        #         "score": video.score,
-        #         "creator": video.creator,
-        #         "miner_uid": video.miner_uid,
-        #         "miner_hotkey": video.miner_hotkey,
-        #         "estimated_tao": video.estimated_tao,
-        #         "reward_tao": video.reward_tao,
-        #         "status": video.status,
-        #         "created_at": video.created_at,
-        #         "task_str": video.task.focusing_task if video.task else None
-        #     }
-        #     for video in purchased_list
-        # ]
-
-        # FV TODO: again, what is this for????
-        # for video in purchased_list:
-        #     task = get_task(db, video.task_id)
-        #     video.task_str = task.focusing_task
-            
-        return purchased_list
-    except Exception as e:
-        print(e)
-        # raise HTTPException(500, detail="Internal error")
-        return []
-
-# def get_consumed_list(
-#     db: Session,
-#     miner_hotkey: str
-# ):
-#     try:
-#         list = db.query(FocusVideoRecord).filter_by(
-#             processing_state=FocusVideoStateInternal.CONSUMED,
-#             miner_hotkey=miner_hotkey
-#         ).all()
-        
-#         return list
-#     except Exception as e:
-#         print(e)
-#         # raise HTTPException(500, detail="Internal error")
-#         return []
 
 async def check_video_metadata(
     db: Session,
@@ -267,109 +241,6 @@ async def check_video_metadata(
             'success': False,
             'message': 'Internal Server Errror'
         }
-
-# async def consume_video(db: Session, video_ids: str):
-#     print(f"Consuming focus video: <{video_ids}>")
-#     try:
-#         videos = db.query(FocusVideoRecord).filter(
-#             FocusVideoRecord.video_id.in_(video_ids)
-#         ).all()
-#         if len(videos) > 0:
-#             for video in videos:
-#                 if video.processing_state == FocusVideoStateInternal.CONSUMED:
-#                     return {
-#                         'success': False,
-#                         'message': 'Already consumed.'
-#                     }
-#                 video.processing_state = FocusVideoStateInternal.CONSUMED
-#                 db.add(video)
-#             db.commit()
-#             return {
-#                 'success': True
-#             }
-#         else:
-#             return {
-#                 'success': False,
-#                 'message': 'No Video Found'
-#             }
-#     except Exception as e:
-#         print(e)
-#         return {
-#             'success': False,
-#             'message': 'Internal Server Error'
-#         }
-
-# def add_task_str(db:Session, video: any):
-#     task = get_task(db, video.task_id)
-#     video.task_str = task.focusing_task
-#     return video
-
-async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
-    def db_operation():
-        video_record = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.video_id == video_id,
-            FocusVideoRecord.deleted_at.is_(None)
-        ).first()
-
-        if video_record is None:
-            raise HTTPException(404, detail="Focus video not found")
-
-        user_record = db.query(UserRecord).filter(UserRecord.email == video_record.user_email,).first()
-        if user_record is None:
-            raise HTTPException(404, detail="User not found")
-
-        return user_record.coldkey
-
-    return await asyncio.to_thread(db_operation)
-
-_already_purchased_cache = CachedValue()
-
-async def _already_purchased_max_focus_tao(db: Session) -> bool:
-    def db_operation():
-        return db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).scalar() or 0
-
-    # Run database query in thread pool
-    total_earned_tao = await asyncio.to_thread(db_operation)
-    effective_max_focus_alpha = await get_purchase_max_focus_alpha()
-    effective_max_focus_tao = effective_max_focus_alpha * await alpha_to_tao_rate()
-    
-    print(total_earned_tao, effective_max_focus_tao)
-    return total_earned_tao >= effective_max_focus_tao
-
-async def already_purchased_max_focus_tao(db: Session) -> bool:
-    return await _already_purchased_cache.get_or_update(
-        lambda: _already_purchased_max_focus_tao(db)
-    )
-
-_alpha_to_tao_cache = CachedValue()
-
-async def _alpha_to_tao_rate() -> bool:
-    sub = bittensor.subtensor(network=NETWORK)
-    subnet = sub.subnet(NETUID)
-    balance = subnet.alpha_to_tao(1)
-    return balance.tao
-
-async def alpha_to_tao_rate() -> float:
-    return await _alpha_to_tao_cache.get_or_update(
-        lambda: _alpha_to_tao_rate()
-    )
-
-# async def _already_purchased_max_focus_alpha() -> bool:
-#     with get_db_context() as db:
-#         effective_max_focus_alpha = await get_purchase_max_focus_alpha()
-#         total_earned_alpha = db.query(func.sum(FocusVideoRecord.earned_reward_alpha)).filter(
-#             FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-#             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-#         ).scalar() or 0
-#         return total_earned_alpha >= effective_max_focus_alpha
-
-# async def already_purchased_max_focus_alpha() -> bool:
-#     return await _already_purchased_cache.get_or_update(
-#         lambda: _already_purchased_max_focus_alpha()
-#     )
 
 class MinerPurchaseStats(BaseModel):
     purchased_videos: List[FocusVideoInternal]
@@ -501,34 +372,3 @@ def mark_video_submitted(db: Session, video_id: str, miner_hotkey: str, with_loc
     video_record.updated_at = datetime.utcnow()
     db.add(video_record)
     db.commit()
-
-_focus_points_cache = CachedValue(duration=60)  # Cache for 60 seconds
-
-async def _fetch_focus_points(db: Session) -> Dict[TaskType, float]:
-    results = db.query(
-        FocusVideoRecord.task_type,
-        func.sum(
-            func.cast(FocusVideoRecord.video_details['duration'].astext, Float) * 
-            FocusVideoRecord.video_score
-        ).label('focus_points')
-    ).filter(
-        FocusVideoRecord.processing_state.in_([
-            FocusVideoStateInternal.SUBMITTED,
-            FocusVideoStateInternal.PURCHASED
-        ]),
-        FocusVideoRecord.created_at >= datetime.utcnow() - timedelta(hours=24)
-    ).group_by(FocusVideoRecord.task_type).all()
-
-    # Initialize dict with all TaskType values set to 0
-    focus_points = {task_type: 0 for task_type in TaskType}
-
-    # Update with actual results
-    for task_type, points in results:
-        focus_points[task_type] = points or 0
-
-    return focus_points
-
-async def get_focus_points_from_last_24_hours(db: Session) -> Dict[TaskType, float]:
-    return await _focus_points_cache.get_or_update(
-        lambda: _fetch_focus_points(db)
-    )
