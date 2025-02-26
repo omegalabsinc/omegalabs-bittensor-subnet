@@ -559,73 +559,73 @@ async def main():
         # Note: by passing in the request object, we can choose to load the body of the request when
         # we are ready to process it, which is important because the request body here can be huge
         audio_ids, upload_data = await score.upload_audio_metadata(request)
-        inverse_der = upload_data.inverse_der
-        audio_length_score = upload_data.audio_length_score
-        audio_quality_total_score = upload_data.audio_quality_total_score
-        audio_query_score = upload_data.audio_query_score
-        total_score = upload_data.total_score
-        print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        # inverse_der = upload_data.inverse_der
+        # audio_length_score = upload_data.audio_length_score
+        # audio_quality_total_score = upload_data.audio_quality_total_score
+        # audio_query_score = upload_data.audio_query_score
+        # total_score = upload_data.total_score
+        # print(f"Uploaded {len(audio_ids)} audio metadata from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
 
-        if upload_data.miner_hotkey is not None:
-            # Calculate and upsert leaderboard data
-            datapoints = len(audio_ids)
-            total_score = upload_data.total_score
-            miner_hotkey = upload_data.miner_hotkey
+        # if upload_data.miner_hotkey is not None:
+        #     # Calculate and upsert leaderboard data
+        #     datapoints = len(audio_ids)
+        #     total_score = upload_data.total_score
+        #     miner_hotkey = upload_data.miner_hotkey
 
-            try:
-                start_time = time.time()
-                connection = connect_to_db()
+        #     try:
+        #         start_time = time.time()
+        #         connection = connect_to_db()
 
-                leaderboard_table_name = "miner_leaderboard_audio"
-                if not IS_PROD:
-                    leaderboard_table_name += "_test"
-                query = f"""
-                INSERT INTO {leaderboard_table_name} (
-                    hotkey,
-                    is_bittensor,
-                    is_commune,
-                    datapoints,
-                    avg_der,
-                    avg_length_score,
-                    avg_quality_score,
-                    avg_query_score,
-                    avg_score,
-                    last_updated
-                ) VALUES (
-                    %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
-                ) ON DUPLICATE KEY UPDATE
-                    datapoints = datapoints + VALUES(datapoints),
-                    avg_der = ((avg_der * (datapoints - VALUES(datapoints))) + (VALUES(avg_der) * VALUES(datapoints))) / datapoints,
-                    avg_length_score = ((avg_length_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_length_score) * VALUES(datapoints))) / datapoints,
-                    avg_quality_score = ((avg_quality_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_quality_score) * VALUES(datapoints))) / datapoints,
-                    avg_query_score = ((avg_query_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_query_score) * VALUES(datapoints))) / datapoints,
-                    avg_score = ((avg_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_score) * VALUES(datapoints))) / datapoints,
-                    last_updated = NOW();
-                """
-                cursor = connection.cursor()
-                cursor.execute(query, (
-                    miner_hotkey,
-                    is_bittensor,
-                    is_commune,
-                    datapoints,
-                    inverse_der,
-                    audio_length_score,
-                    audio_quality_total_score,
-                    audio_query_score,
-                    total_score
-                ))
-                connection.commit()
-                print(
-                    f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
+        #         leaderboard_table_name = "miner_leaderboard_audio"
+        #         if not IS_PROD:
+        #             leaderboard_table_name += "_test"
+        #         query = f"""
+        #         INSERT INTO {leaderboard_table_name} (
+        #             hotkey,
+        #             is_bittensor,
+        #             is_commune,
+        #             datapoints,
+        #             avg_der,
+        #             avg_length_score,
+        #             avg_quality_score,
+        #             avg_query_score,
+        #             avg_score,
+        #             last_updated
+        #         ) VALUES (
+        #             %s, %s, %s, %s, %s, %s, %s, %s, %s, NOW()
+        #         ) ON DUPLICATE KEY UPDATE
+        #             datapoints = datapoints + VALUES(datapoints),
+        #             avg_der = ((avg_der * (datapoints - VALUES(datapoints))) + (VALUES(avg_der) * VALUES(datapoints))) / datapoints,
+        #             avg_length_score = ((avg_length_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_length_score) * VALUES(datapoints))) / datapoints,
+        #             avg_quality_score = ((avg_quality_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_quality_score) * VALUES(datapoints))) / datapoints,
+        #             avg_query_score = ((avg_query_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_query_score) * VALUES(datapoints))) / datapoints,
+        #             avg_score = ((avg_score * (datapoints - VALUES(datapoints))) + (VALUES(avg_score) * VALUES(datapoints))) / datapoints,
+        #             last_updated = NOW();
+        #         """
+        #         cursor = connection.cursor()
+        #         cursor.execute(query, (
+        #             miner_hotkey,
+        #             is_bittensor,
+        #             is_commune,
+        #             datapoints,
+        #             inverse_der,
+        #             audio_length_score,
+        #             audio_quality_total_score,
+        #             audio_query_score,
+        #             total_score
+        #         ))
+        #         connection.commit()
+        #         print(
+        #             f"Upserted leaderboard data for {miner_hotkey} from {validator_chain} validator={uid} in {time.time() - start_time:.2f}s")
 
-            except mysql.connector.Error as err:
-                raise HTTPException(
-                    status_code=500, detail=f"Error fetching data from MySQL database: {err}")
-            finally:
-                if connection:
-                    connection.close()
-        else:
-            print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
+        #     except mysql.connector.Error as err:
+        #         raise HTTPException(
+        #             status_code=500, detail=f"Error fetching data from MySQL database: {err}")
+        #     finally:
+        #         if connection:
+        #             connection.close()
+        # else:
+        #     print("Skipping leaderboard update because either non-production environment or vali running outdated code.")
 
         return True
 
