@@ -468,8 +468,7 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug(f"Updated moving avg scores: {self.scores}")
 
     def update_focus_scores(self, rewards: torch.FloatTensor, uids: List[int]):
-        """Performs exponential moving average on the focus video scores based on the rewards received from the miners."""
-
+        """ Unlike other update_*_scores functions, this function does not perform an exponential moving average. """
         # Check if rewards contains NaN values.
         if torch.isnan(rewards).any():
             bt.logging.warning(f"NaN values detected in rewards: {rewards}")
@@ -484,18 +483,10 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Compute forward pass rewards, assumes uids are mutually exclusive.
         # shape: [ metagraph.n ]
-        scattered_rewards: torch.FloatTensor = self.focus_scores.to(self.device).scatter(
+        self.focus_scores: torch.FloatTensor = self.focus_scores.to(self.device).scatter(
             0, uids_tensor.to(self.device), rewards.to(self.device)
         ).to(self.device)
-        bt.logging.debug(f"Scattered rewards: {rewards}")
-
-        # Update scores with rewards produced by this step.
-        # shape: [ metagraph.n ]
-        alpha: float = self.config.neuron.moving_average_alpha
-        self.focus_scores: torch.FloatTensor = alpha * scattered_rewards + (
-            1 - alpha
-        ) * self.focus_scores.to(self.device)
-        bt.logging.debug(f"Updated moving avg focus_scores: {self.focus_scores}")
+        bt.logging.debug(f"Scattered rewards: {self.focus_scores}")
 
     def update_audio_scores(self, rewards: torch.FloatTensor, uids: List[int]):
         """Performs exponential moving average on the audio scores based on the rewards received from the miners."""
