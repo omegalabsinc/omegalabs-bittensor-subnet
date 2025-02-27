@@ -84,7 +84,6 @@ async def _already_purchased_max_focus_tao() -> bool:
         
         result = await db.execute(query)
         total_earned_tao = result.scalar() or 0
-        
         effective_max_focus_alpha = await get_purchase_max_focus_alpha()
         effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
 
