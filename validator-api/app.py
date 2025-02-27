@@ -661,8 +661,11 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
+        async def run_focus_scoring_task(video_id: str, focusing_task: str, focusing_description: str):
+            await run_focus_scoring(video_id, focusing_task, focusing_description)
+        
         background_tasks.add_task(
-            run_focus_scoring, video_id, focusing_task, focusing_description)
+            run_focus_scoring_task, video_id, focusing_task, focusing_description)
         return {"success": True}
 
     @app.get("/api/focus/get_list")
@@ -699,10 +702,14 @@ async def main():
         print('availability', availability)
         if availability['status'] == 'success':
             amount = availability['price']
-            video_owner_coldkey = await get_video_owner_coldkey(
-                db, video_id)  # run with_lock True
-            background_tasks.add_task(
-                confirm_video_purchased, video_id, True)  # run with_lock True
+            video_owner_coldkey = await get_video_owner_coldkey(db, video_id)  # run with_lock True
+            
+            # Create a standalone async function for the background task
+            async def run_confirm_video_purchased(video_id: str):
+                await confirm_video_purchased(video_id, True)
+            
+            background_tasks.add_task(run_confirm_video_purchased, video_id)
+            
             return {
                 'status': 'success',
                 'address': video_owner_coldkey,
