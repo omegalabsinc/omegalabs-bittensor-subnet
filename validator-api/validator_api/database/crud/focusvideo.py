@@ -110,24 +110,32 @@ class FocusVideoCache:
 
 
 async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:
-    query = select(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id,
-        FocusVideoRecord.deleted_at.is_(None)
-    )
-    result = await db.execute(query)
-    video_record = result.scalar_one_or_none()
+    try:
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.deleted_at.is_(None)
+        )
+        result = await db.execute(query)
+        video_record = result.scalar_one_or_none()
 
-    if video_record is None:
-        raise HTTPException(404, detail="Focus video not found")
+        if video_record is None:
+            raise HTTPException(404, detail="Focus video not found")
 
-    query = select(UserRecord).filter(UserRecord.email == video_record.user_email)
-    result = await db.execute(query)
-    user_record = result.scalar_one_or_none()
-    
-    if user_record is None:
-        raise HTTPException(404, detail="User not found")
+        # Store the user_email to avoid lazy loading issues
+        user_email = video_record.user_email
 
-    return user_record.coldkey
+        query = select(UserRecord).filter(UserRecord.email == user_email)
+        result = await db.execute(query)
+        user_record = result.scalar_one_or_none()
+        
+        if user_record is None:
+            raise HTTPException(404, detail="User not found")
+
+        # Return the coldkey directly to avoid any potential lazy loading
+        return user_record.coldkey
+    except Exception as e:
+        print(f"Error in get_video_owner_coldkey: {str(e)}")
+        raise HTTPException(500, detail=f"Error retrieving video owner: {str(e)}")
 
 async def check_availability(
     db: AsyncSession,
@@ -136,6 +144,7 @@ async def check_availability(
     with_lock: bool = False
 ):
     try:
+        # Use explicit loading strategy to avoid lazy loading issues
         query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
@@ -143,6 +152,7 @@ async def check_availability(
             FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
             # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
         )
+        
         if with_lock:
             query = query.with_for_update()
         
@@ -162,6 +172,10 @@ async def check_availability(
         # if video_record.expected_reward_alpha is None:
         #     raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
 
+        # Create a copy of the values we need to avoid lazy loading issues
+        expected_reward_tao = video_record.expected_reward_tao
+        expected_reward_alpha = video_record.expected_reward_alpha
+        
         # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
         video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING.value
         video_record.miner_hotkey = miner_hotkey
@@ -170,17 +184,20 @@ async def check_availability(
         # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
         # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
 
+        # Explicitly add the record to the session and commit
         db.add(video_record)
         await db.commit()
 
         return {
             'status': 'success',
-            'price': video_record.expected_reward_tao,
-            'price_alpha': video_record.expected_reward_alpha,
+            'price': expected_reward_tao,
+            'price_alpha': expected_reward_alpha,
         }
 
     except Exception as e:
-        print(e)
+        print(f"Error in check_availability: {str(e)}")
+        # Make sure to rollback the transaction in case of error
+        await db.rollback()
         raise HTTPException(500, detail="Internal error")
 
 async def check_video_metadata(
