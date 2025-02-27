@@ -682,7 +682,7 @@ async def main():
         hotkey: Annotated[str, Depends(get_hotkey)],
         db: AsyncSession = Depends(get_db),
     ):
-        banned_until = miner_banned_until(db, hotkey)
+        banned_until = await miner_banned_until(db, hotkey)
         if banned_until:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,

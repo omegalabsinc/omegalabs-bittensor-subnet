@@ -1,7 +1,7 @@
 from datetime import datetime
 from typing import Optional
 
-from sqlalchemy import Column, String, DateTime, Integer
+from sqlalchemy import Column, String, DateTime, Integer, select
 from pydantic import BaseModel, ConfigDict
 
 from validator_api.database import Base
@@ -16,7 +16,7 @@ class MinerBan(Base):
     purchases_failed_in_a_row = Column(Integer, nullable=False)
     banned_until = Column(DateTime(timezone=True), nullable=True)
 
-def miner_banned_until(db: AsyncSession, miner_hotkey: str) -> Optional[datetime]:
+async def miner_banned_until(db: AsyncSession, miner_hotkey: str) -> Optional[datetime]:
     """
     Check if a miner is currently banned and return their ban expiration time if they are.
     
@@ -28,14 +28,16 @@ def miner_banned_until(db: AsyncSession, miner_hotkey: str) -> Optional[datetime
         datetime: The banned_until time if the miner is currently banned
         None: If the miner is not currently banned
     """
-    ban = db.query(MinerBan).filter(
+    query = select(MinerBan).filter(
         MinerBan.miner_hotkey == miner_hotkey,
         MinerBan.banned_until > datetime.utcnow()
-    ).first()
+    )
+    result = await db.execute(query)
+    ban = result.scalar_one_or_none()
     
     return ban.banned_until if ban else None
 
-def get_or_create_miner(db: AsyncSession, miner_hotkey: str) -> MinerBan:
+async def get_or_create_miner(db: AsyncSession, miner_hotkey: str) -> MinerBan:
     """
     Get a miner's ban record or create it if it doesn't exist.
     
@@ -46,9 +48,11 @@ def get_or_create_miner(db: AsyncSession, miner_hotkey: str) -> MinerBan:
     Returns:
         MinerBan: The miner's ban record
     """
-    miner = db.query(MinerBan).filter(
+    query = select(MinerBan).filter(
         MinerBan.miner_hotkey == miner_hotkey
-    ).first()
+    )
+    result = await db.execute(query)
+    miner = result.scalar_one_or_none()
     
     if not miner:
         miner = MinerBan(
@@ -57,30 +61,30 @@ def get_or_create_miner(db: AsyncSession, miner_hotkey: str) -> MinerBan:
             banned_until=None
         )
         db.add(miner)
-        db.commit()
+        await db.commit()
     
     return miner
 
-def increment_failed_purchases(db: AsyncSession, miner_hotkey: str):
+async def increment_failed_purchases(db: AsyncSession, miner_hotkey: str):
     """
     Increment the number of purchases failed in a row for a miner.
     Creates the miner record if it doesn't exist.
     
     """
-    miner = get_or_create_miner(db, miner_hotkey)
+    miner = await get_or_create_miner(db, miner_hotkey)
     miner.purchases_failed_in_a_row += 1
     check_and_ban_miner(miner)
-    db.commit()
+    await db.commit()
 
-def reset_failed_purchases(db: AsyncSession, miner_hotkey: str):
+async def reset_failed_purchases(db: AsyncSession, miner_hotkey: str):
     """
     In the case of a successful purchase, reset the number of purchases failed in a row for a miner.
     Creates the miner record if it doesn't exist.
     """
-    miner = get_or_create_miner(db, miner_hotkey)
+    miner = await get_or_create_miner(db, miner_hotkey)
     miner.purchases_failed_in_a_row = 0
     miner.banned_until = None
-    db.commit()
+    await db.commit()
 
 BAN_PURCHASES_FAILED_IN_A_ROW = 5
 def check_and_ban_miner(miner: MinerBan):

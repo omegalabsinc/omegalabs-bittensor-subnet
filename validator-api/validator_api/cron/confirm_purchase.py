@@ -5,6 +5,7 @@ from datetime import datetime
 import bittensor as bt
 import validator_api.config as config
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import (
     FocusVideoRecord, FocusVideoStateInternal)
@@ -13,9 +14,10 @@ from validator_api.database.models.miner_bans import (
 from validator_api.utils.wallet import get_transaction_from_block_hash
 
 
-def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bool:
-    record = db.query(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id)
-    return record.first() is not None
+async def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bool:
+    query = select(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id)
+    result = await db.execute(query)
+    return result.scalar_one_or_none() is not None
 
 async def check_payment(db: AsyncSession, recipient_address: str, sender_address: str, amount: float, block_hash: str = None):
     try:
@@ -31,7 +33,7 @@ async def check_payment(db: AsyncSession, recipient_address: str, sender_address
                 transfer["to"] == recipient_address and
                 round(float(transfer["amount"]), 5) == round(amount, 5)
             ):
-                if extrinsic_already_confirmed(db, transfer["extrinsicId"]):
+                if await extrinsic_already_confirmed(db, transfer["extrinsicId"]):
                     continue
                 print(f"Payment of {amount} found from {sender_address} to {recipient_address}")
                 return transfer["extrinsicId"]
@@ -59,15 +61,17 @@ async def confirm_transfer(
 ):
     subtensor = bt.subtensor(network=config.NETWORK)
 
-    video = db.query(FocusVideoRecord).filter(
+    query = select(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
         FocusVideoRecord.miner_hotkey == miner_hotkey,
         FocusVideoRecord.deleted_at.is_(None),
     )
     if with_lock:
-        video = video.with_for_update()
-    video = video.first()
+        query = query.with_for_update()
+    
+    result = await db.execute(query)
+    video = result.scalar_one_or_none()
 
     if not video:
         print(f"Video <{video_id}> not found")
@@ -93,7 +97,7 @@ async def confirm_transfer(
                 # TODO: this is only theoretical, actually do this properly by setting it when the specific earned tao amount is actually staked via OFB
                 video.earned_reward_alpha = video.expected_reward_alpha
                 db.add(video)
-                db.commit()
+                await db.commit()
                 return True
 
         except Exception as e:
@@ -133,13 +137,15 @@ async def confirm_video_purchased(
             await asyncio.sleep(DELAY_SECS)
             try:
                 async with get_db_context() as db:
-                    video = db.query(FocusVideoRecord).filter(
+                    query = select(FocusVideoRecord).filter(
                         FocusVideoRecord.video_id == video_id,
                         FocusVideoRecord.deleted_at.is_(None),
                     )
                     if with_lock:
-                        video = video.with_for_update()
-                    video = video.first()
+                        query = query.with_for_update()
+                    
+                    result = await db.execute(query)
+                    video = result.scalar_one_or_none()
 
                     if not video:
                         print(f"Video <{video_id}> not found")
@@ -147,7 +153,7 @@ async def confirm_video_purchased(
                     
                     if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED.value:
                         print(f"Video <{video_id}> has been marked as PURCHASED. Stopping background task.")
-                        reset_failed_purchases(db, video.miner_hotkey)
+                        await reset_failed_purchases(db, video.miner_hotkey)
                         return True
                     elif video is not None and video.processing_state == FocusVideoStateInternal.SUBMITTED.value:
                         print(f"Video <{video_id}> has been marked as SUBMITTED. Stopping background task.")
@@ -155,7 +161,7 @@ async def confirm_video_purchased(
 
                     print(f"Video <{video_id}> has NOT been marked as PURCHASED. Retrying in {DELAY_SECS} seconds...")
                     # close the db connection until next retry
-                    db.close()
+                    await db.close()
 
             except Exception as e:
                 print(f"Error in checking confirm_video_purchased loop: {e}")
@@ -163,12 +169,12 @@ async def confirm_video_purchased(
         # we got here because we could not confirm the payment in time, so we need to revert
         # the video back to the SUBMITTED state (i.e. mark available for purchase)
         print(f"Video <{video_id}> has NOT been marked as PURCHASED. Reverting to SUBMITTED state...")
-        increment_failed_purchases(db, video.miner_hotkey)
+        await increment_failed_purchases(db, video.miner_hotkey)
         video.processing_state = FocusVideoStateInternal.SUBMITTED.value
         video.updated_at = datetime.utcnow()
         db.add(video)
-        db.commit()
-        db.close()
+        await db.commit()
+        await db.close()
         return False
 
     except Exception as e:
