@@ -61,7 +61,7 @@ OUTPUT JSON FORMAT:
         
         # Use provided description if available, otherwise fetch from DB
         if detailed_video_description is None:
-            with get_db_context() as db:
+            async with get_db_context() as db:
                 video_record = db.query(FocusVideoRecord).filter(
                     FocusVideoRecord.video_id == video_id,
                     FocusVideoRecord.deleted_at.is_(None)

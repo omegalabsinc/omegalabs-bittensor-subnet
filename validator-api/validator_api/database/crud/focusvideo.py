@@ -7,6 +7,7 @@ import json
 import traceback
 import asyncio
 import bittensor
+from sqlalchemy.sql import select
 
 from validator_api.config import NETWORK, NETUID
 from validator_api.database import get_db_context
@@ -55,18 +56,18 @@ class CachedValue:
         return self._value
 
 async def _fetch_available_focus():
-    def db_operation():
-        with get_db_context() as db:
-            # Show oldest videos first so they get rewarded fastest
-            items = db.query(FocusVideoRecord).filter(
-                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
-                FocusVideoRecord.deleted_at.is_(None),
-                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-                # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
-            ).order_by(FocusVideoRecord.updated_at.asc()).limit(10).all()
-            return [FocusVideoInternal.model_validate(record) for record in items]
-
-    return await asyncio.to_thread(db_operation)
+    async with get_db_context() as db:
+        # Show oldest videos first so they get rewarded fastest
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
+            FocusVideoRecord.deleted_at.is_(None),
+            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+        ).order_by(FocusVideoRecord.updated_at.asc()).limit(10)
+        
+        result = await db.execute(query)
+        items = result.scalars().all()
+        return [FocusVideoInternal.model_validate(record) for record in items]
 
 async def _alpha_to_tao_rate() -> float:
     async with bittensor.AsyncSubtensor(network=NETWORK) as subtensor:
@@ -75,19 +76,19 @@ async def _alpha_to_tao_rate() -> float:
         return balance.tao
 
 async def _already_purchased_max_focus_tao() -> bool:
-    def db_operation():
-        with get_db_context() as db:
-            return db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
-                FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-            ).scalar() or 0
+    async with get_db_context() as db:
+        query = select(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
+            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+        )
+        
+        result = await db.execute(query)
+        total_earned_tao = result.scalar() or 0
+        
+        effective_max_focus_alpha = await get_purchase_max_focus_alpha()
+        effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
 
-    # Run database query in thread pool
-    total_earned_tao = await asyncio.to_thread(db_operation)
-    effective_max_focus_alpha = await get_purchase_max_focus_alpha()
-    effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
-
-    return total_earned_tao >= effective_max_focus_tao
+        return total_earned_tao >= effective_max_focus_tao
 
 
 class FocusVideoCache:

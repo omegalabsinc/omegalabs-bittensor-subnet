@@ -132,7 +132,7 @@ async def confirm_video_purchased(
         for i in range(0, RETRIES):
             await asyncio.sleep(DELAY_SECS)
             try:
-                with get_db_context() as db:
+                async with get_db_context() as db:
                     video = db.query(FocusVideoRecord).filter(
                         FocusVideoRecord.video_id == video_id,
                         FocusVideoRecord.deleted_at.is_(None),

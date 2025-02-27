@@ -72,7 +72,7 @@ def get_video_metadata(db: AsyncSession, video_id: str) -> Optional[FocusVideoIn
     
     return video
 
-def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
+async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
     """
     Retrieves the details of a boosted task from the database for a given video.
 
@@ -88,7 +88,7 @@ def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
             including multiplier, title, and description. Returns None if the video
             is not associated with a boosted task.
     """
-    with get_db_context() as db:
+    async with get_db_context() as db:
         video_metadata = get_video_metadata(db, video_id)
         if video_metadata and video_metadata.task_id:
             task = db.query(TaskRecordPG).filter(
@@ -100,8 +100,8 @@ def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
                 ).first()
     return None
 
-def get_video_duration_seconds(video_id: str) -> int:
-    with get_db_context() as db:
+async def get_video_duration_seconds(video_id: str) -> int:
+    async with get_db_context() as db:
         video_metadata = get_video_metadata(db, video_id)
 
         if video_metadata is None:
@@ -200,7 +200,7 @@ async def _make_gemini_request_with_retries(system_prompt: str, user_prompt: str
 
 async def get_detailed_video_description(video_id: str, task_overview: str, recompute: bool = False) -> DetailedVideoDescription:
     if not recompute:
-        with get_db_context() as db:  # get already computed description from db if it exists
+        async with get_db_context() as db:  # get already computed description from db if it exists
             video_record = db.query(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
                 FocusVideoRecord.deleted_at.is_(None)
@@ -429,7 +429,7 @@ class FocusScoringService:
             ValueError: If video duration is outside acceptable range
             VideoUniquenessError: If video uniqueness score is too low
         """
-        boosted_task = _get_details_if_boosted(video_id)
+        boosted_task = await _get_details_if_boosted(video_id)
         if boosted_task:
             boosted_multiplier = boosted_task.multiplier
             focusing_task = boosted_task.title
@@ -437,7 +437,7 @@ class FocusScoringService:
         else:
             boosted_multiplier = 1.0
 
-        video_duration_seconds = get_video_duration_seconds(video_id)
+        video_duration_seconds = await get_video_duration_seconds(video_id)
 
         if video_duration_seconds < TWO_MINUTES:
             raise VideoTooShortError(f"Video duration is too short: {video_duration_seconds} seconds")

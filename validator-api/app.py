@@ -260,7 +260,7 @@ async def run_focus_scoring(
         MIN_TASK_UNIQUENESS_SCORE = 0
         MIN_VIDEO_UNIQUENESS_SCORE = 0
         # get the db after scoring the video so it's not open for too long
-        with get_db_context() as db:
+        async with get_db_context() as db:
             if score_details.final_score < MIN_FINAL_SCORE:
                 rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
@@ -292,7 +292,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         else:
             rejection_reason = "Error scoring video"
 
-        with get_db_context() as db:
+        async with get_db_context() as db:
             mark_video_rejected(
                 db,
                 video_id,

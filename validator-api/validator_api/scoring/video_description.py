@@ -4,8 +4,8 @@ from validator_api.database.models.scoring import DetailedVideoDescription
 from validator_api.scoring import focus_scoring_prompts
 from validator_api.scoring.gemini_client import _make_gemini_request_with_retries
 
-def get_task_overview(video_id: str) -> str:
-    with get_db_context() as db:
+async def get_task_overview(video_id: str) -> str:
+    async with get_db_context() as db:
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None)
@@ -22,7 +22,7 @@ def get_task_overview(video_id: str) -> str:
     return task_overview 
 
 async def get_detailed_video_description(video_id: str, task_overview: str) -> DetailedVideoDescription:
-    with get_db_context() as db:
+    async with get_db_context() as db:
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None)
@@ -44,7 +44,7 @@ async def get_detailed_video_description(video_id: str, task_overview: str) -> D
     )
     
     # Cache the description in database
-    with get_db_context() as db:
+    async with get_db_context() as db:
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None)
