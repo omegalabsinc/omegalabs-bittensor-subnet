@@ -26,6 +26,7 @@ from openai import AsyncOpenAI
 from pinecone import Pinecone
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
 from validator_api.config import (GOOGLE_CLOUD_BUCKET_NAME, GOOGLE_LOCATION,
                                   GOOGLE_PROJECT_ID, OPENAI_API_KEY,
                                   PINECONE_API_KEY)
@@ -61,10 +62,12 @@ FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
 MIN_VIDEO_UNIQUENESS_SCORE = 0.02
 
-def get_video_metadata(db: AsyncSession, video_id: str) -> Optional[FocusVideoInternal]:
-    video = db.query(FocusVideoRecord).filter(
+async def get_video_metadata(db: AsyncSession, video_id: str) -> Optional[FocusVideoInternal]:
+    query = select(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id
-    ).first()
+    )
+    result = await db.execute(query)
+    video = result.scalar_one_or_none()
     
     if video and video.deleted_at is not None:
         print(f"Video {video_id} has been deleted")
@@ -89,20 +92,25 @@ async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
             is not associated with a boosted task.
     """
     async with get_db_context() as db:
-        video_metadata = get_video_metadata(db, video_id)
+        video_metadata = await get_video_metadata(db, video_id)
         if video_metadata and video_metadata.task_id:
-            task = db.query(TaskRecordPG).filter(
+            query = select(TaskRecordPG).filter(
                 TaskRecordPG.id == video_metadata.task_id,
-            ).first()
+            )
+            result = await db.execute(query)
+            task = result.scalar_one_or_none()
+            
             if task and task.boosted_id:
-                return db.query(BoostedTask).filter(
+                query = select(BoostedTask).filter(
                     BoostedTask.id == task.boosted_id,
-                ).first()
+                )
+                result = await db.execute(query)
+                return result.scalar_one_or_none()
     return None
 
 async def get_video_duration_seconds(video_id: str) -> int:
     async with get_db_context() as db:
-        video_metadata = get_video_metadata(db, video_id)
+        video_metadata = await get_video_metadata(db, video_id)
 
         if video_metadata is None:
             raise ValueError(f"Focus video is deleted or doesn't exist: {video_id}")
@@ -201,10 +209,12 @@ async def _make_gemini_request_with_retries(system_prompt: str, user_prompt: str
 async def get_detailed_video_description(video_id: str, task_overview: str, recompute: bool = False) -> DetailedVideoDescription:
     if not recompute:
         async with get_db_context() as db:  # get already computed description from db if it exists
-            video_record = db.query(FocusVideoRecord).filter(
+            query = select(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
                 FocusVideoRecord.deleted_at.is_(None)
-            ).first()
+            )
+            result = await db.execute(query)
+            video_record = result.scalar_one_or_none()
         
             if video_record is None:
                 raise ValueError(f"Video not found: {video_id}")

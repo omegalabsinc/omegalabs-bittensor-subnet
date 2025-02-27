@@ -264,7 +264,7 @@ async def run_focus_scoring(
             if score_details.final_score < MIN_FINAL_SCORE:
                 rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
-                mark_video_rejected(
+                await mark_video_rejected(
                     db,
                     video_id,
                     rejection_reason,
@@ -272,7 +272,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     embeddings=embeddings
                 )
             else:
-                set_focus_video_score(db, video_id, score_details, embeddings)
+                await set_focus_video_score(db, video_id, score_details, embeddings)
         return {"success": True}
 
     except Exception as e:
@@ -293,7 +293,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
             rejection_reason = "Error scoring video"
 
         async with get_db_context() as db:
-            mark_video_rejected(
+            await mark_video_rejected(
                 db,
                 video_id,
                 rejection_reason,
@@ -719,7 +719,7 @@ async def main():
         video: VideoPurchaseRevert,
         db: AsyncSession = Depends(get_db),
     ):
-        return mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
+        return await mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
 
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("4/minute")

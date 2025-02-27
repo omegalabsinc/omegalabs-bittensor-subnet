@@ -110,22 +110,24 @@ class FocusVideoCache:
 
 
 async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:
-    def db_operation():
-        video_record = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.video_id == video_id,
-            FocusVideoRecord.deleted_at.is_(None)
-        ).first()
+    query = select(FocusVideoRecord).filter(
+        FocusVideoRecord.video_id == video_id,
+        FocusVideoRecord.deleted_at.is_(None)
+    )
+    result = await db.execute(query)
+    video_record = result.scalar_one_or_none()
 
-        if video_record is None:
-            raise HTTPException(404, detail="Focus video not found")
+    if video_record is None:
+        raise HTTPException(404, detail="Focus video not found")
 
-        user_record = db.query(UserRecord).filter(UserRecord.email == video_record.user_email,).first()
-        if user_record is None:
-            raise HTTPException(404, detail="User not found")
+    query = select(UserRecord).filter(UserRecord.email == video_record.user_email)
+    result = await db.execute(query)
+    user_record = result.scalar_one_or_none()
+    
+    if user_record is None:
+        raise HTTPException(404, detail="User not found")
 
-        return user_record.coldkey
-
-    return await asyncio.to_thread(db_operation)
+    return user_record.coldkey
 
 async def check_availability(
     db: AsyncSession,
@@ -133,54 +135,53 @@ async def check_availability(
     miner_hotkey: str,
     with_lock: bool = False
 ):
-    def db_operation():
-        try:
-            video_record = db.query(FocusVideoRecord).filter(
-                FocusVideoRecord.video_id == video_id,
-                FocusVideoRecord.deleted_at.is_(None),
-                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,  # is available for purchase
-                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-                # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
-            )
-            if with_lock:
-                video_record = video_record.with_for_update()
-            video_record = video_record.first()
+    try:
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.deleted_at.is_(None),
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,  # is available for purchase
+            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+        )
+        if with_lock:
+            query = query.with_for_update()
+        
+        result = await db.execute(query)
+        video_record = result.scalar_one_or_none()
 
-            if video_record is None:
-                return {
-                    'status': 'error',
-                    'message': f'video {video_id} not found or not available for purchase'
-                }
-
-            if video_record.expected_reward_tao is None:
-                raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
-            
-            # TODO: This is commented out because expected_reward_alpha is not filled in for all videos yet, need to migrate
-            # if video_record.expected_reward_alpha is None:
-            #     raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
-
-            # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
-            video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING.value
-            video_record.miner_hotkey = miner_hotkey
-            video_record.updated_at = datetime.utcnow()
-
-            # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
-            # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
-
-            db.add(video_record)
-            db.commit()
-
+        if video_record is None:
             return {
-                'status': 'success',
-                'price': video_record.expected_reward_tao,
-                'price_alpha': video_record.expected_reward_alpha,
+                'status': 'error',
+                'message': f'video {video_id} not found or not available for purchase'
             }
 
-        except Exception as e:
-            print(e)
-            raise HTTPException(500, detail="Internal error")
+        if video_record.expected_reward_tao is None:
+            raise HTTPException(500, detail="The video record is missing the expected reward tao, investigate this bug")
+        
+        # TODO: This is commented out because expected_reward_alpha is not filled in for all videos yet, need to migrate
+        # if video_record.expected_reward_alpha is None:
+        #     raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
 
-    return await asyncio.to_thread(db_operation)
+        # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
+        video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING.value
+        video_record.miner_hotkey = miner_hotkey
+        video_record.updated_at = datetime.utcnow()
+
+        # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
+        # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
+
+        db.add(video_record)
+        await db.commit()
+
+        return {
+            'status': 'success',
+            'price': video_record.expected_reward_tao,
+            'price_alpha': video_record.expected_reward_alpha,
+        }
+
+    except Exception as e:
+        print(e)
+        raise HTTPException(500, detail="Internal error")
 
 async def check_video_metadata(
     db: AsyncSession,
@@ -189,15 +190,16 @@ async def check_video_metadata(
     miner_hotkey: str
 ):
     try:
-        video_info = db.query(FocusVideoRecord).filter(
+        query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.user_email == user_email,
             FocusVideoRecord.miner_hotkey == miner_hotkey,
             FocusVideoRecord.deleted_at.is_(None)
-        ).first()
+        )
+        result = await db.execute(query)
+        video_info = result.scalar_one_or_none()
 
         if video_info is not None and video_info.processing_state == FocusVideoStateInternal.PURCHASED.value:
-
             # # FV TODO: why do we need the task info?
             # task_info = db.query(models.Task).filter_by(id=video_info.task_id).first()
 
@@ -219,7 +221,7 @@ async def check_video_metadata(
 
             # video_info.processing_state = FocusVideoStateInternal.VALIDATING
             db.add(video_info)
-            db.commit()
+            await db.commit()
 
             # video_score = await score.score_video(task_info.focusing_task, task_info.clip_link)
             # print(f"Video score: {video_score}")
@@ -249,23 +251,22 @@ class MinerPurchaseStats(BaseModel):
     focus_points_percentage: float
 
 async def get_miner_purchase_stats(db: AsyncSession, miner_hotkeys: List[str]) -> Dict[str, MinerPurchaseStats]:
-    def db_operation():
-        # Get total earned tao across all miners in last 24 hours
-        total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).scalar() or 0
+    # Get total earned tao across all miners in last 24 hours
+    query = select(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
+        FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+    )
+    result = await db.execute(query)
+    total_earned_tao = result.scalar() or 0
 
-        # Get videos purchased by requested miners in the last 24 hours
-        purchased_videos_records = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.miner_hotkey.in_(miner_hotkeys),
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).all()
-
-        return total_earned_tao, purchased_videos_records
-
-    total_earned_tao, purchased_videos_records = await asyncio.to_thread(db_operation)
+    # Get videos purchased by requested miners in the last 24 hours
+    query = select(FocusVideoRecord).filter(
+        FocusVideoRecord.miner_hotkey.in_(miner_hotkeys),
+        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
+        FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+    )
+    result = await db.execute(query)
+    purchased_videos_records = result.scalars().all()
 
     # Group records by miner hotkey
     videos_by_miner = {}
@@ -296,11 +297,14 @@ async def get_miner_purchase_stats(db: AsyncSession, miner_hotkeys: List[str]) -
 
     return stats
 
-def set_focus_video_score(db: AsyncSession, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
-    video_record = db.query(FocusVideoRecord).filter(
+async def set_focus_video_score(db: AsyncSession, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
+    query = select(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
-    ).first()
+    )
+    result = await db.execute(query)
+    video_record = result.scalar_one_or_none()
+    
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
 
@@ -314,9 +318,9 @@ def set_focus_video_score(db: AsyncSession, video_id: str, score_details: VideoS
     video_record.updated_at = datetime.utcnow()
     video_record.task_type = TaskType.BOOSTED if score_details.boosted_multiplier > 1.0 else TaskType.USER
     db.add(video_record)
-    db.commit()
+    await db.commit()
 
-def mark_video_rejected(
+async def mark_video_rejected(
     db: AsyncSession,
     video_id: str,
     rejection_reason: str,
@@ -324,10 +328,13 @@ def mark_video_rejected(
     embeddings: Optional[FocusVideoEmbeddings]=None,
     exception_string: Optional[str]=None,
 ):
-    video_record = db.query(FocusVideoRecord).filter(
+    query = select(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
-    ).first()
+    )
+    result = await db.execute(query)
+    video_record = result.scalar_one_or_none()
+    
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found")
 
@@ -351,19 +358,21 @@ def mark_video_rejected(
     video_record.processing_state = FocusVideoStateInternal.REJECTED.value
     video_record.rejection_reason = rejection_reason
     db.add(video_record)
-    db.commit()
+    await db.commit()
 
-def mark_video_submitted(db: AsyncSession, video_id: str, miner_hotkey: str, with_lock: bool = False):
+async def mark_video_submitted(db: AsyncSession, video_id: str, miner_hotkey: str, with_lock: bool = False):
     # Mark video as "SUBMITTED" if in the "PURCHASE_PENDING" state.
-    video_record = db.query(FocusVideoRecord).filter(
+    query = select(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
         FocusVideoRecord.deleted_at.is_(None),
         FocusVideoRecord.miner_hotkey == miner_hotkey  # make sure the miner requesting the cancellation is the one who was trying to buy it!
     )
     if with_lock:
-        video_record = video_record.with_for_update()
-    video_record = video_record.first()
+        query = query.with_for_update()
+    
+    result = await db.execute(query)
+    video_record = result.scalar_one_or_none()
     
     if video_record is None:
         raise HTTPException(404, detail="Focus video not found or not in the correct state: PURCHASE_PENDING")
@@ -371,4 +380,4 @@ def mark_video_submitted(db: AsyncSession, video_id: str, miner_hotkey: str, wit
     video_record.processing_state = FocusVideoStateInternal.SUBMITTED.value
     video_record.updated_at = datetime.utcnow()
     db.add(video_record)
-    db.commit()
+    await db.commit()
