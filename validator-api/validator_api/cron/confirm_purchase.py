@@ -1,23 +1,23 @@
 import asyncio
 import time
 from datetime import datetime
-import validator_api.config as config
-
-from sqlalchemy.orm import Session
-
-from validator_api.database import get_db_context
-from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoStateInternal
 
 import bittensor as bt
-
+import validator_api.config as config
+from sqlalchemy.ext.asyncio import AsyncSession
+from validator_api.database import get_db_context
+from validator_api.database.models.focus_video_record import (
+    FocusVideoRecord, FocusVideoStateInternal)
+from validator_api.database.models.miner_bans import (
+    increment_failed_purchases, reset_failed_purchases)
 from validator_api.utils.wallet import get_transaction_from_block_hash
-from validator_api.database.models.miner_bans import increment_failed_purchases, reset_failed_purchases
 
-def extrinsic_already_confirmed(db: Session, extrinsic_id: str) -> bool:
+
+def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bool:
     record = db.query(FocusVideoRecord).filter(FocusVideoRecord.extrinsic_id == extrinsic_id)
     return record.first() is not None
 
-async def check_payment(db: Session, recipient_address: str, sender_address: str, amount: float, block_hash: str = None):
+async def check_payment(db: AsyncSession, recipient_address: str, sender_address: str, amount: float, block_hash: str = None):
     try:
         print(f"Checking payment of {amount} from {sender_address} to {recipient_address}")
 
@@ -50,7 +50,7 @@ SUBTENSOR_RETRIES = 5
 SUBTENSOR_DELAY_SECS = 2
 
 async def confirm_transfer(
-    db: Session,
+    db: AsyncSession,
     video_owner_coldkey: str,
     video_id: str,
     miner_hotkey: str,

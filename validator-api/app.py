@@ -25,7 +25,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from substrateinterface import Keypair
 from validator_api.check_blocking import detect_blocking
@@ -680,7 +680,7 @@ async def main():
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body(embed=True)],
         hotkey: Annotated[str, Depends(get_hotkey)],
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     ):
         banned_until = miner_banned_until(db, hotkey)
         if banned_until:
@@ -717,7 +717,7 @@ async def main():
         request: Request,
         miner_hotkey: Annotated[str, Depends(get_hotkey)],
         video: VideoPurchaseRevert,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     ):
         return mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
 
@@ -728,7 +728,7 @@ async def main():
         miner_hotkey: Annotated[str, Depends(get_hotkey)],
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ):
         async def run_stake(video_id):
@@ -759,7 +759,7 @@ async def main():
     @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
     async def miner_purchase_scores(
         miner_hotkey_list: str,
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ) -> Dict[str, MinerPurchaseStats]:
         # Validate input
         if not miner_hotkey_list or not miner_hotkey_list.strip():

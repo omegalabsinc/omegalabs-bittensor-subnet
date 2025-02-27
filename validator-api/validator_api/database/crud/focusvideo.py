@@ -1,6 +1,6 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func, Float
 from typing import List, Optional, Dict
 import json
@@ -109,7 +109,7 @@ class FocusVideoCache:
         return self._alpha_to_tao_cache.get()
 
 
-async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
+async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:
     def db_operation():
         video_record = db.query(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
@@ -128,7 +128,7 @@ async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
     return await asyncio.to_thread(db_operation)
 
 async def check_availability(
-    db: Session,
+    db: AsyncSession,
     video_id: str,
     miner_hotkey: str,
     with_lock: bool = False
@@ -183,7 +183,7 @@ async def check_availability(
     return await asyncio.to_thread(db_operation)
 
 async def check_video_metadata(
-    db: Session,
+    db: AsyncSession,
     video_id: str,
     user_email: str,
     miner_hotkey: str
@@ -248,7 +248,7 @@ class MinerPurchaseStats(BaseModel):
     max_focus_points: float
     focus_points_percentage: float
 
-async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dict[str, MinerPurchaseStats]:
+async def get_miner_purchase_stats(db: AsyncSession, miner_hotkeys: List[str]) -> Dict[str, MinerPurchaseStats]:
     def db_operation():
         # Get total earned tao across all miners in last 24 hours
         total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
@@ -296,7 +296,7 @@ async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dic
 
     return stats
 
-def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
+def set_focus_video_score(db: AsyncSession, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.deleted_at.is_(None)
@@ -317,7 +317,7 @@ def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore,
     db.commit()
 
 def mark_video_rejected(
-    db: Session,
+    db: AsyncSession,
     video_id: str,
     rejection_reason: str,
     score_details: Optional[VideoScore]=None,
@@ -353,7 +353,7 @@ def mark_video_rejected(
     db.add(video_record)
     db.commit()
 
-def mark_video_submitted(db: Session, video_id: str, miner_hotkey: str, with_lock: bool = False):
+def mark_video_submitted(db: AsyncSession, video_id: str, miner_hotkey: str, with_lock: bool = False):
     # Mark video as "SUBMITTED" if in the "PURCHASE_PENDING" state.
     video_record = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,

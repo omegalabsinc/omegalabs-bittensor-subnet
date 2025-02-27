@@ -6,7 +6,7 @@ from pydantic import BaseModel, ConfigDict
 
 from validator_api.database import Base
 from validator_api.config import DB_STRING_LENGTH
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from datetime import timedelta
 
 class MinerBan(Base):
@@ -16,7 +16,7 @@ class MinerBan(Base):
     purchases_failed_in_a_row = Column(Integer, nullable=False)
     banned_until = Column(DateTime(timezone=True), nullable=True)
 
-def miner_banned_until(db: Session, miner_hotkey: str) -> Optional[datetime]:
+def miner_banned_until(db: AsyncSession, miner_hotkey: str) -> Optional[datetime]:
     """
     Check if a miner is currently banned and return their ban expiration time if they are.
     
@@ -35,7 +35,7 @@ def miner_banned_until(db: Session, miner_hotkey: str) -> Optional[datetime]:
     
     return ban.banned_until if ban else None
 
-def get_or_create_miner(db: Session, miner_hotkey: str) -> MinerBan:
+def get_or_create_miner(db: AsyncSession, miner_hotkey: str) -> MinerBan:
     """
     Get a miner's ban record or create it if it doesn't exist.
     
@@ -61,7 +61,7 @@ def get_or_create_miner(db: Session, miner_hotkey: str) -> MinerBan:
     
     return miner
 
-def increment_failed_purchases(db: Session, miner_hotkey: str):
+def increment_failed_purchases(db: AsyncSession, miner_hotkey: str):
     """
     Increment the number of purchases failed in a row for a miner.
     Creates the miner record if it doesn't exist.
@@ -72,7 +72,7 @@ def increment_failed_purchases(db: Session, miner_hotkey: str):
     check_and_ban_miner(miner)
     db.commit()
 
-def reset_failed_purchases(db: Session, miner_hotkey: str):
+def reset_failed_purchases(db: AsyncSession, miner_hotkey: str):
     """
     In the case of a successful purchase, reset the number of purchases failed in a row for a miner.
     Creates the miner record if it doesn't exist.

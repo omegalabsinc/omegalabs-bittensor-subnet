@@ -25,7 +25,7 @@ import vertexai
 from openai import AsyncOpenAI
 from pinecone import Pinecone
 from pydantic import BaseModel, ValidationError
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from validator_api.config import (GOOGLE_CLOUD_BUCKET_NAME, GOOGLE_LOCATION,
                                   GOOGLE_PROJECT_ID, OPENAI_API_KEY,
                                   PINECONE_API_KEY)
@@ -61,7 +61,7 @@ FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
 MIN_VIDEO_UNIQUENESS_SCORE = 0.02
 
-def get_video_metadata(db: Session, video_id: str) -> Optional[FocusVideoInternal]:
+def get_video_metadata(db: AsyncSession, video_id: str) -> Optional[FocusVideoInternal]:
     video = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id
     ).first()
