@@ -61,7 +61,7 @@ async def confirm_transfer(
 
     video = db.query(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
-        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING,
+        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
         FocusVideoRecord.miner_hotkey == miner_hotkey,
         FocusVideoRecord.deleted_at.is_(None),
     )
@@ -86,7 +86,7 @@ async def confirm_transfer(
             if extrinsic_id is not None:
                 print(f"Miner <{miner_hotkey}> successfully purchased focus recording <{video_id}>!")
                 video.miner_hotkey = miner_hotkey
-                video.processing_state = FocusVideoStateInternal.PURCHASED
+                video.processing_state = FocusVideoStateInternal.PURCHASED.value
                 video.updated_at = datetime.utcnow()
                 video.extrinsic_id = extrinsic_id
                 video.earned_reward_tao = tao_amount
@@ -145,11 +145,11 @@ async def confirm_video_purchased(
                         print(f"Video <{video_id}> not found")
                         return False
                     
-                    if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED:
+                    if video is not None and video.processing_state == FocusVideoStateInternal.PURCHASED.value:
                         print(f"Video <{video_id}> has been marked as PURCHASED. Stopping background task.")
                         reset_failed_purchases(db, video.miner_hotkey)
                         return True
-                    elif video is not None and video.processing_state == FocusVideoStateInternal.SUBMITTED:
+                    elif video is not None and video.processing_state == FocusVideoStateInternal.SUBMITTED.value:
                         print(f"Video <{video_id}> has been marked as SUBMITTED. Stopping background task.")
                         return True
 
@@ -164,7 +164,7 @@ async def confirm_video_purchased(
         # the video back to the SUBMITTED state (i.e. mark available for purchase)
         print(f"Video <{video_id}> has NOT been marked as PURCHASED. Reverting to SUBMITTED state...")
         increment_failed_purchases(db, video.miner_hotkey)
-        video.processing_state = FocusVideoStateInternal.SUBMITTED
+        video.processing_state = FocusVideoStateInternal.SUBMITTED.value
         video.updated_at = datetime.utcnow()
         db.add(video)
         db.commit()
