@@ -731,15 +731,15 @@ async def main():
         else:
             return availability
 
-    @app.post("/api/focus/revert-pending-purchase")
-    @limiter.limit("4/minute")
-    async def revert_pending_purchase(
-        request: Request,
-        miner_hotkey: Annotated[str, Depends(get_hotkey)],
-        video: VideoPurchaseRevert,
-        db: AsyncSession = Depends(get_db),
-    ):
-        return await mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
+    # @app.post("/api/focus/revert-pending-purchase")
+    # @limiter.limit("4/minute")
+    # async def revert_pending_purchase(
+    #     request: Request,
+    #     miner_hotkey: Annotated[str, Depends(get_hotkey)],
+    #     video: VideoPurchaseRevert,
+    #     db: AsyncSession = Depends(get_db),
+    # ):
+    #     return await mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
 
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("4/minute")
