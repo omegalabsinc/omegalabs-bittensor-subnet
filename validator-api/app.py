@@ -25,7 +25,7 @@ from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel
-from sqlalchemy.orm import Session
+from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from substrateinterface import Keypair
 from validator_api.check_blocking import detect_blocking
@@ -273,11 +273,11 @@ async def run_focus_scoring(
         MIN_TASK_UNIQUENESS_SCORE = 0
         MIN_VIDEO_UNIQUENESS_SCORE = 0
         # get the db after scoring the video so it's not open for too long
-        with get_db_context() as db:
+        async with get_db_context() as db:
             if score_details.final_score < MIN_FINAL_SCORE:
                 rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
-                mark_video_rejected(
+                await mark_video_rejected(
                     db,
                     video_id,
                     rejection_reason,
@@ -285,7 +285,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     embeddings=embeddings
                 )
             else:
-                set_focus_video_score(db, video_id, score_details, embeddings)
+                await set_focus_video_score(db, video_id, score_details, embeddings)
         return {"success": True}
 
     except Exception as e:
@@ -305,8 +305,8 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         else:
             rejection_reason = "Error scoring video"
 
-        with get_db_context() as db:
-            mark_video_rejected(
+        async with get_db_context() as db:
+            await mark_video_rejected(
                 db,
                 video_id,
                 rejection_reason,
@@ -674,8 +674,11 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
+        async def run_focus_scoring_task(video_id: str, focusing_task: str, focusing_description: str):
+            await run_focus_scoring(video_id, focusing_task, focusing_description)
+        
         background_tasks.add_task(
-            run_focus_scoring, video_id, focusing_task, focusing_description)
+            run_focus_scoring_task, video_id, focusing_task, focusing_description)
         return {"success": True}
 
     @app.get("/api/focus/get_list")
@@ -693,9 +696,9 @@ async def main():
         background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body(embed=True)],
         hotkey: Annotated[str, Depends(get_hotkey)],
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     ):
-        banned_until = miner_banned_until(db, hotkey)
+        banned_until = await miner_banned_until(db, hotkey)
         if banned_until:
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
@@ -712,10 +715,14 @@ async def main():
         print('availability', availability)
         if availability['status'] == 'success':
             amount = availability['price']
-            video_owner_coldkey = await get_video_owner_coldkey(
-                db, video_id)  # run with_lock True
-            background_tasks.add_task(
-                confirm_video_purchased, video_id, True)  # run with_lock True
+            video_owner_coldkey = await get_video_owner_coldkey(db, video_id)  # run with_lock True
+            
+            # Create a standalone async function for the background task
+            async def run_confirm_video_purchased(video_id: str):
+                await confirm_video_purchased(video_id, True)
+            
+            background_tasks.add_task(run_confirm_video_purchased, video_id)
+            
             return {
                 'status': 'success',
                 'address': video_owner_coldkey,
@@ -730,9 +737,9 @@ async def main():
         request: Request,
         miner_hotkey: Annotated[str, Depends(get_hotkey)],
         video: VideoPurchaseRevert,
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
     ):
-        return mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
+        return await mark_video_submitted(db, video.video_id, miner_hotkey, with_lock=True)
 
     @app.post("/api/focus/verify-purchase")
     @limiter.limit("4/minute")
@@ -741,7 +748,7 @@ async def main():
         miner_hotkey: Annotated[str, Depends(get_hotkey)],
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
-        db: Session = Depends(get_db),
+        db: AsyncSession = Depends(get_db),
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ):
         async def run_stake(video_id):
@@ -772,7 +779,7 @@ async def main():
     @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
     async def miner_purchase_scores(
         miner_hotkey_list: str,
-        db: Session = Depends(get_db)
+        db: AsyncSession = Depends(get_db)
     ) -> Dict[str, MinerPurchaseStats]:
         # Validate input
         if not miner_hotkey_list or not miner_hotkey_list.strip():
