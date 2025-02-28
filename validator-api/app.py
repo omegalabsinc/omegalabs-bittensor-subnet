@@ -43,7 +43,7 @@ from validator_api.cron.confirm_purchase import (confirm_transfer,
 from validator_api.database import get_db, get_db_context
 from validator_api.database.crud.focusvideo import (
     MinerPurchaseStats, TaskType, FocusVideoCache,
-    check_availability, get_miner_purchase_stats, get_video_owner_coldkey,
+    check_availability, get_video_owner_coldkey,
     mark_video_rejected, mark_video_submitted, set_focus_video_score)
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoStateExternal
 from validator_api.dataset_upload import (audio_dataset_uploader,
@@ -776,30 +776,13 @@ async def main():
                 'message': f'Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}'
             }
 
-    @app.get('/api/focus/miner_purchase_scores/{miner_hotkey_list}')
-    async def miner_purchase_scores(
-        miner_hotkey_list: str,
-        db: AsyncSession = Depends(get_db)
-    ) -> Dict[str, MinerPurchaseStats]:
-        # Validate input
-        if not miner_hotkey_list or not miner_hotkey_list.strip():
-            raise HTTPException(400, detail="No miner hotkeys provided")
+    @app.get('/api/focus/miner_purchase_scores/{miner_hotkeys}')
+    async def miner_purchase_scores(miner_hotkeys: str) -> Dict[str, MinerPurchaseStats]:
+        return focus_video_cache.miner_purchase_stats()
 
-        # Split and validate hotkeys
-        hotkeys = [h.strip() for h in miner_hotkey_list.split(',') if h.strip()]
-        if not hotkeys:
-            raise HTTPException(400, detail="No valid miner hotkeys provided")
-
-        # Limit number of hotkeys that can be queried at once
-        if len(hotkeys) > 100:
-            raise HTTPException(400, detail="Too many hotkeys requested. Maximum is 100.")
-
-        try:
-            return await get_miner_purchase_stats(db, hotkeys)
-
-        except Exception as e:
-            print(f"Error in miner_purchase_scores: {str(e)}")
-            raise HTTPException(500, detail="Internal server error")
+    @app.get('/api/focus/miner_purchase_scores')
+    async def miner_purchase_scores() -> Dict[str, MinerPurchaseStats]:
+        return focus_video_cache.miner_purchase_stats()
 
     class TaskTypeMap(BaseModel):
         task_type_map: Dict[TaskType, float]
