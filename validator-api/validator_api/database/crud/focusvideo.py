@@ -98,10 +98,10 @@ class MinerPurchaseStats(BaseModel):
 
 async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
     async with get_db_context() as db:
-        query = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).all()
+        )
         result = await db.execute(query)
         purchased_videos_records = result.scalars().all()
 
