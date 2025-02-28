@@ -1,9 +1,9 @@
 from validator_api import config
-from sqlalchemy import create_engine
+from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.schema import MetaData
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.orm import sessionmaker
-from contextlib import contextmanager
+from sqlalchemy.ext.asyncio import async_sessionmaker
+from contextlib import asynccontextmanager
 
 DB_HOST = config.FOCUS_DB_HOST
 DB_NAME = config.FOCUS_DB_NAME
@@ -13,9 +13,9 @@ DB_PORT = config.FOCUS_DB_PORT
 DB_POOL_SIZE = config.FOCUS_DB_POOL_SIZE
 DB_MAX_OVERFLOW = config.FOCUS_DB_MAX_OVERFLOW
 
-DATABASE_URL = f"postgresql+psycopg2://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
 
-engine = create_engine(
+engine = create_async_engine(
     DATABASE_URL,
     pool_size=DB_POOL_SIZE,
     max_overflow=DB_MAX_OVERFLOW,
@@ -23,16 +23,18 @@ engine = create_engine(
     pool_pre_ping=True,  # Good practice for most scenarios
     pool_recycle=300,  # Recycle connections after 5 minutes
 )
-SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+SessionLocal = async_sessionmaker(class_=AsyncSession, autocommit=False, autoflush=False, bind=engine)
 Base = declarative_base()
 metadata = MetaData()
 
-def get_db():
+async def get_db():
     db = SessionLocal()
     try:
         yield db
     finally:
-        db.close()
+        await db.close()
 
-def get_db_context():
-    return contextmanager(get_db)()
+@asynccontextmanager
+async def get_db_context():
+    async for db in get_db():
+        yield db

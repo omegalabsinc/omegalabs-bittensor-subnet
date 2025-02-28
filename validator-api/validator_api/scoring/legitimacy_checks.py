@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 from typing import Tuple, Optional
 from pydantic import BaseModel, Field
+from sqlalchemy import select
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord
 from validator_api.database.models.scoring import DetailedVideoDescription
@@ -61,11 +62,13 @@ OUTPUT JSON FORMAT:
         
         # Use provided description if available, otherwise fetch from DB
         if detailed_video_description is None:
-            with get_db_context() as db:
-                video_record = db.query(FocusVideoRecord).filter(
+            async with get_db_context() as db:
+                query = select(FocusVideoRecord).filter(
                     FocusVideoRecord.video_id == video_id,
                     FocusVideoRecord.deleted_at.is_(None)
-                ).first()
+                )
+                result = await db.execute(query)
+                video_record = result.scalar_one_or_none()
                 
                 if video_record is None:
                     raise ValueError(f"Video not found: {video_id}")
