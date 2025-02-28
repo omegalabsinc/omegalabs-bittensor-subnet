@@ -73,6 +73,7 @@ async def increment_failed_purchases(db: AsyncSession, miner_hotkey: str):
     """
     miner = await get_or_create_miner(db, miner_hotkey)
     miner.purchases_failed_in_a_row += 1
+    print(f"increment_failed_purchases | miner_hotkey <{miner_hotkey}> purchases_failed_in_a_row <{miner.purchases_failed_in_a_row}>")
     check_and_ban_miner(miner)
     await db.commit()
 

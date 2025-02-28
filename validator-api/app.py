@@ -709,7 +709,7 @@ async def main():
             print("Purchases in the last 24 hours have reached the max focus tao limit.")
             raise HTTPException(
                 400, "Purchases in the last 24 hours have reached the max focus tao limit, please try again later.")
-
+        print(f"purchase_video | video_id <{video_id}> hotkey <{hotkey}>")
         # run with_lock True
         availability = await check_availability(db, video_id, hotkey, True)
         print('availability', availability)
