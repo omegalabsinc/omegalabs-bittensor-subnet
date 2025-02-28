@@ -776,6 +776,10 @@ async def main():
                 'message': f'Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}'
             }
 
+    @app.get('/api/focus/miner_purchase_scores/{miner_hotkeys}')
+    async def miner_purchase_scores(miner_hotkeys: str) -> Dict[str, MinerPurchaseStats]:
+        return focus_video_cache.miner_purchase_stats()
+
     @app.get('/api/focus/miner_purchase_scores')
     async def miner_purchase_scores() -> Dict[str, MinerPurchaseStats]:
         return focus_video_cache.miner_purchase_stats()

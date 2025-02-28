@@ -365,26 +365,25 @@ class Validator(BaseValidatorNeuron):
         """ START FOCUS VIDEOS PROCESSING AND SCORING """
         bt.logging.info("===== FOCUS VIDEOS PROCESSING AND SCORING =====")
 
-        # Get all the focus videos by iteratively calling the get_focus_videos() function.
-        miner_hotkeys = []
-        for miner_uid in miner_uids:
-            miner_hotkeys.append(self.metagraph.hotkeys[miner_uid])
-        focus_videos = await self.get_focus_videos(miner_hotkeys, miner_uids)
-        focus_rewards_list = [miner_stats["focus_points_percentage"] for miner_stats in focus_videos]
+        # Get all the focus video points percentage for all miners
+        focus_videos = await self.get_focus_videos()
 
-        # give reward to all miners with focus videos and had a non-null reward
+        # Iterate over all hotkeys in the metagraph
         focus_rewards = []
         focus_reward_uids = []
-        for r, r_uid in zip(focus_rewards_list, miner_uids):
-            if r is not None:
-                focus_rewards.append(r)
-                focus_reward_uids.append(r_uid)
+
+        for uid in range(self.metagraph.n):
+            hotkey = self.metagraph.hotkeys[uid]
+            # Set score based on focus_points_percentage if available, otherwise 0.0
+            reward = focus_videos.get(hotkey, {}).get("focus_points_percentage", 0.0)
+            focus_rewards.append(reward)
+            focus_reward_uids.append(uid)
+
         focus_rewards = torch.FloatTensor(focus_rewards).to(self.device)
         self.update_focus_scores(focus_rewards, focus_reward_uids)
 
-        for reward, miner_uid in zip(focus_rewards, focus_reward_uids):
-            bt.logging.info(
-                f"Scoring miner={miner_uid} with reward={reward} for focus videos")
+        for reward, uid in zip(focus_rewards, focus_reward_uids):
+            bt.logging.info(f"Scoring miner={uid} with reward={reward} for focus videos")
 
         """ END FOCUS VIDEOS PROCESSING AND SCORING """
 
@@ -1289,48 +1288,24 @@ class Validator(BaseValidatorNeuron):
     }
     """
 
-    async def get_focus_videos(self, miner_hotkeys: List[str], miner_uids: List[int]) -> List[Dict]:
-        bt.logging.debug(
-            f"Making API call to get focus videos for {miner_hotkeys}")
-        miner_hotkeys_str = ",".join(miner_hotkeys)
-
+    async def get_focus_videos(self) -> Dict[str, Dict]:
         async with ClientSession() as session:
             try:
-                async with session.get(f"{self.api_root}/api/focus/miner_purchase_scores/{miner_hotkeys_str}", timeout=10) as response:
+                async with session.get(f"{self.api_root}/api/focus/miner_purchase_scores", timeout=10) as response:
                     if response.status == 200:
-                        res_data = await response.json()
-                        if len(res_data) == 0:
-                            bt.logging.debug(
-                                f"-- No focus videos found for {miner_hotkeys}")
-                            return []
-
-                        result = []
-                        for i, miner_hotkey in enumerate(miner_hotkeys):
-                            if miner_hotkey in res_data:
-                                miner_data = res_data[miner_hotkey]
-                                miner_data['miner_hotkey'] = miner_hotkey
-                                miner_data['miner_uid'] = miner_uids[i]
-                                result.append(miner_data)
-                                if len(miner_data["purchased_videos"]) == 0:
-                                    bt.logging.debug(
-                                        f"-- No focus videos found for {miner_hotkey}")
-                            else:
-                                bt.logging.debug(
-                                    f"-- No data found for {miner_hotkey}")
-
-                        return result
+                        return await response.json()
                     else:
                         error_message = await response.text()
                         bt.logging.warning(
                             f"Retrieving miner focus videos failed. Status: {response.status}, Message: {error_message}")
-                        return []
+                        return {}
             except asyncio.TimeoutError:
                 bt.logging.error("Request timed out in get_focus_videos")
-                return []
+                return {}
             except Exception as e:
                 bt.logging.error(f"Error in get_focus_videos: {e}")
                 traceback.print_exc()
-                return []
+                return {}
 
 
 # The main function parses the configuration and runs the validator.
