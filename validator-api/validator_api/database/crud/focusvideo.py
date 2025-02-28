@@ -184,7 +184,6 @@ async def check_availability(
         # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
         # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
 
-        # Explicitly add the record to the session and commit
         db.add(video_record)
         await db.commit()
 

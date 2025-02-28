@@ -60,7 +60,6 @@ async def confirm_transfer(
     with_lock: bool = False
 ):
     subtensor = bt.subtensor(network=config.NETWORK)
-
     query = select(FocusVideoRecord).filter(
         FocusVideoRecord.video_id == video_id,
         FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
@@ -74,7 +73,7 @@ async def confirm_transfer(
     video = result.scalar_one_or_none()
 
     if not video:
-        print(f"Video <{video_id}> not found")
+        print(f"confirm_transfer | video <{video_id}> not found or not in PURCHASE_PENDING state")
         return False
     
     tao_amount = video.expected_reward_tao
