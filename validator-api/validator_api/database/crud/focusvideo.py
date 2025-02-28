@@ -43,6 +43,8 @@ class CachedValue:
                 if not self.is_initialized:
                     self.is_initialized = True
                     print(f"Cache {self._fetch_func.__name__} initialized")
+                else:
+                    print(f"Cache {self._fetch_func.__name__} updated at {datetime.utcnow()}")
             except Exception as e:
                 # Log error or handle as needed; do not crash the loop
                 print(f"Background cache update failed: {e}\n{traceback.format_exc()}")
@@ -89,12 +91,50 @@ async def _already_purchased_max_focus_tao() -> bool:
 
     return total_earned_tao >= effective_max_focus_tao
 
+class MinerPurchaseStats(BaseModel):
+    total_focus_points: float
+    max_focus_points: float
+    focus_points_percentage: float
+
+async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
+    def db_operation():
+        with get_db_context() as db:
+            return db.query(FocusVideoRecord).filter(
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
+                FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
+            ).all()
+
+    purchased_videos_records = await asyncio.to_thread(db_operation)
+
+    # Calculate total earned tao
+    total_earned_tao = sum(record.earned_reward_tao or 0 for record in purchased_videos_records)
+
+    # Group records by miner hotkey
+    videos_by_miner = {}
+    for record in purchased_videos_records:
+        if record.miner_hotkey not in videos_by_miner:
+            videos_by_miner[record.miner_hotkey] = []
+        videos_by_miner[record.miner_hotkey].append(record)
+
+    # Process stats for each miner
+    stats = {}
+    for miner_hotkey, miner_videos in videos_by_miner.items():
+        miner_earned_tao = sum(video_record.earned_reward_tao for video_record in miner_videos)
+        tao_percentage = miner_earned_tao / total_earned_tao if total_earned_tao > 0 else 0
+        stats[miner_hotkey] = MinerPurchaseStats(
+            total_focus_points=miner_earned_tao,
+            max_focus_points=total_earned_tao,
+            focus_points_percentage=tao_percentage
+        )
+
+    return stats
 
 class FocusVideoCache:
     def __init__(self):
         self._available_focus_cache = CachedValue(fetch_func=_fetch_available_focus, update_interval=180)
         self._alpha_to_tao_cache = CachedValue(fetch_func=_alpha_to_tao_rate)
         self._already_purchased_cache = CachedValue(fetch_func=_already_purchased_max_focus_tao)
+        self._miner_purchase_stats_cache = CachedValue(fetch_func=_get_miner_purchase_stats, update_interval=180)
 
     def get_all_available_focus(self):
         try:
@@ -108,6 +148,8 @@ class FocusVideoCache:
     def alpha_to_tao_rate(self) -> float:
         return self._alpha_to_tao_cache.get()
 
+    def miner_purchase_stats(self) -> Dict[str, MinerPurchaseStats]:
+        return self._miner_purchase_stats_cache.get()
 
 async def get_video_owner_coldkey(db: Session, video_id: str) -> str:
     def db_operation():
@@ -241,60 +283,6 @@ async def check_video_metadata(
             'success': False,
             'message': 'Internal Server Errror'
         }
-
-class MinerPurchaseStats(BaseModel):
-    purchased_videos: List[FocusVideoInternal]
-    total_focus_points: float
-    max_focus_points: float
-    focus_points_percentage: float
-
-async def get_miner_purchase_stats(db: Session, miner_hotkeys: List[str]) -> Dict[str, MinerPurchaseStats]:
-    def db_operation():
-        # Get total earned tao across all miners in last 24 hours
-        total_earned_tao = db.query(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).scalar() or 0
-
-        # Get videos purchased by requested miners in the last 24 hours
-        purchased_videos_records = db.query(FocusVideoRecord).filter(
-            FocusVideoRecord.miner_hotkey.in_(miner_hotkeys),
-            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24)
-        ).all()
-
-        return total_earned_tao, purchased_videos_records
-
-    total_earned_tao, purchased_videos_records = await asyncio.to_thread(db_operation)
-
-    # Group records by miner hotkey
-    videos_by_miner = {}
-    for record in purchased_videos_records:
-        if record.miner_hotkey not in videos_by_miner:
-            videos_by_miner[record.miner_hotkey] = []
-        videos_by_miner[record.miner_hotkey].append(record)
-
-    # Process stats for each miner
-    stats = {}
-    for miner_hotkey in miner_hotkeys:
-        miner_videos = videos_by_miner.get(miner_hotkey, [])
-
-        purchased_videos = [
-            FocusVideoInternal.model_validate(video_record)
-            for video_record in miner_videos
-        ]
-
-        miner_earned_tao = sum(video.earned_reward_tao for video in purchased_videos)
-        tao_percentage = miner_earned_tao / total_earned_tao if total_earned_tao > 0 else 0
-
-        stats[miner_hotkey] = MinerPurchaseStats(
-            purchased_videos=purchased_videos,
-            total_focus_points=miner_earned_tao,
-            max_focus_points=total_earned_tao,
-            focus_points_percentage=tao_percentage
-        )
-
-    return stats
 
 def set_focus_video_score(db: Session, video_id: str, score_details: VideoScore, embeddings: FocusVideoEmbeddings):
     video_record = db.query(FocusVideoRecord).filter(
