@@ -45,6 +45,7 @@ from validator_api.database.crud.focusvideo import (
     MinerPurchaseStats, TaskType, FocusVideoCache,
     check_availability, get_miner_purchase_stats, get_video_owner_coldkey,
     mark_video_rejected, mark_video_submitted, set_focus_video_score)
+from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoStateExternal
 from validator_api.dataset_upload import (audio_dataset_uploader,
                                           video_dataset_uploader)
 from validator_api.limiter import limiter
@@ -252,6 +253,18 @@ async def run_focus_scoring(
     score_details = None
     embeddings = None
     try:
+        with get_db_context() as db:
+            video_record = db.query(FocusVideoRecord).filter(
+                FocusVideoRecord.video_id == video_id,
+                FocusVideoRecord.deleted_at.is_(None)
+            ).first()
+            if video_record is None:
+                raise HTTPException(404, detail="Focus video not found")
+            if video_record.task_type.value == TaskType.MARKETPLACE.value:
+                db.query(FocusVideoRecord).filter(FocusVideoRecord.video_id == video_id).update({"processing_state": FocusVideoStateExternal.PENDING_HUMAN_REVIEW.value})
+                db.commit()
+                return {"success": True}
+
         score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
         print(
             f"Score for focus video <{video_id}>: {score_details.final_score}")
