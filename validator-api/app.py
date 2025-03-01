@@ -253,7 +253,7 @@ async def run_focus_scoring(
     score_details = None
     embeddings = None
     try:
-        with get_db_context() as db:
+        async with get_db_context() as db:
             video_record = db.query(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
                 FocusVideoRecord.deleted_at.is_(None)
@@ -262,7 +262,7 @@ async def run_focus_scoring(
                 raise HTTPException(404, detail="Focus video not found")
             if video_record.task_type.value == TaskType.MARKETPLACE.value:
                 db.query(FocusVideoRecord).filter(FocusVideoRecord.video_id == video_id).update({"processing_state": FocusVideoStateExternal.PENDING_HUMAN_REVIEW.value})
-                db.commit()
+                await db.commit()
                 return {"success": True}
 
         score_details, embeddings = await focus_scoring_service.score_video(video_id, focusing_task, focusing_description)
