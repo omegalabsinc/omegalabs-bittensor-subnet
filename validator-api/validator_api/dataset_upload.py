@@ -107,9 +107,7 @@ class AudioDatasetUploader:
         self.current_batch = []
         self.min_batch_size = 8
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
-        self.add_audios_mutex = asyncio.Lock()
-        self.current_waiters = 0
-        self.max_waiters = 10
+        self.currently_uploading_at = None
 
     def convert_audio_to_wav(self, audio_bytes: str) -> bytes:
         temp_audiofile = tempfile.NamedTemporaryFile(suffix=".wav")

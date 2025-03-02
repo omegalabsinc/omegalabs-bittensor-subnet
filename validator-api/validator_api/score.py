@@ -1,7 +1,7 @@
 import asyncio
 import uuid
 from typing import List, Tuple, Optional
-
+from datetime import datetime
 from fastapi import HTTPException, Request
 from pinecone import Pinecone
 import torch
@@ -137,9 +137,10 @@ async def upload_video_metadata(
         description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
     )
     # upload embeddings and metadata to pinecone
-    video_ids = await run_async(upload_to_pinecone, embeddings, metadata)
+    video_ids = await asyncio.to_thread(upload_to_pinecone, embeddings, metadata)
     # Schedule upload to HuggingFace
-    video_dataset_uploader.add_videos(
+    await asyncio.to_thread(
+        video_dataset_uploader.add_videos,
         metadata,
         video_ids,
         description_relevance_scores,
@@ -170,18 +171,16 @@ def _add_audios(upload_data: AudioMetadataUpload, audio_ids: List[str]):
         upload_data.total_score
     )
 
-async def upload_audio_metadata(request: Request) -> List[str]:
-
-    if audio_dataset_uploader.current_waiters >= audio_dataset_uploader.max_waiters:
+async def upload_audio_metadata(request: Request) -> Tuple[List[str], AudioMetadataUpload]:
+    if audio_dataset_uploader.currently_uploading_at:
+        print(f"Currently uploading since {audio_dataset_uploader.currently_uploading_at}, waiting for {(datetime.now() - audio_dataset_uploader.currently_uploading_at).total_seconds()} seconds")
         raise HTTPException(
             status_code=500,
             detail="Memory usage is too high. Please try again later."
         )
 
-    audio_dataset_uploader.current_waiters += 1
-    print(f"Current waiters: {audio_dataset_uploader.current_waiters}")
-
     try:
+        audio_dataset_uploader.currently_uploading_at = datetime.now()
         request_body = await request.body()
         upload_data = AudioMetadataUpload.model_validate_json(request_body)
         metadata = upload_data.metadata
@@ -191,9 +190,8 @@ async def upload_audio_metadata(request: Request) -> List[str]:
             description=None,
         )
         audio_ids = await asyncio.to_thread(upload_to_pinecone_audio, embeddings, metadata)
-        async with audio_dataset_uploader.add_audios_mutex:
-            await asyncio.to_thread(_add_audios, upload_data, audio_ids)
+        await asyncio.to_thread(_add_audios, upload_data, audio_ids)
     finally:
-        audio_dataset_uploader.current_waiters -= 1
+        audio_dataset_uploader.currently_uploading_at = None
 
     return audio_ids, upload_data
