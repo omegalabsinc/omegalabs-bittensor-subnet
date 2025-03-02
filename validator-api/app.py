@@ -60,7 +60,7 @@ from validator_api.utils.marketplace import (TASK_TYPE_MAP,
 from validator_api.database.models.miner_bans import miner_banned_until
 
 from omega.protocol import AudioMetadata, VideoMetadata
-
+from sqlalchemy import select, update
 print("IMPORT_SCORE:", IMPORT_SCORE)
 
 if IMPORT_SCORE is not False:
@@ -254,14 +254,21 @@ async def run_focus_scoring(
     embeddings = None
     try:
         async with get_db_context() as db:
-            video_record = db.query(FocusVideoRecord).filter(
+            query = select(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
                 FocusVideoRecord.deleted_at.is_(None)
-            ).first()
+            )
+            result = await db.execute(query)
+            video_record = result.scalar_one_or_none()
             if video_record is None:
                 raise HTTPException(404, detail="Focus video not found")
             if video_record.task_type.value == TaskType.MARKETPLACE.value:
-                db.query(FocusVideoRecord).filter(FocusVideoRecord.video_id == video_id).update({"processing_state": FocusVideoStateExternal.PENDING_HUMAN_REVIEW.value})
+                update_stmt = (
+                    update(FocusVideoRecord)
+                    .where(FocusVideoRecord.video_id == video_id)
+                    .values(processing_state=FocusVideoStateExternal.PENDING_HUMAN_REVIEW.value)
+                )
+                await db.execute(update_stmt)
                 await db.commit()
                 return {"success": True}
 
