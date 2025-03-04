@@ -13,8 +13,7 @@ from validator_api.config import NETWORK, NETUID
 from validator_api.database import get_db_context
 from validator_api.database.models.focus_video_record import FocusVideoRecord, FocusVideoInternal, FocusVideoStateInternal, TaskType
 from validator_api.database.models.user import UserRecord
-# from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao, get_max_focus_points_available_today
-from validator_api.utils.marketplace import get_max_focus_alpha_per_day, get_purchase_max_focus_alpha, get_max_focus_points_available_today
+from validator_api.utils.marketplace import get_max_focus_alpha_per_day, get_variable_reward_pool_alpha, get_max_focus_points_available_today
 from pydantic import BaseModel
 from validator_api.scoring.scoring_service import VideoScore, FocusVideoEmbeddings
 
@@ -86,7 +85,7 @@ async def _already_purchased_max_focus_tao() -> bool:
         
         result = await db.execute(query)
         total_earned_tao = result.scalar() or 0
-        effective_max_focus_alpha = await get_purchase_max_focus_alpha()
+        effective_max_focus_alpha = await get_variable_reward_pool_alpha()
         effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
 
         return total_earned_tao >= effective_max_focus_tao

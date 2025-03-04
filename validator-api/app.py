@@ -37,7 +37,6 @@ from validator_api.config import (API_KEY_NAME, API_KEYS, COMMUNE_NETUID,
                                   FOCUS_API_URL, FOCUS_REWARDS_PERCENT,
                                   IMPORT_SCORE, IS_PROD, NETUID, NETWORK, PORT,
                                   PROXY_LIST, SENTRY_DSN)
-# from validator_api.utils.marketplace import get_max_focus_tao, get_purchase_max_focus_tao
 from validator_api.cron.confirm_purchase import (confirm_transfer,
                                                  confirm_video_purchased)
 from validator_api.database import get_db, get_db_context
@@ -56,7 +55,8 @@ from validator_api.scoring.scoring_service import (FocusScoringService,
                                                    VideoUniquenessError)
 from validator_api.utils.marketplace import (TASK_TYPE_MAP,
                                              get_max_focus_alpha_per_day,
-                                             get_purchase_max_focus_alpha)
+                                             get_variable_reward_pool_alpha,
+                                             get_fixed_reward_pool_alpha)
 from validator_api.database.models.miner_bans import miner_banned_until
 
 from omega.protocol import AudioMetadata, VideoMetadata
@@ -802,48 +802,17 @@ async def main():
     async def get_rewards_percent():
         return FOCUS_REWARDS_PERCENT
 
-    # @app.get('/api/focus/get_max_focus_tao')
-    # async def _get_max_focus_tao() -> float:
-    #     return await get_max_focus_tao()
-
-    # @app.get('/api/focus/get_purchase_max_focus_tao')
-    # async def _get_purchase_max_focus_tao() -> float:
-    #     return await get_purchase_max_focus_tao()
-
-    # async def cache_max_focus_tao():
-    #     while True:
-    #         """Re-caches the value of max_focus_tao."""
-    #         print("cache_max_focus_tao()")
-
-    #         max_attempts = 3
-    #         attempt = 0
-
-    #         while attempt < max_attempts:
-    #             try:
-    #                 max_focus_tao = await get_max_focus_tao()
-    #                 break  # Exit the loop if the function succeeds
-
-    #             # In case of unforeseen errors, the api will log the error and continue operations.
-    #             except Exception as err:
-    #                 attempt += 1
-    #                 print(
-    #                     f"Error during recaching of max_focus_tao (Attempt {attempt}/{max_attempts}):", str(err))
-
-    #                 if attempt >= max_attempts:
-    #                     print(
-    #                         "Max attempts reached. Skipping this caching this cycle.")
-    #                     break
-
-    #         # Sleep in seconds
-    #         await asyncio.sleep(1800)  # 30 minutes
-
     @app.get('/api/focus/get_max_focus_alpha')
     async def _get_max_focus_alpha() -> float:
         return await get_max_focus_alpha_per_day()
 
-    @app.get('/api/focus/get_purchase_max_focus_alpha')
-    async def _get_purchase_max_focus_alpha() -> float:
-        return await get_purchase_max_focus_alpha()
+    @app.get('/api/focus/get_variable_reward_pool_alpha')
+    async def _get_variable_reward_pool_alpha() -> float:
+        return await get_variable_reward_pool_alpha()
+    
+    @app.get('/api/focus/get_fixed_reward_pool_alpha')
+    async def _get_fixed_reward_pool_alpha() -> float:
+        return await get_fixed_reward_pool_alpha()
     
     async def cache_max_focus_alpha():
         while True:
