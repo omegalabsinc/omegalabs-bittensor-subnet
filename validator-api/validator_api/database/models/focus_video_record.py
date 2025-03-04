@@ -66,7 +66,7 @@ class FocusVideoRecord(Base):
     user_id = Column(String, nullable=False)
     user_email = Column(String, nullable=False)
     processing_state = Column(Enum(*FocusVideoStateInternal.__members__, name='focus_videos_processing_state', schema='public'), nullable=False, default=FocusVideoStateInternal.PROCESSING)
-    task_type = Column(Enum(TaskType), nullable=False, default=TaskType.USER)
+    task_type = Column(Enum(*TaskType.__members__, name='focus_videos_task_type', schema='public'), nullable=False, default=TaskType.USER)
     video_score = Column(Float, nullable=True)
     video_details = Column(JSONB, nullable=True)
     embeddings = Column(JSONB, nullable=True)

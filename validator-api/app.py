@@ -56,7 +56,8 @@ from validator_api.scoring.scoring_service import (FocusScoringService,
                                                    VideoUniquenessError)
 from validator_api.utils.marketplace import (TASK_TYPE_MAP,
                                              get_max_focus_alpha_per_day,
-                                             get_purchase_max_focus_alpha)
+                                             get_variable_reward_pool_alpha,
+                                             get_fixed_reward_pool_alpha)
 from validator_api.database.models.miner_bans import miner_banned_until
 
 from omega.protocol import AudioMetadata, VideoMetadata
@@ -841,9 +842,13 @@ async def main():
     async def _get_max_focus_alpha() -> float:
         return await get_max_focus_alpha_per_day()
 
-    @app.get('/api/focus/get_purchase_max_focus_alpha')
-    async def _get_purchase_max_focus_alpha() -> float:
-        return await get_purchase_max_focus_alpha()
+    @app.get('/api/focus/get_variable_reward_pool_alpha')
+    async def _get_variable_reward_pool_alpha() -> float:
+        return await get_variable_reward_pool_alpha()
+    
+    @app.get('/api/focus/get_fixed_reward_pool_alpha')
+    async def _get_fixed_reward_pool_alpha() -> float:
+        return await get_fixed_reward_pool_alpha()
     
     async def cache_max_focus_alpha():
         while True:
