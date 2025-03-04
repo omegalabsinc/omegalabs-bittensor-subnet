@@ -26,9 +26,9 @@ jobs:
           run: |
             python -m venv env
             source env/bin/activate
-            uv pip install -r requirements.txt
-            uv pip install -r requirements_api.txt
-        
+            uv pip install --pre -r requirements.txt
+            uv pip install --pre -r requirements_api.txt
+
         - name: Run Black
           run: |
             source env/bin/activate
