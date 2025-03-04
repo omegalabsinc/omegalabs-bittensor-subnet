@@ -21,7 +21,9 @@ def is_ss58_address(address: str, ss58_format: int = 42) -> TypeGuard[Ss58Addres
     return ss58.is_valid_ss58_address(address, valid_ss58_format=ss58_format)
 
 
-def check_ss58_address(address: str | Ss58Address, ss58_format: int = 42) -> Ss58Address:
+def check_ss58_address(
+    address: str | Ss58Address, ss58_format: int = 42
+) -> Ss58Address:
     """
     Validates whether the given string is a valid SS58 address.
 
@@ -36,8 +38,7 @@ def check_ss58_address(address: str | Ss58Address, ss58_format: int = 42) -> Ss5
         AssertionError: If the address is invalid.
     """
 
-    assert is_ss58_address(
-        address, ss58_format), f"Invalid SS58 address '{address}'"
+    assert is_ss58_address(address, ss58_format), f"Invalid SS58 address '{address}'"
     return Ss58Address(address)
 
 

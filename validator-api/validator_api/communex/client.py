@@ -157,16 +157,23 @@ class CommuneClient:
 
         function_parameters: list[tuple[Any, Any, Any, Any, str]] = []
         metadata_pallet = substrate.metadata.get_metadata_pallet(  #  type: ignore
-            storage_module)  # type: ignore
+            storage_module
+        )  # type: ignore
         for storage_function, params in queries:
             storage_item = metadata_pallet.get_storage_function(  #  type: ignore
-                storage_function)  # type: ignore
+                storage_function
+            )  # type: ignore
             value_type = storage_item.get_value_type_string()  # type: ignore
             param_types = storage_item.get_params_type_string()  # type: ignore
             key_hashers = storage_item.get_param_hashers()  # type: ignore
             function_parameters.append(
-                (value_type, param_types, key_hashers,
-                 params, storage_function)  # type: ignore
+                (
+                    value_type,
+                    param_types,
+                    key_hashers,
+                    params,
+                    storage_function,
+                )  # type: ignore
             )
         return function_parameters
 
@@ -196,15 +203,16 @@ class CommuneClient:
         with self.get_conn(init=True) as substrate:
             try:
                 substrate.websocket.send(  #  type: ignore
-                    json.dumps(batch_payload))  # type: ignore
+                    json.dumps(batch_payload)
+                )  # type: ignore
             except NetworkQueryError:
                 pass
             while len(results) < len(request_ids):
                 received_messages = json.loads(
-                    substrate.websocket.recv())  # type: ignore
+                    substrate.websocket.recv()
+                )  # type: ignore
                 if isinstance(received_messages, dict):
-                    received_messages: list[dict[Any, Any]] = [
-                        received_messages]
+                    received_messages: list[dict[Any, Any]] = [received_messages]
 
                 for message in received_messages:
                     if message.get("id") in request_ids:
@@ -289,8 +297,7 @@ class CommuneClient:
         # Add the last batch if it's not empty
         if current_batch:
             result.append(current_batch)
-            chunk = Chunk(current_batch, current_prefix_batch,
-                          current_params_batch)
+            chunk = Chunk(current_batch, current_prefix_batch, current_params_batch)
             chunk_list.append(chunk)
 
         return result, chunk_list
@@ -384,7 +391,7 @@ class CommuneClient:
                     mutaded_chunk_info.pop(chunk_info_idx)
                     for i in range(0, keys_amount, max_n_keys):
                         new_chunk = deepcopy(chunk)
-                        splitted_keys = result_keys[i: i + max_n_keys]
+                        splitted_keys = result_keys[i : i + max_n_keys]
                         splitted_query = deepcopy(query)
                         splitted_query[1][0] = splitted_keys
                         new_chunk.batch_requests = [splitted_query]
@@ -403,8 +410,7 @@ class CommuneClient:
         with ThreadPoolExecutor() as executor:
             futures: list[Future[list[str | dict[Any, Any]]]] = []
             for idx, macro_chunk in enumerate(chunk_requests):
-                _, mutated_chunk_info = split_chunks(
-                    macro_chunk, chunk_requests, idx)
+                _, mutated_chunk_info = split_chunks(macro_chunk, chunk_requests, idx)
             for chunk in mutated_chunk_info:
                 request_ids: list[int] = []
                 batch_payload: list[Any] = []
@@ -521,7 +527,7 @@ class CommuneClient:
 
                     item_key_obj = substrate.decode_scale(  # type: ignore
                         type_string=f"({', '.join(key_type_string)})",
-                        scale_bytes="0x" + item[0][len(prefix):],
+                        scale_bytes="0x" + item[0][len(prefix) :],
                         return_scale_obj=True,
                         block_hash=block_hash,
                     )
@@ -544,7 +550,9 @@ class CommuneClient:
                     )
                     result_dict.setdefault(storage_function, {})
 
-                    result_dict[storage_function][item_key.value] = item_value.value  #  type: ignore
+                    result_dict[storage_function][
+                        item_key.value
+                    ] = item_value.value  #  type: ignore
 
         return result_dict
 
@@ -630,11 +638,9 @@ class CommuneClient:
             return d  # type: ignore
 
         def get_page():
-            send, prefix_list = self._get_storage_keys(
-                storage, queries, block_hash)
+            send, prefix_list = self._get_storage_keys(storage, queries, block_hash)
             with self.get_conn(init=True) as substrate:
-                function_parameters = self._get_lists(
-                    storage, queries, substrate)
+                function_parameters = self._get_lists(storage, queries, substrate)
             responses = self._rpc_request_batch(send)
             # assumption because send is just the storage_function keys
             # so it should always be really small regardless of the amount of queries
@@ -648,8 +654,7 @@ class CommuneClient:
             _, chunks_info = self._make_request_smaller(
                 built_payload, prefix_list, function_parameters
             )
-            chunks_response, chunks_info = self._rpc_request_batch_chunked(
-                chunks_info)
+            chunks_response, chunks_info = self._rpc_request_batch_chunked(chunks_info)
             return chunks_response, chunks_info
 
         if not block_hash:
@@ -1267,8 +1272,7 @@ class CommuneClient:
 
         params = {"netuid": netuid, "module_keys": keys, "amounts": amounts}
 
-        response = self.compose_call(
-            "remove_stake_multiple", params=params, key=key)
+        response = self.compose_call("remove_stake_multiple", params=params, key=key)
 
         return response
 
@@ -1309,8 +1313,7 @@ class CommuneClient:
             "netuid": netuid,
         }
 
-        response = self.compose_call(
-            "add_stake_multiple", params=params, key=key)
+        response = self.compose_call("add_stake_multiple", params=params, key=key)
 
         return response
 
@@ -1346,8 +1349,7 @@ class CommuneClient:
 
         params = {"keys": keys, "shares": shares}
 
-        response = self.compose_call(
-            "add_profit_shares", params=params, key=key)
+        response = self.compose_call("add_profit_shares", params=params, key=key)
 
         return response
 
@@ -1394,8 +1396,7 @@ class CommuneClient:
 
         params = {"data": cid}
 
-        response = self.compose_call(
-            fn="add_custom_proposal", params=params, key=key)
+        response = self.compose_call(fn="add_custom_proposal", params=params, key=key)
         return response
 
     def add_custom_subnet_proposal(
@@ -1548,14 +1549,14 @@ class CommuneClient:
 
         params = {"application_key": application_key, "data": data}
 
-        response = self.compose_call(
-            "add_dao_application", key=key, params=params)
+        response = self.compose_call("add_dao_application", key=key, params=params)
 
         return response
 
     def query_map_curator_applications(self) -> dict[str, dict[str, str]]:
         query_result = self.query_map(
-            "CuratorApplications", params=[], extract_value=False)
+            "CuratorApplications", params=[], extract_value=False
+        )
         applications = query_result.get("CuratorApplications", {})
         return applications
 

@@ -1,17 +1,16 @@
 import bittensor as bt
+
 # import aiohttp
 # import time
 import asyncio
+
 # from validator_api.utils import run_with_retries, run_async
 from typing import List
 from validator_api.config import NETWORK
 
 
 # Global cache for TAO/USD rate
-tao_usd_cache = {
-    'rate': None,
-    'timestamp': 0
-}
+tao_usd_cache = {"rate": None, "timestamp": 0}
 
 CACHE_DURATION = 30 * 60  # 30 minutes in seconds
 
@@ -77,6 +76,7 @@ query ($first: Int!, $after: Cursor, $filter: TransferFilter, $order: [Transfers
 }
 """
 
+
 async def get_transaction_from_block_hash(
     wallet_address: str,
     block_hash: str,
@@ -84,38 +84,45 @@ async def get_transaction_from_block_hash(
     """Get all transfers associated with the provided wallet address and block_hash."""
     transactions = []
     divisor = 1e9
-    
+
     async with bt.AsyncSubtensor(network=NETWORK) as subtensor:
         block = await subtensor.substrate.get_block(block_hash)
-        block_num = block['header']['number']
+        block_num = block["header"]["number"]
 
-        for extrinsic in block['extrinsics']:
+        for extrinsic in block["extrinsics"]:
             extrinsic = extrinsic.value
-            if 'call' in extrinsic and extrinsic['call']['call_module'] == 'Balances':
-                if extrinsic['call']['call_function'] in ['transfer', 'transfer_allow_death']:
-                    sender = extrinsic.get('address', 'Unknown')
-                    recipient = extrinsic['call']['call_args'][0]['value']
-                    amount = int(extrinsic['call']['call_args'][1]['value'])
+            if "call" in extrinsic and extrinsic["call"]["call_module"] == "Balances":
+                if extrinsic["call"]["call_function"] in [
+                    "transfer",
+                    "transfer_allow_death",
+                ]:
+                    sender = extrinsic.get("address", "Unknown")
+                    recipient = extrinsic["call"]["call_args"][0]["value"]
+                    amount = int(extrinsic["call"]["call_args"][1]["value"])
 
                     if sender == wallet_address or recipient == wallet_address:
-                        transactions.append({
-                            'id': extrinsic['extrinsic_hash'],
-                            'from': sender,
-                            'to': recipient,
-                            'amount': amount / divisor,
-                            # the Id is not actually supposed to be the hash, but we'll let it fly
-                            # for now cause all we need is a unique identifier, which the hash is
-                            'extrinsicId': extrinsic['extrinsic_hash'],
-                            'blockNumber': block_num
-                        })
+                        transactions.append(
+                            {
+                                "id": extrinsic["extrinsic_hash"],
+                                "from": sender,
+                                "to": recipient,
+                                "amount": amount / divisor,
+                                # the Id is not actually supposed to be the hash, but we'll let it fly
+                                # for now cause all we need is a unique identifier, which the hash is
+                                "extrinsicId": extrinsic["extrinsic_hash"],
+                                "blockNumber": block_num,
+                            }
+                        )
 
     return transactions[::-1]
 
 
 if __name__ == "__main__":
     # get a recent transaction from https://taostats.io/transfers
-    result = asyncio.run(get_transaction_from_block_hash(
-        wallet_address="5CAjN1UcMXKWa8YHpoddjGFbrHdu182eYB6x5i1NkDiN4kej",
-        block_hash="0x95a2517045778b9bda7f309d45002f1c5fe03ff400f9f73b585da1c3d1bd9cb9"
-    ))
+    result = asyncio.run(
+        get_transaction_from_block_hash(
+            wallet_address="5CAjN1UcMXKWa8YHpoddjGFbrHdu182eYB6x5i1NkDiN4kej",
+            block_hash="0x95a2517045778b9bda7f309d45002f1c5fe03ff400f9f73b585da1c3d1bd9cb9",
+        )
+    )
     print(result)

@@ -13,7 +13,9 @@ DB_PORT = config.FOCUS_DB_PORT
 DB_POOL_SIZE = config.FOCUS_DB_POOL_SIZE
 DB_MAX_OVERFLOW = config.FOCUS_DB_MAX_OVERFLOW
 
-DATABASE_URL = f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+DATABASE_URL = (
+    f"postgresql+asyncpg://{DB_USER}:{DB_PASSWORD}@{DB_HOST}:{DB_PORT}/{DB_NAME}"
+)
 
 engine = create_async_engine(
     DATABASE_URL,
@@ -23,9 +25,12 @@ engine = create_async_engine(
     pool_pre_ping=True,  # Good practice for most scenarios
     pool_recycle=300,  # Recycle connections after 5 minutes
 )
-SessionLocal = async_sessionmaker(class_=AsyncSession, autocommit=False, autoflush=False, bind=engine)
+SessionLocal = async_sessionmaker(
+    class_=AsyncSession, autocommit=False, autoflush=False, bind=engine
+)
 Base = declarative_base()
 metadata = MetaData()
+
 
 async def get_db():
     db = SessionLocal()
@@ -33,6 +38,7 @@ async def get_db():
         yield db
     finally:
         await db.close()
+
 
 @asynccontextmanager
 async def get_db_context():

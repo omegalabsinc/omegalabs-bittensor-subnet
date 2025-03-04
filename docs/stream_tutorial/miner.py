@@ -60,9 +60,7 @@ class StreamMiner(ABC):
             bt.logging.info(f"Running miner on uid: {self.my_subnet_uid}")
 
         # The axon handles request processing, allowing validators to send this process requests.
-        self.axon = axon or bt.axon(
-            wallet=self.wallet, port=self.config.axon.port
-        )
+        self.axon = axon or bt.axon(wallet=self.wallet, port=self.config.axon.port)
         # Attach determiners which functions are called when servicing a request.
         bt.logging.info(f"Attaching forward function to axon.")
         print(f"Attaching forward function to axon. {self._prompt}")
@@ -79,13 +77,11 @@ class StreamMiner(ABC):
         self.request_timestamps: Dict = {}
 
     @abstractmethod
-    def config(self) -> "bt.Config":
-        ...
+    def config(self) -> "bt.Config": ...
 
     @classmethod
     @abstractmethod
-    def add_args(cls, parser: argparse.ArgumentParser):
-        ...
+    def add_args(cls, parser: argparse.ArgumentParser): ...
 
     def _prompt(self, synapse: StreamPrompting) -> StreamPrompting:
         """
@@ -162,9 +158,7 @@ class StreamMiner(ABC):
         self.axon.serve(netuid=self.config.netuid, subtensor=self.subtensor)
 
         # Start  starts the miner's axon, making it active on the network.
-        bt.logging.info(
-            f"Starting axon server on port: {self.config.axon.port}"
-        )
+        bt.logging.info(f"Starting axon server on port: {self.config.axon.port}")
         self.axon.start()
 
         # --- Run until should_exit = True.
@@ -347,9 +341,7 @@ class StreamingTemplateMiner(StreamMiner):
                 processing steps or modify how tokens are sent back to the client.
             """
             bt.logging.trace("HI. _PROMPT()")
-            input_ids = tokenizer(
-                text, return_tensors="pt"
-            ).input_ids.squeeze()
+            input_ids = tokenizer(text, return_tensors="pt").input_ids.squeeze()
             buffer = []
             bt.logging.debug(f"Input text: {text}")
             bt.logging.debug(f"Input ids: {input_ids}")

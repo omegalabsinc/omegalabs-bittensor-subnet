@@ -27,6 +27,7 @@ class VideoMetadata(BaseModel):
     """
     A model class representing YouTube video metadata.
     """
+
     video_id: str
     description: str
     views: int
@@ -38,11 +39,10 @@ class VideoMetadata(BaseModel):
 
     def __repr_args__(self):
         parent_args = super().__repr_args__()
-        exclude_args = ['video_emb', 'audio_emb', 'description_emb']
-        return (
-            [(a, v) for a, v in parent_args if a not in exclude_args] +
-            [(a, ["..."]) for a in exclude_args]
-        )
+        exclude_args = ["video_emb", "audio_emb", "description_emb"]
+        return [(a, v) for a, v in parent_args if a not in exclude_args] + [
+            (a, ["..."]) for a in exclude_args
+        ]
 
 
 class Videos(bt.Synapse):
@@ -70,7 +70,8 @@ class Videos(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_videos", "video_metadata"})
+            include={"query", "num_videos", "video_metadata"}
+        )
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Videos") -> "Videos":
@@ -80,11 +81,9 @@ class Videos(bt.Synapse):
         return Videos(
             query=input_synapse.query,
             num_videos=input_synapse.num_videos,
-            video_metadata=self.video_metadata[:input_synapse.num_videos],
-            axon=self.axon
+            video_metadata=self.video_metadata[: input_synapse.num_videos],
+            axon=self.axon,
         )
-
-
 
 
 class AudioMetadata(BaseModel):
@@ -100,12 +99,17 @@ class AudioMetadata(BaseModel):
 
     def __repr_args__(self):
         parent_args = super().__repr_args__()
-        exclude_args = ['audio_emb', 'audio_bytes', 'diar_timestamps_start', 'diar_timestamps_end', 'diar_speakers']
-        return (
-            [(a, v) for a, v in parent_args if a not in exclude_args] +
-            [(a, ["..."]) for a in exclude_args]
-        )
-    
+        exclude_args = [
+            "audio_emb",
+            "audio_bytes",
+            "diar_timestamps_start",
+            "diar_timestamps_end",
+            "diar_speakers",
+        ]
+        return [(a, v) for a, v in parent_args if a not in exclude_args] + [
+            (a, ["..."]) for a in exclude_args
+        ]
+
 
 class Audios(bt.Synapse):
     """
@@ -132,7 +136,8 @@ class Audios(bt.Synapse):
         response (self).
         """
         json_str = self.replace_with_input(input_synapse).json(
-            include={"query", "num_audios", "audio_metadata"})
+            include={"query", "num_audios", "audio_metadata"}
+        )
         return json.loads(json_str)
 
     def replace_with_input(self, input_synapse: "Audios") -> "Audios":
@@ -143,5 +148,5 @@ class Audios(bt.Synapse):
             query=input_synapse.query,
             num_audios=input_synapse.num_audios,
             audio_metadata=self.audio_metadata,
-            axon=self.axon
+            axon=self.axon,
         )

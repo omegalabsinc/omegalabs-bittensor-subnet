@@ -119,7 +119,7 @@ class BaseMinerNeuron(BaseNeuron):
                 while (
                     dt.datetime.now() - self.last_sync_check
                 ).total_seconds() < self.sync_check_interval:
-                    
+
                     # Wait before checking again.
                     time.sleep(1)
 

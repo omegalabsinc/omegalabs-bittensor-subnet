@@ -17,6 +17,7 @@
 # DEALINGS IN THE SOFTWARE.
 
 import os
+
 os.environ["USE_TORCH"] = "1"
 
 
@@ -81,6 +82,7 @@ from typing import List, Tuple, Optional, BinaryIO, Dict
 import asyncio
 from aiohttp import ClientSession, BasicAuth
 import os
+
 # Set USE_TORCH=1 environment variable to use torch instead of numpy
 os.environ["USE_TORCH"] = "1"
 
@@ -96,6 +98,7 @@ NUM_VIDEOS = 8
 NUM_AUDIOS = 4
 CLIENT_TIMEOUT_SECONDS = VALIDATOR_TIMEOUT + VALIDATOR_TIMEOUT_MARGIN
 CLIENT_TIMEOUT_SECONDS_AUDIO = VALIDATOR_TIMEOUT_AUDIO + VALIDATOR_TIMEOUT_MARGIN
+
 
 class Validator(BaseValidatorNeuron):
     """
@@ -119,17 +122,19 @@ class Validator(BaseValidatorNeuron):
                 self.successfully_started_wandb = True
             else:
                 bt.logging.exception(
-                    "WANDB_API_KEY not found. Set it with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.off, but it is strongly recommended to run with W&B enabled.")
+                    "WANDB_API_KEY not found. Set it with `export WANDB_API_KEY=<your API key>`. Alternatively, you can disable W&B with --wandb.off, but it is strongly recommended to run with W&B enabled."
+                )
                 self.successfully_started_wandb = False
         else:
             bt.logging.warning(
-                "Running with --wandb.off. It is strongly recommended to run with W&B enabled.")
+                "Running with --wandb.off. It is strongly recommended to run with W&B enabled."
+            )
             self.successfully_started_wandb = False
 
         self.api_root = (
             "https://dev-sn24-api.omegatron.ai"
-            if self.config.subtensor.network == "test" else
-            "https://sn24-api.omegatron.ai"
+            if self.config.subtensor.network == "test"
+            else "https://sn24-api.omegatron.ai"
         )
         # load topics from topics URL (CSV) or fallback to local topics file
         self.load_topics_start = dt.datetime.now()
@@ -139,7 +144,9 @@ class Validator(BaseValidatorNeuron):
         self.load_focus_rewards_start = dt.datetime.now()
         self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
         self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT
-        self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT
+        self.YOUTUBE_REWARDS_PERCENT = (
+            1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT
+        )
 
     def new_wandb_run(self):
         # Shoutout SN13 for the wandb snippet!
@@ -173,31 +180,42 @@ class Validator(BaseValidatorNeuron):
             # split the response text into a list of topics and trim any whitespace
             all_topics = [line.strip() for line in response.text.split("\n")]
             bt.logging.info(
-                f"Loaded {len(all_topics)} topics from {self.config.topics_url}")
+                f"Loaded {len(all_topics)} topics from {self.config.topics_url}"
+            )
         except Exception as e:
             bt.logging.error(
-                f"Error loading topics from URL {self.config.topics_url}: {e}")
+                f"Error loading topics from URL {self.config.topics_url}: {e}"
+            )
             traceback.print_exc()
+            bt.logging.info(f"Using fallback topics from {self.config.topics_path}")
+            all_topics = [
+                line.strip() for line in open(self.config.topics_path) if line.strip()
+            ]
             bt.logging.info(
-                f"Using fallback topics from {self.config.topics_path}")
-            all_topics = [line.strip() for line in open(
-                self.config.topics_path) if line.strip()]
-            bt.logging.info(
-                f"Loaded {len(all_topics)} topics from {self.config.topics_path}")
+                f"Loaded {len(all_topics)} topics from {self.config.topics_path}"
+            )
         return all_topics
 
     def load_focus_rewards_percent(self):
         # get focus rewards percent from API endpoint or fallback to default
         try:
-            focus_rewards_percent_endpoint = f"{self.api_root}/api/focus/get_rewards_percent"
+            focus_rewards_percent_endpoint = (
+                f"{self.api_root}/api/focus/get_rewards_percent"
+            )
             response = requests.get(focus_rewards_percent_endpoint)
             response.raise_for_status()
             rewards_percent = float(response.text)
-            bt.logging.info(f"Loaded focus rewards percent of {rewards_percent} from {focus_rewards_percent_endpoint}")
+            bt.logging.info(
+                f"Loaded focus rewards percent of {rewards_percent} from {focus_rewards_percent_endpoint}"
+            )
         except Exception as e:
-            bt.logging.error(f"Error loading rewards percent from {focus_rewards_percent_endpoint}: {e}")
+            bt.logging.error(
+                f"Error loading rewards percent from {focus_rewards_percent_endpoint}: {e}"
+            )
             traceback.print_exc()
-            bt.logging.info(f"Using fallback focus rewards percent of {FOCUS_REWARDS_PERCENT}")
+            bt.logging.info(
+                f"Using fallback focus rewards percent of {FOCUS_REWARDS_PERCENT}"
+            )
             rewards_percent = FOCUS_REWARDS_PERCENT
         return rewards_percent
 
@@ -209,7 +227,7 @@ class Validator(BaseValidatorNeuron):
         - Getting the responses
         - Rewarding the miners
         - Updating the scores
-        
+
         The forward function is called by the validator every time step.
 
         It is responsible for querying the network and scoring the responses.
@@ -226,8 +244,7 @@ class Validator(BaseValidatorNeuron):
             return
 
         """ START YOUTUBE AUDIO PROCESSING AND SCORING """
-        bt.logging.info(
-            "===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
+        bt.logging.info("===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
         # The dendrite client queries the network.
         query = random.choice(self.all_topics) + " podcast"
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
@@ -246,11 +263,18 @@ class Validator(BaseValidatorNeuron):
         audio_finished_responses = []
 
         for response in audio_responses:
-            if response.audio_metadata is None or not response.axon or not response.axon.hotkey:
+            if (
+                response.audio_metadata is None
+                or not response.axon
+                or not response.axon.hotkey
+            ):
                 continue
 
-            uid = [uid for uid, axon in zip(
-                miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
+            uid = [
+                uid
+                for uid, axon in zip(miner_uids, axons)
+                if axon.hotkey == response.axon.hotkey
+            ][0]
             audio_working_miner_uids.append(uid)
             audio_finished_responses.append(response)
 
@@ -261,7 +285,9 @@ class Validator(BaseValidatorNeuron):
         bt.logging.info(f"Received audio responses: {audio_responses}")
         # Adjust the scores based on responses from miners.
         try:
-            audio_rewards_list = await self.handle_checks_and_reward_audio(input_synapse=audio_input_synapse, responses=audio_finished_responses)
+            audio_rewards_list = await self.handle_checks_and_reward_audio(
+                input_synapse=audio_input_synapse, responses=audio_finished_responses
+            )
         except Exception as e:
             bt.logging.error(f"Error in handle_checks_and_rewards_audio: {e}")
             traceback.print_exc()
@@ -278,24 +304,25 @@ class Validator(BaseValidatorNeuron):
 
         # give min reward to miners who didn't respond
         bad_miner_uids = [
-            uid for uid in miner_uids if uid not in audio_working_miner_uids]
+            uid for uid in miner_uids if uid not in audio_working_miner_uids
+        ]
         penalty_tensor = torch.FloatTensor(
-            [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
+            [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)
+        ).to(self.device)
         self.update_audio_scores(penalty_tensor, bad_miner_uids)
 
         for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
             bt.logging.info(
-                f"Rewarding miner={miner_uid} with reward={reward} for audio dataset")
+                f"Rewarding miner={miner_uid} with reward={reward} for audio dataset"
+            )
 
         for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
-            bt.logging.info(
-                f"Penalizing miner={miner_uid} with penalty={penalty}")
+            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
 
         """ END YOUTUBE AUDIO PROCESSING AND SCORING """
 
         """ START YOUTUBE SYNAPSE REQUESTS, PROCESSING, AND SCORING """
-        bt.logging.info(
-            "===== YOUTUBE REQUESTS, PROCESSING, AND SCORING =====")
+        bt.logging.info("===== YOUTUBE REQUESTS, PROCESSING, AND SCORING =====")
         # The dendrite client queries the network.
         query = random.choice(self.all_topics)
         bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
@@ -313,11 +340,18 @@ class Validator(BaseValidatorNeuron):
         finished_responses = []
 
         for response in responses:
-            if response.video_metadata is None or not response.axon or not response.axon.hotkey:
+            if (
+                response.video_metadata is None
+                or not response.axon
+                or not response.axon.hotkey
+            ):
                 continue
 
-            uid = [uid for uid, axon in zip(
-                miner_uids, axons) if axon.hotkey == response.axon.hotkey][0]
+            uid = [
+                uid
+                for uid, axon in zip(miner_uids, axons)
+                if axon.hotkey == response.axon.hotkey
+            ][0]
             working_miner_uids.append(uid)
             finished_responses.append(response)
 
@@ -329,10 +363,11 @@ class Validator(BaseValidatorNeuron):
 
         # Adjust the scores based on responses from miners.
         try:
-            rewards_list = await self.handle_checks_and_rewards_youtube(input_synapse=input_synapse, responses=finished_responses)
+            rewards_list = await self.handle_checks_and_rewards_youtube(
+                input_synapse=input_synapse, responses=finished_responses
+            )
         except Exception as e:
-            bt.logging.error(
-                f"Error in handle_checks_and_rewards_youtube: {e}")
+            bt.logging.error(f"Error in handle_checks_and_rewards_youtube: {e}")
             traceback.print_exc()
             return
 
@@ -347,19 +382,17 @@ class Validator(BaseValidatorNeuron):
         self.update_scores(rewards, reward_uids)
 
         # give min reward to miners who didn't respond
-        bad_miner_uids = [
-            uid for uid in miner_uids if uid not in working_miner_uids]
+        bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
         penalty_tensor = torch.FloatTensor(
-            [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)).to(self.device)
+            [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)
+        ).to(self.device)
         self.update_scores(penalty_tensor, bad_miner_uids)
 
         for reward, miner_uid in zip(rewards, reward_uids):
-            bt.logging.info(
-                f"Rewarding miner={miner_uid} with reward={reward}")
+            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
 
         for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
-            bt.logging.info(
-                f"Penalizing miner={miner_uid} with penalty={penalty}")
+            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
         """ END YOUTUBE SYNAPSE REQUESTS, PROCESSING, AND SCORING """
 
         """ START FOCUS VIDEOS PROCESSING AND SCORING """
@@ -383,29 +416,39 @@ class Validator(BaseValidatorNeuron):
         self.update_focus_scores(focus_rewards, focus_reward_uids)
 
         for reward, uid in zip(focus_rewards, focus_reward_uids):
-            bt.logging.info(f"Scoring miner={uid} with reward={reward} for focus videos")
+            bt.logging.info(
+                f"Scoring miner={uid} with reward={reward} for focus videos"
+            )
 
         """ END FOCUS VIDEOS PROCESSING AND SCORING """
 
     def metadata_check(self, metadata: List[VideoMetadata]) -> List[VideoMetadata]:
         return [
-            video_metadata for video_metadata in metadata
+            video_metadata
+            for video_metadata in metadata
             if (
-                video_metadata.end_time - video_metadata.start_time <= MAX_VIDEO_LENGTH and
-                video_metadata.end_time - video_metadata.start_time >= MIN_VIDEO_LENGTH
+                video_metadata.end_time - video_metadata.start_time <= MAX_VIDEO_LENGTH
+                and video_metadata.end_time - video_metadata.start_time
+                >= MIN_VIDEO_LENGTH
             )
         ]
 
-    def audio_metadata_check(self, metadata: List[AudioMetadata]) -> List[AudioMetadata]:
+    def audio_metadata_check(
+        self, metadata: List[AudioMetadata]
+    ) -> List[AudioMetadata]:
         return [
-            audio_metadata for audio_metadata in metadata
+            audio_metadata
+            for audio_metadata in metadata
             if (
-                audio_metadata.end_time - audio_metadata.start_time <= MAX_VIDEO_LENGTH and
-                audio_metadata.end_time - audio_metadata.start_time >= MIN_VIDEO_LENGTH
+                audio_metadata.end_time - audio_metadata.start_time <= MAX_VIDEO_LENGTH
+                and audio_metadata.end_time - audio_metadata.start_time
+                >= MIN_VIDEO_LENGTH
             )
         ]
 
-    def filter_embeddings(self, embeddings: Embeddings, is_too_similar: List[bool]) -> Embeddings:
+    def filter_embeddings(
+        self, embeddings: Embeddings, is_too_similar: List[bool]
+    ) -> Embeddings:
         """Filter the embeddings based on whether they are too similar to the query."""
         is_too_similar = torch.tensor(is_too_similar)
         if embeddings.video is not None:
@@ -416,7 +459,9 @@ class Validator(BaseValidatorNeuron):
             embeddings.description = embeddings.description[~is_too_similar]
         return embeddings
 
-    def filter_stuffed_embeddings(self, embeddings: Embeddings, stuffed: List[Tuple[bool, float]]) -> Embeddings:
+    def filter_stuffed_embeddings(
+        self, embeddings: Embeddings, stuffed: List[Tuple[bool, float]]
+    ) -> Embeddings:
         """Filter the embeddings based on whether they are too similar to the query."""
         stuffed = torch.tensor([s for s, _ in stuffed])
         if embeddings.video is not None:
@@ -434,7 +479,7 @@ class Validator(BaseValidatorNeuron):
         cossim = CosineSimilarity(dim=1)
         is_similar = []
         for i in range(num_videos):
-            similarity_score = cossim(video_tensor[[i]], video_tensor[i + 1:])
+            similarity_score = cossim(video_tensor[[i]], video_tensor[i + 1 :])
             has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
             is_similar.append(has_duplicates.item())
 
@@ -447,26 +492,26 @@ class Validator(BaseValidatorNeuron):
         cossim = CosineSimilarity(dim=1)
         is_similar = []
         for i in range(num_audios):
-            similarity_score = cossim(audio_tensor[[i]], audio_tensor[i + 1:])
+            similarity_score = cossim(audio_tensor[[i]], audio_tensor[i + 1 :])
             has_duplicates = (similarity_score > SIMILARITY_THRESHOLD).any()
             is_similar.append(has_duplicates.item())
 
         return is_similar
 
     def is_similar(self, emb_1: torch.Tensor, emb_2: List[float]) -> bool:
-        return F.cosine_similarity(
-            emb_1,
-            torch.tensor(emb_2, device=emb_1.device).unsqueeze(0)
-        ) > SIMILARITY_THRESHOLD
+        return (
+            F.cosine_similarity(
+                emb_1, torch.tensor(emb_2, device=emb_1.device).unsqueeze(0)
+            )
+            > SIMILARITY_THRESHOLD
+        )
 
     def strict_is_similar(self, emb_1: torch.Tensor, emb_2: List[float]) -> bool:
-        return torch.allclose(emb_1, torch.tensor(emb_2, device=emb_1.device), atol=1e-4)
+        return torch.allclose(
+            emb_1, torch.tensor(emb_2, device=emb_1.device), atol=1e-4
+        )
 
-    async def get_random_youtube_video(
-        self,
-        metadata,
-        check_video: bool
-    ):
+    async def get_random_youtube_video(self, metadata, check_video: bool):
         if not check_video and len(metadata) > 0:
             random_metadata = random.choice(metadata)
             return random_metadata, None
@@ -479,27 +524,34 @@ class Validator(BaseValidatorNeuron):
             proxy_url = await self.get_proxy_url()
             if proxy_url is None:
                 bt.logging.info(
-                    "Issue getting proxy_url from API, not using proxy. Attempting download for random_video check")
+                    "Issue getting proxy_url from API, not using proxy. Attempting download for random_video check"
+                )
             else:
                 bt.logging.info(
-                    "Got proxy_url from API. Attempting download for random_video check")
+                    "Got proxy_url from API. Attempting download for random_video check"
+                )
             try:
                 async with DOWNLOAD_SEMAPHORE:
-                    random_video = await asyncio.wait_for(run_async(
-                        video_utils.download_youtube_video,
-                        random_metadata.video_id,
-                        random_metadata.start_time,
-                        random_metadata.end_time,
-                        proxy=proxy_url
-                    ), timeout=VIDEO_DOWNLOAD_TIMEOUT)
+                    random_video = await asyncio.wait_for(
+                        run_async(
+                            video_utils.download_youtube_video,
+                            random_metadata.video_id,
+                            random_metadata.start_time,
+                            random_metadata.end_time,
+                            proxy=proxy_url,
+                        ),
+                        timeout=VIDEO_DOWNLOAD_TIMEOUT,
+                    )
             except video_utils.IPBlockedException:
                 # IP is blocked, cannot download video, check description only
                 bt.logging.warning(
-                    "WARNING: IP is blocked, cannot download video, checking description only")
+                    "WARNING: IP is blocked, cannot download video, checking description only"
+                )
                 return random_metadata, None
             except video_utils.FakeVideoException:
                 bt.logging.warning(
-                    f"WARNING: Video {random_metadata.video_id} is fake, punishing miner")
+                    f"WARNING: Video {random_metadata.video_id} is fake, punishing miner"
+                )
                 return None
             except asyncio.TimeoutError:
                 continue
@@ -511,55 +563,64 @@ class Validator(BaseValidatorNeuron):
 
         return random_metadata, random_video
 
-    async def random_youtube_check(self, random_meta_and_vid: List[VideoMetadata]) -> bool:
+    async def random_youtube_check(
+        self, random_meta_and_vid: List[VideoMetadata]
+    ) -> bool:
         random_metadata, random_video = random_meta_and_vid
 
         if random_video is None:
-            desc_embeddings = self.imagebind.embed_text(
-                [random_metadata.description])
+            desc_embeddings = self.imagebind.embed_text([random_metadata.description])
             is_similar_ = self.is_similar(
-                desc_embeddings, random_metadata.description_emb)
+                desc_embeddings, random_metadata.description_emb
+            )
             strict_is_similar_ = self.strict_is_similar(
-                desc_embeddings, random_metadata.description_emb)
+                desc_embeddings, random_metadata.description_emb
+            )
             bt.logging.info(
-                f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}")
+                f"Description similarity: {is_similar_}, strict description similarity: {strict_is_similar_}"
+            )
             return is_similar_
 
         # Video downloaded, check all embeddings
-        embeddings = self.imagebind.embed(
-            [random_metadata.description], [random_video])
+        embeddings = self.imagebind.embed([random_metadata.description], [random_video])
         is_similar_ = (
-            self.is_similar(embeddings.video, random_metadata.video_emb) and
-            self.is_similar(embeddings.audio, random_metadata.audio_emb) and
-            self.is_similar(embeddings.description,
-                            random_metadata.description_emb)
+            self.is_similar(embeddings.video, random_metadata.video_emb)
+            and self.is_similar(embeddings.audio, random_metadata.audio_emb)
+            and self.is_similar(embeddings.description, random_metadata.description_emb)
         )
         strict_is_similar_ = (
-            self.strict_is_similar(embeddings.video, random_metadata.video_emb) and
-            self.strict_is_similar(embeddings.audio, random_metadata.audio_emb) and
-            self.strict_is_similar(
-                embeddings.description, random_metadata.description_emb)
+            self.strict_is_similar(embeddings.video, random_metadata.video_emb)
+            and self.strict_is_similar(embeddings.audio, random_metadata.audio_emb)
+            and self.strict_is_similar(
+                embeddings.description, random_metadata.description_emb
+            )
         )
         bt.logging.debug(
-            f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}")
+            f"Total similarity: {is_similar_}, strict total similarity: {strict_is_similar_}"
+        )
         return is_similar_
 
-    async def random_audio_check(self, random_meta_and_audio: List[AudioMetadata]) -> bool:
+    async def random_audio_check(
+        self, random_meta_and_audio: List[AudioMetadata]
+    ) -> bool:
         random_metadata, random_video = random_meta_and_audio
         bt.logging.info(
-            f"inside random_audio_check, random_metadata: {random_metadata}, random_video: {random_video}")
+            f"inside random_audio_check, random_metadata: {random_metadata}, random_video: {random_video}"
+        )
         if random_video is None:
             return True
 
-        audio_bytes_from_youtube = video_utils.get_audio_bytes(
-            random_video.name)
-        audio_bytes_from_youtube = base64.b64encode(
-            audio_bytes_from_youtube).decode('utf-8')
+        audio_bytes_from_youtube = video_utils.get_audio_bytes(random_video.name)
+        audio_bytes_from_youtube = base64.b64encode(audio_bytes_from_youtube).decode(
+            "utf-8"
+        )
         audio_array_youtube, _ = sf.read(
-            BytesIO(base64.b64decode(audio_bytes_from_youtube)))
+            BytesIO(base64.b64decode(audio_bytes_from_youtube))
+        )
         submitted_audio_bytes = random_metadata.audio_bytes
         audio_array_submitted, _ = sf.read(
-            BytesIO(base64.b64decode(submitted_audio_bytes)))
+            BytesIO(base64.b64decode(submitted_audio_bytes))
+        )
 
         if np.array_equal(audio_array_youtube, audio_array_submitted) is False:
             bt.logging.warning("WARNING: Audio bytes do not match")
@@ -572,7 +633,8 @@ class Validator(BaseValidatorNeuron):
         novelty_scores = []
         for i in range(num_videos - 1):
             similarity_score = F.cosine_similarity(
-                video_tensor[[i]], video_tensor[i + 1:]).max()
+                video_tensor[[i]], video_tensor[i + 1 :]
+            ).max()
             novelty_scores.append(1 - similarity_score.item())
         novelty_scores.append(1.0)  # last video is 100% novel
         return novelty_scores
@@ -583,7 +645,8 @@ class Validator(BaseValidatorNeuron):
         novelty_scores = []
         for i in range(num_audios - 1):
             similarity_score = F.cosine_similarity(
-                audio_tensor[[i]], audio_tensor[i + 1:]).max()
+                audio_tensor[[i]], audio_tensor[i + 1 :]
+            ).max()
             novelty_scores.append(1 - similarity_score.item())
         novelty_scores.append(1.0)  # last video is 100% novel
         return novelty_scores
@@ -593,18 +656,18 @@ class Validator(BaseValidatorNeuron):
 
     # algorithm for computing final novelty score
     def compute_final_novelty_score(self, base_novelty_scores: List[float]) -> float:
-        is_too_similar = [
-            score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
-        novelty_score = sum([
-            score for score, is_too_similar
-            in zip(base_novelty_scores, is_too_similar) if not is_too_similar
-        ])
+        is_too_similar = [score < DIFFERENCE_THRESHOLD for score in base_novelty_scores]
+        novelty_score = sum(
+            [
+                score
+                for score, is_too_similar in zip(base_novelty_scores, is_too_similar)
+                if not is_too_similar
+            ]
+        )
         return novelty_score
 
     async def check_videos_and_calculate_rewards_youtube(
-        self,
-        input_synapse: Videos,
-        videos: Videos
+        self, input_synapse: Videos, videos: Videos
     ) -> Optional[float]:
         try:
             # return minimum score if no videos were found in video_metadata
@@ -612,21 +675,28 @@ class Validator(BaseValidatorNeuron):
                 return MIN_SCORE
 
             # check video_ids for fake videos
-            if any(not video_utils.is_valid_youtube_id(video.video_id) for video in videos.video_metadata):
+            if any(
+                not video_utils.is_valid_youtube_id(video.video_id)
+                for video in videos.video_metadata
+            ):
                 return FAKE_VIDEO_PUNISHMENT
 
             # check and filter duplicate metadata
             metadata = self.metadata_check(videos.video_metadata)[
-                :input_synapse.num_videos]
+                : input_synapse.num_videos
+            ]
             if len(metadata) < len(videos.video_metadata):
                 bt.logging.info(
-                    f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+                    f"Filtered {len(videos.video_metadata)} videos down to {len(metadata)} videos"
+                )
 
             # if randomly tripped, flag our random check to pull a video from miner's submissions
             check_video = CHECK_PROBABILITY > random.random()
 
             # pull a random video and/or description only
-            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_video)
+            random_meta_and_vid = await self.get_random_youtube_video(
+                metadata, check_video
+            )
             if random_meta_and_vid is None:
                 return FAKE_VIDEO_PUNISHMENT
 
@@ -640,42 +710,48 @@ class Validator(BaseValidatorNeuron):
                 query_emb = await self.imagebind.embed_text_async([videos.query])
 
             embeddings = Embeddings(
-                video=torch.stack([torch.tensor(v.video_emb)
-                                  for v in metadata]).to(self.imagebind.device),
-                audio=torch.stack([torch.tensor(v.audio_emb)
-                                  for v in metadata]).to(self.imagebind.device),
-                description=torch.stack([torch.tensor(v.description_emb) for v in metadata]).to(
-                    self.imagebind.device),
+                video=torch.stack([torch.tensor(v.video_emb) for v in metadata]).to(
+                    self.imagebind.device
+                ),
+                audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]).to(
+                    self.imagebind.device
+                ),
+                description=torch.stack(
+                    [torch.tensor(v.description_emb) for v in metadata]
+                ).to(self.imagebind.device),
             )
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
             metadata_is_similar = await self.deduplicate_videos(embeddings)
-            metadata = [metadata for metadata, too_similar in zip(
-                metadata, metadata_is_similar) if not too_similar]
-            embeddings = self.filter_embeddings(
-                embeddings, metadata_is_similar)
+            metadata = [
+                metadata
+                for metadata, too_similar in zip(metadata, metadata_is_similar)
+                if not too_similar
+            ]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
             if len(metadata) < len(videos.video_metadata):
                 bt.logging.info(
-                    f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos")
+                    f"Deduplicated {len(videos.video_metadata)} videos down to {len(metadata)} videos"
+                )
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
                 return MIN_SCORE
 
             # first get local novelty scores
-            local_novelty_scores = self.compute_novelty_score_among_batch(
-                embeddings)
+            local_novelty_scores = self.compute_novelty_score_among_batch(embeddings)
             # bt.logging.debug(f"local_novelty_scores: {local_novelty_scores}")
             # second get the novelty scores from the validator api if not already too similar
             embeddings_to_check = [
                 (embedding, metadata)
-                for embedding, local_score, metadata in zip(embeddings.video, local_novelty_scores, metadata)
+                for embedding, local_score, metadata in zip(
+                    embeddings.video, local_novelty_scores, metadata
+                )
                 if local_score >= DIFFERENCE_THRESHOLD
             ]
             # If there are embeddings to check, call get_novelty_scores once
             if embeddings_to_check:
-                embeddings_to_check, metadata_to_check = zip(
-                    *embeddings_to_check)
+                embeddings_to_check, metadata_to_check = zip(*embeddings_to_check)
                 global_novelty_scores = await self.get_novelty_scores(metadata_to_check)
             else:
                 # If no embeddings to check, return an empty list or appropriate default value
@@ -683,29 +759,37 @@ class Validator(BaseValidatorNeuron):
 
             if global_novelty_scores is None or len(global_novelty_scores) == 0:
                 bt.logging.error(
-                    "Issue retrieving global novelty scores, returning None.")
+                    "Issue retrieving global novelty scores, returning None."
+                )
                 return None
             # #bt.logging.debug(f"global_novelty_scores: {global_novelty_scores}")
 
             # calculate true novelty scores between local and global
             true_novelty_scores = [
-                min(local_score, global_score) for local_score, global_score
-                in zip(local_novelty_scores, global_novelty_scores)
+                min(local_score, global_score)
+                for local_score, global_score in zip(
+                    local_novelty_scores, global_novelty_scores
+                )
             ]
             # bt.logging.debug(f"true_novelty_scores: {true_novelty_scores}")
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
             is_too_similar = [
-                score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+                score < DIFFERENCE_THRESHOLD for score in true_novelty_scores
+            ]
             # filter out metadata too similar
-            metadata = [metadata for metadata, too_similar in zip(
-                metadata, is_too_similar) if not too_similar]
+            metadata = [
+                metadata
+                for metadata, too_similar in zip(metadata, is_too_similar)
+                if not too_similar
+            ]
             # filter out embeddings too similar
             embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(
-                    f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index.")
+                    f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos that are too similar to videos in our index."
+                )
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
@@ -713,25 +797,25 @@ class Validator(BaseValidatorNeuron):
 
             # Filter out "stuffed" descriptions.
             pre_filter_metadata_length = len(metadata)
-            stuffed = [
-                unstuff.is_stuffed(meta.description)
-                for meta in metadata
-            ]
+            stuffed = [unstuff.is_stuffed(meta.description) for meta in metadata]
             if any([garbage and confidence > 0.75 for garbage, confidence in stuffed]):
                 bt.logging.warning(
-                    "Stuffed description found with high confidence, penalizing the miner.")
+                    "Stuffed description found with high confidence, penalizing the miner."
+                )
                 return STUFFED_DESCRIPTION_PUNISHMENT
 
             # More stuffing.
             extraneous = [
                 unstuff.check_extraneous_chunks(
-                    meta.description, meta.video_emb, meta.audio_emb, self.imagebind)
+                    meta.description, meta.video_emb, meta.audio_emb, self.imagebind
+                )
                 for meta in metadata
             ]
             for really_bad, low_quality, total in extraneous:
                 if really_bad > 5 or low_quality >= 16:
                     bt.logging.info(
-                        f"Extraneous garbage found in text check {really_bad=} {low_quality=} {total=}")
+                        f"Extraneous garbage found in text check {really_bad=} {low_quality=} {total=}"
+                    )
                     return STUFFED_DESCRIPTION_PUNISHMENT
 
             metadata = [
@@ -743,7 +827,8 @@ class Validator(BaseValidatorNeuron):
             ]
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(
-                    f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions.")
+                    f"Filtering {pre_filter_metadata_length} videos down to {len(metadata)} videos to remove token-stuffed descriptions."
+                )
             if len(metadata) == 0:
                 return MIN_SCORE
             embeddings = self.filter_stuffed_embeddings(embeddings, stuffed)
@@ -764,23 +849,29 @@ class Validator(BaseValidatorNeuron):
 
             # Query relevance score now includes video cosim, audio cosim, and text cosim using higher quality text-only model.
             query_relevance_scores = [
-                sum([
-                    video_query_relevance_scores[idx],
-                    audio_query_relevance_scores[idx],
-                    get_text_similarity_score(
-                        metadata[idx].description, videos.query),
-                ]) / 3
+                sum(
+                    [
+                        video_query_relevance_scores[idx],
+                        audio_query_relevance_scores[idx],
+                        get_text_similarity_score(
+                            metadata[idx].description, videos.query
+                        ),
+                    ]
+                )
+                / 3
                 for idx in range(len(video_query_relevance_scores))
             ]
 
             # Combine audio & visual description scores, weighted towards visual.
             description_relevance_scores = [
-                sum([
-                    video_description_relevance_scores[idx] *
-                    VIDEO_RELEVANCE_WEIGHT,
-                    audio_description_relevance_scores[idx] *
-                    (1.0 - VIDEO_RELEVANCE_WEIGHT),
-                ])
+                sum(
+                    [
+                        video_description_relevance_scores[idx]
+                        * VIDEO_RELEVANCE_WEIGHT,
+                        audio_description_relevance_scores[idx]
+                        * (1.0 - VIDEO_RELEVANCE_WEIGHT),
+                    ]
+                )
                 for idx in range(len(video_description_relevance_scores))
             ]
 
@@ -788,35 +879,47 @@ class Validator(BaseValidatorNeuron):
             length_scalers = []
             for idx in range(len(description_relevance_scores)):
                 unique_tokens = LENGTH_TOKENIZER(metadata[idx].description)
-                unique_tokens = set(
-                    unique_tokens[unique_tokens != 0][1:-1].tolist())
+                unique_tokens = set(unique_tokens[unique_tokens != 0][1:-1].tolist())
                 unique_token_count = len(unique_tokens)
                 if unique_token_count <= MIN_LENGTH_BOOST_TOKEN_COUNT:
                     bt.logging.debug(
-                        f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty.")
-                    description_relevance_scores[idx] *= (
-                        1.0 - DESCRIPTION_LENGTH_WEIGHT)
+                        f"Very few tokens, applying {DESCRIPTION_LENGTH_WEIGHT} penalty."
+                    )
+                    description_relevance_scores[idx] *= 1.0 - DESCRIPTION_LENGTH_WEIGHT
                     length_scalers.append(0)
                     continue
-                length_scaler = min(math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2), math.log(
-                    unique_token_count, 2)) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
-                length_scaler /= (math.log(MAX_LENGTH_BOOST_TOKEN_COUNT,
-                                  2) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2))
+                length_scaler = min(
+                    math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2),
+                    math.log(unique_token_count, 2),
+                ) - math.log(MIN_LENGTH_BOOST_TOKEN_COUNT, 2)
+                length_scaler /= math.log(MAX_LENGTH_BOOST_TOKEN_COUNT, 2) - math.log(
+                    MIN_LENGTH_BOOST_TOKEN_COUNT, 2
+                )
                 length_scalers.append(length_scaler)
-                bt.logging.debug(
-                    f"Description length scaling factor = {length_scaler}")
-                description_relevance_scores[idx] -= description_relevance_scores[idx] * \
-                    DESCRIPTION_LENGTH_WEIGHT * (1.0 - length_scaler)
+                bt.logging.debug(f"Description length scaling factor = {length_scaler}")
+                description_relevance_scores[idx] -= (
+                    description_relevance_scores[idx]
+                    * DESCRIPTION_LENGTH_WEIGHT
+                    * (1.0 - length_scaler)
+                )
 
             # Aggregate scores
             score = (
-                (sum(description_relevance_scores) * DESCRIPTION_RELEVANCE_SCALING_FACTOR) +
-                (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
-            ) / 2 / videos.num_videos
+                (
+                    (
+                        sum(description_relevance_scores)
+                        * DESCRIPTION_RELEVANCE_SCALING_FACTOR
+                    )
+                    + (sum(query_relevance_scores) * QUERY_RELEVANCE_SCALING_FACTOR)
+                )
+                / 2
+                / videos.num_videos
+            )
             score = max(score, MIN_SCORE)
 
             # Log all our scores
-            bt.logging.info(f'''
+            bt.logging.info(
+                f"""
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
                 video cosine sim: {video_description_relevance_scores},
                 audio cosine sim: {audio_description_relevance_scores},
@@ -824,11 +927,20 @@ class Validator(BaseValidatorNeuron):
                 query relevance scores: {query_relevance_scores},
                 length scalers: {length_scalers},
                 total score: {score}
-            ''')
+            """
+            )
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = videos.axon.hotkey
-            upload_result = await self.upload_video_metadata(metadata, description_relevance_scores, query_relevance_scores, videos.query, None, score, miner_hotkey)
+            upload_result = await self.upload_video_metadata(
+                metadata,
+                description_relevance_scores,
+                query_relevance_scores,
+                videos.query,
+                None,
+                score,
+                miner_hotkey,
+            )
             if upload_result:
                 bt.logging.info("Uploading of video metadata successful.")
             else:
@@ -838,7 +950,8 @@ class Validator(BaseValidatorNeuron):
 
         except Exception as e:
             bt.logging.error(
-                f"Error in check_videos_and_calculate_rewards_youtube: {e}")
+                f"Error in check_videos_and_calculate_rewards_youtube: {e}"
+            )
             traceback.print_exc()
             return None
 
@@ -849,14 +962,16 @@ class Validator(BaseValidatorNeuron):
         responses: List[Videos],
     ) -> torch.FloatTensor:
 
-        rewards = await asyncio.gather(*[
-            self.check_videos_and_calculate_rewards_youtube(
-                input_synapse,
-                # replace with input properties from input_synapse
-                response.replace_with_input(input_synapse),
-            )
-            for response in responses
-        ])
+        rewards = await asyncio.gather(
+            *[
+                self.check_videos_and_calculate_rewards_youtube(
+                    input_synapse,
+                    # replace with input properties from input_synapse
+                    response.replace_with_input(input_synapse),
+                )
+                for response in responses
+            ]
+        )
         return rewards
 
     async def handle_checks_and_reward_audio(
@@ -864,13 +979,15 @@ class Validator(BaseValidatorNeuron):
         input_synapse: Audios,
         responses: List[Audios],
     ) -> torch.FloatTensor:
-        rewards = await asyncio.gather(*[
-            self.check_audios_and_calculate_rewards(
-                input_synapse,
-                response,
-            )
-            for response in responses
-        ])
+        rewards = await asyncio.gather(
+            *[
+                self.check_audios_and_calculate_rewards(
+                    input_synapse,
+                    response,
+                )
+                for response in responses
+            ]
+        )
         return rewards
 
     async def upload_video_metadata(
@@ -881,10 +998,10 @@ class Validator(BaseValidatorNeuron):
         query: str,
         novelty_score: float,
         score: float,
-        miner_hotkey: str
+        miner_hotkey: str,
     ) -> bool:
         """
-        Queries the validator api to get novelty scores for supplied videos. 
+        Queries the validator api to get novelty scores for supplied videos.
         Returns a list of float novelty scores for each video after deduplicating.
 
         Returns:
@@ -897,8 +1014,9 @@ class Validator(BaseValidatorNeuron):
             async with ClientSession() as session:
                 # Serialize the list of VideoMetadata
                 # serialized_metadata = [item.dict() for item in metadata]
-                serialized_metadata = [json.loads(
-                    item.model_dump_json()) for item in metadata]
+                serialized_metadata = [
+                    json.loads(item.model_dump_json()) for item in metadata
+                ]
                 # Construct the JSON payload
                 payload = {
                     "metadata": serialized_metadata,
@@ -907,7 +1025,7 @@ class Validator(BaseValidatorNeuron):
                     "topic_query": query,
                     "novelty_score": novelty_score,
                     "total_score": score,
-                    "miner_hotkey": miner_hotkey
+                    "miner_hotkey": miner_hotkey,
                 }
 
                 async with session.post(
@@ -919,8 +1037,7 @@ class Validator(BaseValidatorNeuron):
                     result = await response.json()
             return True
         except Exception as e:
-            bt.logging.debug(
-                f"Error trying upload_video_metadata_endpoint: {e}")
+            bt.logging.debug(f"Error trying upload_video_metadata_endpoint: {e}")
             traceback.print_exc()
             return False
 
@@ -933,10 +1050,10 @@ class Validator(BaseValidatorNeuron):
         audio_query_score: float,
         query: str,
         total_score: float,
-        miner_hotkey: str
+        miner_hotkey: str,
     ) -> bool:
         """
-        Queries the validator api to get novelty scores for supplied audios. 
+        Queries the validator api to get novelty scores for supplied audios.
         Returns a list of float novelty scores for each audio after deduplicating.
 
         Returns:
@@ -949,8 +1066,9 @@ class Validator(BaseValidatorNeuron):
             async with ClientSession() as session:
                 # Serialize the list of AudioMetadata
                 # serialized_metadata = [item.dict() for item in metadata]
-                serialized_metadata = [json.loads(
-                    item.model_dump_json()) for item in metadata]
+                serialized_metadata = [
+                    json.loads(item.model_dump_json()) for item in metadata
+                ]
                 # Construct the JSON payload
                 payload = {
                     "metadata": serialized_metadata,
@@ -960,7 +1078,7 @@ class Validator(BaseValidatorNeuron):
                     "audio_query_score": audio_query_score,
                     "topic_query": query,
                     "total_score": total_score,
-                    "miner_hotkey": miner_hotkey
+                    "miner_hotkey": miner_hotkey,
                 }
 
                 async with session.post(
@@ -972,14 +1090,13 @@ class Validator(BaseValidatorNeuron):
                     result = await response.json()
             return True
         except Exception as e:
-            bt.logging.debug(
-                f"Error trying upload_audio_metadata_endpoint: {e}")
+            bt.logging.debug(f"Error trying upload_audio_metadata_endpoint: {e}")
             traceback.print_exc()
             return False
 
     async def get_novelty_scores(self, metadata: List[VideoMetadata]) -> List[float]:
         """
-        Queries the validator api to get novelty scores for supplied videos. 
+        Queries the validator api to get novelty scores for supplied videos.
         Returns a list of float novelty scores for each video after deduplicating.
 
         Returns:
@@ -1034,31 +1151,36 @@ class Validator(BaseValidatorNeuron):
             return None
 
     async def check_audios_and_calculate_rewards(
-        self,
-        input_synapse: Audios,
-        audios: Audios
+        self, input_synapse: Audios, audios: Audios
     ) -> Optional[float]:
         try:
             # return minimum score if no videos were found in video_metadata
             if len(audios.audio_metadata) == 0:
                 return MIN_SCORE
             # check video_ids for fake videos
-            if any(not video_utils.is_valid_youtube_id(audio.video_id) for audio in audios.audio_metadata):
+            if any(
+                not video_utils.is_valid_youtube_id(audio.video_id)
+                for audio in audios.audio_metadata
+            ):
                 return FAKE_VIDEO_PUNISHMENT
 
             # check and filter duplicate metadata
             metadata = self.audio_metadata_check(audios.audio_metadata)[
-                :input_synapse.num_audios]
+                : input_synapse.num_audios
+            ]
             if len(metadata) < len(audios.audio_metadata):
                 bt.logging.info(
-                    f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+                    f"Filtered {len(audios.audio_metadata)} audios down to {len(metadata)} audios"
+                )
 
             # if randomly tripped, flag our random check to pull a video from miner's submissions
             check_video = CHECK_PROBABILITY > random.random()
 
             # pull a random video and/or description only
 
-            random_meta_and_vid = await self.get_random_youtube_video(metadata, check_video)
+            random_meta_and_vid = await self.get_random_youtube_video(
+                metadata, check_video
+            )
             if random_meta_and_vid is None:
                 return FAKE_VIDEO_PUNISHMENT
 
@@ -1074,21 +1196,25 @@ class Validator(BaseValidatorNeuron):
 
             embeddings = Embeddings(
                 video=None,
-                audio=torch.stack([torch.tensor(a.audio_emb)
-                                  for a in metadata]).to(self.imagebind.device),
-                description=None
+                audio=torch.stack([torch.tensor(a.audio_emb) for a in metadata]).to(
+                    self.imagebind.device
+                ),
+                description=None,
             )
 
             # check and deduplicate videos based on embedding similarity checks. We do this because we're not uploading to pinecone first.
             metadata_is_similar = await self.deduplicate_audios(embeddings)
-            metadata = [metadata for metadata, too_similar in zip(
-                metadata, metadata_is_similar) if not too_similar]
-            embeddings = self.filter_embeddings(
-                embeddings, metadata_is_similar)
+            metadata = [
+                metadata
+                for metadata, too_similar in zip(metadata, metadata_is_similar)
+                if not too_similar
+            ]
+            embeddings = self.filter_embeddings(embeddings, metadata_is_similar)
 
             if len(metadata) < len(audios.audio_metadata):
                 bt.logging.info(
-                    f"Deduplicated {len(audios.audio_metadata)} audios down to {len(metadata)} audios")
+                    f"Deduplicated {len(audios.audio_metadata)} audios down to {len(metadata)} audios"
+                )
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
@@ -1096,20 +1222,26 @@ class Validator(BaseValidatorNeuron):
 
             # first get local novelty scores
             local_novelty_scores = self.compute_novelty_score_among_batch_audio(
-                embeddings)
+                embeddings
+            )
 
             pre_filter_metadata_length = len(metadata)
             # check scores from index for being too similar
             is_too_similar = [
-                score < DIFFERENCE_THRESHOLD for score in local_novelty_scores]
+                score < DIFFERENCE_THRESHOLD for score in local_novelty_scores
+            ]
             # filter out metadata too similar
-            metadata = [metadata for metadata, too_similar in zip(
-                metadata, is_too_similar) if not too_similar]
+            metadata = [
+                metadata
+                for metadata, too_similar in zip(metadata, is_too_similar)
+                if not too_similar
+            ]
             # filter out embeddings too similar
             embeddings = self.filter_embeddings(embeddings, is_too_similar)
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(
-                    f"Filtering {pre_filter_metadata_length} audios down to {len(metadata)} audios that are too similar to audios in our index.")
+                    f"Filtering {pre_filter_metadata_length} audios down to {len(metadata)} audios that are too similar to audios in our index."
+                )
 
             # return minimum score if no unique videos were found
             if len(metadata) == 0:
@@ -1119,52 +1251,62 @@ class Validator(BaseValidatorNeuron):
             # Filter audios based on length constraints
             pre_filter_metadata_length = len(metadata)
             metadata = [
-                meta for meta in metadata
+                meta
+                for meta in metadata
                 if (meta.end_time - meta.start_time) >= MIN_AUDIO_LENGTH_SECONDS
                 and (meta.end_time - meta.start_time) <= MAX_AUDIO_LENGTH_SECONDS
             ]
 
             if len(metadata) < pre_filter_metadata_length:
                 bt.logging.info(
-                    f"Filtered {pre_filter_metadata_length} audios down to {len(metadata)} audios based on length constraints")
+                    f"Filtered {pre_filter_metadata_length} audios down to {len(metadata)} audios based on length constraints"
+                )
 
             # Return minimum score if no audios remain after filtering
             if len(metadata) == 0:
                 return MIN_SCORE
 
             total_audio_length = sum(
-                (meta.end_time - meta.start_time) for meta in metadata)
+                (meta.end_time - meta.start_time) for meta in metadata
+            )
             bt.logging.info(
-                f"Average audio length: {total_audio_length/len(metadata):.2f} seconds")
-            audio_length_score = total_audio_length / \
-                (NUM_AUDIOS*MAX_AUDIO_LENGTH_SECONDS)
+                f"Average audio length: {total_audio_length/len(metadata):.2f} seconds"
+            )
+            audio_length_score = total_audio_length / (
+                NUM_AUDIOS * MAX_AUDIO_LENGTH_SECONDS
+            )
 
-            audio_query_score = sum(F.cosine_similarity(
-                embeddings.audio, query_emb
-            ).tolist())/len(metadata)
+            audio_query_score = sum(
+                F.cosine_similarity(embeddings.audio, query_emb).tolist()
+            ) / len(metadata)
             bt.logging.info(f"Audio query score: {audio_query_score}")
 
             # Randomly sample one audio for duration check
             selected_random_meta = random.choice(metadata)
             audio_array, sr = sf.read(
-                BytesIO(base64.b64decode(selected_random_meta.audio_bytes)))
+                BytesIO(base64.b64decode(selected_random_meta.audio_bytes))
+            )
             audio_duration = len(audio_array) / sr
             bt.logging.info(
-                f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds")
+                f"Selected Youtube Video: {selected_random_meta.video_id}, Duration: {audio_duration:.2f} seconds"
+            )
 
             audio_quality_scores = self.audio_score.total_score(
                 audio_array,
                 sr,
                 selected_random_meta.diar_timestamps_start,
                 selected_random_meta.diar_timestamps_end,
-                selected_random_meta.diar_speakers
+                selected_random_meta.diar_speakers,
             )
             audio_quality_total_score = (
-                audio_quality_scores["speech_content_score"] * SPEECH_CONTENT_SCALING_FACTOR +
-                audio_quality_scores["speaker_dominance_score"] * SPEAKER_DOMINANCE_SCALING_FACTOR +
-                audio_quality_scores["background_noise_score"] * BACKGROUND_NOISE_SCALING_FACTOR +
-                audio_quality_scores["unique_speakers_error"] *
-                UNIQUE_SPEAKERS_ERROR_SCALING_FACTOR
+                audio_quality_scores["speech_content_score"]
+                * SPEECH_CONTENT_SCALING_FACTOR
+                + audio_quality_scores["speaker_dominance_score"]
+                * SPEAKER_DOMINANCE_SCALING_FACTOR
+                + audio_quality_scores["background_noise_score"]
+                * BACKGROUND_NOISE_SCALING_FACTOR
+                + audio_quality_scores["unique_speakers_error"]
+                * UNIQUE_SPEAKERS_ERROR_SCALING_FACTOR
             )
             # query score
 
@@ -1172,20 +1314,18 @@ class Validator(BaseValidatorNeuron):
             miner_diar_segment = {
                 "start": selected_random_meta.diar_timestamps_start,
                 "end": selected_random_meta.diar_timestamps_end,
-                "speakers": selected_random_meta.diar_speakers
+                "speakers": selected_random_meta.diar_speakers,
             }
 
             diarization_score = calculate_diarization_metrics(
-                audio_array,
-                sr,
-                miner_diar_segment
+                audio_array, sr, miner_diar_segment
             )
             inverse_der = diarization_score["inverse_der"]
             total_score = (
-                DIARIZATION_SCALING_FACTOR * inverse_der +
-                AUDIO_LENGTH_SCALING_FACTOR * audio_length_score +
-                AUDIO_QUALITY_SCALING_FACTOR * audio_quality_total_score +
-                AUDIO_QUERY_RELEVANCE_SCALING_FACTOR * audio_query_score
+                DIARIZATION_SCALING_FACTOR * inverse_der
+                + AUDIO_LENGTH_SCALING_FACTOR * audio_length_score
+                + AUDIO_QUALITY_SCALING_FACTOR * audio_quality_total_score
+                + AUDIO_QUERY_RELEVANCE_SCALING_FACTOR * audio_query_score
             )
 
             bt.logging.info(
@@ -1197,9 +1337,17 @@ class Validator(BaseValidatorNeuron):
             )
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = audios.axon.hotkey
-            bt.logging.info(
-                f"Uploading audio metadata for miner: {miner_hotkey}")
-            upload_result = await self.upload_audio_metadata(metadata, inverse_der, audio_length_score, audio_quality_total_score, audio_query_score, audios.query, total_score, miner_hotkey)
+            bt.logging.info(f"Uploading audio metadata for miner: {miner_hotkey}")
+            upload_result = await self.upload_audio_metadata(
+                metadata,
+                inverse_der,
+                audio_length_score,
+                audio_quality_total_score,
+                audio_query_score,
+                audios.query,
+                total_score,
+                miner_hotkey,
+            )
             if upload_result:
                 bt.logging.info("Uploading of audio metadata successful.")
             else:
@@ -1207,8 +1355,7 @@ class Validator(BaseValidatorNeuron):
             return total_score
 
         except Exception as e:
-            bt.logging.error(
-                f"Error in check_audios_and_calculate_rewards: {e}")
+            bt.logging.error(f"Error in check_audios_and_calculate_rewards: {e}")
             traceback.print_exc()
             return None
 
@@ -1248,13 +1395,15 @@ class Validator(BaseValidatorNeuron):
         Returns a tensor of rewards for the given query and responses.
         """
         # Get all the reward results by iteratively calling your reward() function.
-        rewards = await asyncio.gather(*[
-            self.reward(
-                input_synapse,
-                response,
-            )
-            for response in responses
-        ])
+        rewards = await asyncio.gather(
+            *[
+                self.reward(
+                    input_synapse,
+                    response,
+                )
+                for response in responses
+            ]
+        )
         return rewards
 
     """
@@ -1291,13 +1440,16 @@ class Validator(BaseValidatorNeuron):
     async def get_focus_videos(self) -> Dict[str, Dict]:
         async with ClientSession() as session:
             try:
-                async with session.get(f"{self.api_root}/api/focus/miner_purchase_scores", timeout=10) as response:
+                async with session.get(
+                    f"{self.api_root}/api/focus/miner_purchase_scores", timeout=10
+                ) as response:
                     if response.status == 200:
                         return await response.json()
                     else:
                         error_message = await response.text()
                         bt.logging.warning(
-                            f"Retrieving miner focus videos failed. Status: {response.status}, Message: {error_message}")
+                            f"Retrieving miner focus videos failed. Status: {response.status}, Message: {error_message}"
+                        )
                         return {}
             except asyncio.TimeoutError:
                 bt.logging.error("Request timed out in get_focus_videos")
