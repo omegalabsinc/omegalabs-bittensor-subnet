@@ -1,18 +1,18 @@
 """
 Description of scoring system:
-- Phase 0: generate detailed annotation for video; 
+- Phase 0: generate detailed annotation for video;
 - Phase 1: spam detection + rejection (can order from least to greatest cost)
-	- Working:
+        - Working:
         - length of video (too long or short)
-		- uniqueness detection (video embedding vector similarity)
-		- chat-only detection (openai o1 + text description)
-	- Not working:
-		- YouTube/movie video-watching detection (gemini + first and last video chunks)
-		- exploit/screen recording video watching detection (gemini + first and last video chunks)
-			- prompt can be found in old subnet commits
-		- automation detection (??) (I don't think this is reliably working yet)
+                - uniqueness detection (video embedding vector similarity)
+                - chat-only detection (openai o1 + text description)
+        - Not working:
+                - YouTube/movie video-watching detection (gemini + first and last video chunks)
+                - exploit/screen recording video watching detection (gemini + first and last video chunks)
+                        - prompt can be found in old subnet commits
+                - automation detection (??) (I don't think this is reliably working yet)
 - Phase 2: actual scoring
-	- can be gemini evaluation on the whole video, but I think it's probably more cost-efficient to use a reasoning model with the task descriptions
+        - can be gemini evaluation on the whole video, but I think it's probably more cost-efficient to use a reasoning model with the task descriptions
 """
 
 import asyncio
