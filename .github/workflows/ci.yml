@@ -31,4 +31,4 @@ jobs:
         - name: Run Black
           run: |
             source env/bin/activate
-            ruff format --check 
+            ruff format --check
