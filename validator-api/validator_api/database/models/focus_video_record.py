@@ -11,10 +11,12 @@ from validator_api.config import DB_STRING_LENGTH
 
 import enum
 
+
 class TaskType(enum.Enum):
     USER = "USER"
     BOOSTED = "BOOSTED"
     MARKETPLACE = "MARKETPLACE"
+
 
 class FocusVideoStateExternal(enum.Enum):
     PROCESSING = "PROCESSING"
@@ -24,6 +26,7 @@ class FocusVideoStateExternal(enum.Enum):
     SUBMITTED = "SUBMITTED"
     REWARDED = "REWARDED"
 
+
 class FocusVideoStateInternal(enum.Enum):
     # OMEGA Focus user facing states
     IN_PROGRESS = "IN_PROGRESS"
@@ -32,7 +35,7 @@ class FocusVideoStateInternal(enum.Enum):
     READY = "READY"  # Score has been calculated and task is eligible for submission
     REJECTED = "REJECTED"  # Turns out that the task was NOT eligible for submission, lifecycle ended here
     SUBMITTED = "SUBMITTED"  # User has pressed "Submit" and the task is now listed on the marketplace, for SN24 miners to buy
-    
+
     # Miner purchase states
     PURCHASE_PENDING = "PURCHASE_PENDING"  # a miner has request to buy the video, and we have sent them the amount of tao that they need to send the focus user
     PURCHASED = "PURCHASED"  # our background cron has confirmed that the miner has bought the focus video
@@ -58,15 +61,33 @@ def map_focus_video_state(state: FocusVideoStateInternal) -> FocusVideoStateExte
     else:
         raise ValueError(f"Invalid focus video state: {state}")
 
-class FocusVideoRecord(Base):
-    __tablename__ = 'focus_videos'
 
-    video_id = Column(String(DB_STRING_LENGTH), primary_key=True, default=lambda: str(uuid.uuid4()), nullable=False)
+class FocusVideoRecord(Base):
+    __tablename__ = "focus_videos"
+
+    video_id = Column(
+        String(DB_STRING_LENGTH),
+        primary_key=True,
+        default=lambda: str(uuid.uuid4()),
+        nullable=False,
+    )
     task_id = Column(String(DB_STRING_LENGTH), nullable=False)
     user_id = Column(String, nullable=False)
     user_email = Column(String, nullable=False)
-    processing_state = Column(Enum(*FocusVideoStateInternal.__members__, name='focus_videos_processing_state', schema='public'), nullable=False, default=FocusVideoStateInternal.PROCESSING)
-    task_type = Column(Enum(*TaskType.__members__, name='focus_videos_task_type', schema='public'), nullable=False, default=TaskType.USER)
+    processing_state = Column(
+        Enum(
+            *FocusVideoStateInternal.__members__,
+            name="focus_videos_processing_state",
+            schema="public",
+        ),
+        nullable=False,
+        default=FocusVideoStateInternal.PROCESSING,
+    )
+    task_type = Column(
+        Enum(*TaskType.__members__, name="focus_videos_task_type", schema="public"),
+        nullable=False,
+        default=TaskType.USER,
+    )
     video_score = Column(Float, nullable=True)
     video_details = Column(JSONB, nullable=True)
     embeddings = Column(JSONB, nullable=True)
@@ -84,6 +105,7 @@ class FocusVideoRecord(Base):
     def get_duration(self) -> float:
         return float(self.video_details.get("duration", 0.0))
 
+
 class FocusVideoBase(BaseModel):
     video_id: str
     task_id: str
@@ -98,6 +120,7 @@ class FocusVideoBase(BaseModel):
     created_at: datetime
     updated_at: datetime
     deleted_at: Optional[datetime]
+
 
 class FocusVideoInternal(FocusVideoBase):
     model_config = ConfigDict(from_attributes=True)

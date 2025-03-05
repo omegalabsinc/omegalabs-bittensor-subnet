@@ -26,7 +26,7 @@ class ImageBindLoader:
 
         raise HTTPException(
             status_code=503,
-            detail="ImageBind loading has started. Please try again later."
+            detail="ImageBind loading has started. Please try again later.",
         )
 
     def _load_imagebind_blocking(self) -> ImageBind:
@@ -39,8 +39,7 @@ class ImageBindLoader:
             # Run the blocking operation in a thread pool
             loop = asyncio.get_running_loop()
             self._imagebind = await loop.run_in_executor(
-                self._thread_pool,
-                self._load_imagebind_blocking
+                self._thread_pool, self._load_imagebind_blocking
             )
         finally:
             self._loading_task = None
