@@ -28,7 +28,7 @@ jobs:
             source env/bin/activate
             uv pip install --pre -r requirements.txt
             uv pip install --pre -r requirements_api.txt
-        - name: Run Black
+        - name: Run Ruff formatting
           run: |
             source env/bin/activate
             ruff format --check
