@@ -62,11 +62,11 @@ import argparse
 import json
 import os
 import sys
-import time
 import asyncio
 from datetime import datetime
 
 import bittensor as bt
+from bittensor.core.extrinsics.transfer import _do_transfer
 import requests
 from bittensor import wallet as btcli_wallet
 from tabulate import tabulate
@@ -87,6 +87,7 @@ CYAN = "\033[96m"
 GREEN = "\033[92m"
 RED = "\033[91m"
 RESET = "\033[0m"
+# RESET = ""
 
 def initialize_subtensor():
     try:
@@ -163,7 +164,8 @@ async def transfer_operation(wallet, transfer_address_to, transfer_balance):
         print(f"- Current balance: {subtensor.get_balance(wallet.get_hotkey().ss58_address)} TAO")
         
         print(f"\n{CYAN}Initiating transfer...{RESET}")
-        success, block_hash, err_msg = subtensor._do_transfer(
+        success, block_hash, err_msg = _do_transfer(
+            subtensor,
             wallet,
             transfer_address_to,
             transfer_balance,
