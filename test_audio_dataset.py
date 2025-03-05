@@ -1,8 +1,9 @@
 import os
 from datasets import load_dataset
-from huggingface_hub import login
 from io import BytesIO
 import soundfile as sf
+import numpy as np
+import pandas as pd
 
 # Set HF_TOKEN environment variable or pass directly
 HF_TOKEN = os.getenv("HF_TOKEN")
@@ -25,10 +26,6 @@ for key in first_row.keys():
         print(f"{key}: {len(first_row[key])}")
     else:
         print(f"{key}: {first_row[key]}")
-
-
-import librosa
-import numpy as np
 
 breakpoint()
 audio_bytes = first_row["audio_bytes"]
@@ -80,9 +77,6 @@ for start, end, speaker in zip(
             "duration": end - start,
         }
     )
-
-# Convert to pandas DataFrame and save as CSV
-import pandas as pd
 
 df = pd.DataFrame(diarization_data)
 os.makedirs("Dataset_audios/Metadata", exist_ok=True)

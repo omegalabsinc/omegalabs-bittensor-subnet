@@ -4,7 +4,6 @@ provides deepseek chat via chutes api
 
 import httpx
 import json
-import traceback
 import os
 import asyncio
 from typing import Iterable, Type, Optional, Union

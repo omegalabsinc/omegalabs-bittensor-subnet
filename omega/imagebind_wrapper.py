@@ -7,7 +7,7 @@ from typing import List, BinaryIO, Optional
 from imagebind import data
 from imagebind.models import imagebind_model
 from imagebind.models.imagebind_model import ModalityType
-from imagebind.models.multimodal_preprocessors import SimpleTokenizer, TextPreprocessor
+from imagebind.models.multimodal_preprocessors import SimpleTokenizer
 from pydantic import BaseModel
 import torch
 
@@ -135,7 +135,7 @@ class ImageBind:
     def get_inputs(self, video_file: BinaryIO) -> dict:
         audio_file = video_utils.copy_audio(video_file.name)
         try:
-            duration = video_utils.get_video_duration(video_file.name)
+            video_utils.get_video_duration(video_file.name)
             video_data = data.load_and_transform_video_data(
                 [video_file.name],
                 self.device,
@@ -180,7 +180,6 @@ class ImageBind:
     @torch.no_grad()
     def embed_only_video(self, video_files: List[BinaryIO]) -> Embeddings:
         video_filepaths = [video_file.name for video_file in video_files]
-        durations = [video_utils.get_video_duration(f.name) for f in video_files]
         embeddings = self.imagebind(
             {
                 ModalityType.VISION: [
@@ -201,7 +200,6 @@ class ImageBind:
         self, video_files: List[BinaryIO], descriptions: List[str]
     ) -> Embeddings:
         video_filepaths = [video_file.name for video_file in video_files]
-        durations = [video_utils.get_video_duration(f.name) for f in video_files]
         embeddings = self.imagebind(
             {
                 ModalityType.VISION: [

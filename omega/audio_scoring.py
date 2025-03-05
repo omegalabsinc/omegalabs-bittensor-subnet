@@ -5,7 +5,6 @@ if hasattr(np, "nan"):
     np.NAN = np.nan
 from pyannote.audio import Pipeline
 import librosa
-import os
 import dotenv
 import pandas as pd
 import torch
@@ -127,7 +126,6 @@ class AudioScore:
 
 if __name__ == "__main__":
     from datasets import load_dataset
-    import huggingface_hub
 
     repo_id = "diarizers-community/voxconverse"
 

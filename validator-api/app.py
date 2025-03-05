@@ -70,7 +70,6 @@ from validator_api.database.crud.focusvideo import (
     check_availability,
     get_video_owner_coldkey,
     mark_video_rejected,
-    mark_video_submitted,
     set_focus_video_score,
 )
 from validator_api.database.models.focus_video_record import (
@@ -94,7 +93,7 @@ from validator_api.utils.marketplace import (
 )
 from validator_api.database.models.miner_bans import miner_banned_until
 
-from omega.protocol import AudioMetadata, VideoMetadata
+from omega.protocol import VideoMetadata
 from sqlalchemy import select, update
 
 print("IMPORT_SCORE:", IMPORT_SCORE)
@@ -316,8 +315,8 @@ async def run_focus_scoring(
         print(f"Score for focus video <{video_id}>: {score_details.final_score}")
         MIN_FINAL_SCORE = 0.1
         # todo: measure and tune these
-        MIN_TASK_UNIQUENESS_SCORE = 0
-        MIN_VIDEO_UNIQUENESS_SCORE = 0
+        # MIN_TASK_UNIQUENESS_SCORE = 0
+        # MIN_VIDEO_UNIQUENESS_SCORE = 0
         # get the db after scoring the video so it's not open for too long
         async with get_db_context() as db:
             if score_details.final_score < MIN_FINAL_SCORE:
@@ -406,7 +405,7 @@ async def main():
 
                 # Sync latest commune keys
                 if ENABLE_COMMUNE:
-                    commune_keys = update_commune_keys(commune_client, commune_keys)
+                    update_commune_keys(commune_client, commune_keys)
                     print("commune keys synced")
 
             # In case of unforeseen errors, the api will log the error and continue operations.
@@ -444,10 +443,6 @@ async def main():
 
         return response
 
-    @app.get("/sentry-debug")
-    async def trigger_error():
-        division_by_zero = 1 / 0
-
     @app.post("/api/get_pinecone_novelty")
     async def get_pinecone_novelty(
         metadata: List[VideoMetadata],
@@ -460,7 +455,7 @@ async def main():
         ) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
+                detail="Valid hotkey required.",
             )
 
         uid = None
@@ -495,7 +490,7 @@ async def main():
         ) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
+                detail="Valid hotkey required.",
             )
 
         uid = None
@@ -616,27 +611,20 @@ async def main():
         ) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
+                detail="Valid hotkey required.",
             )
 
         uid = None
-        is_bittensor = 0
-        is_commune = 0
         if ENABLE_COMMUNE and hotkey in commune_keys.values():
             # get uid of commune validator
             for key_uid, key_hotkey in commune_keys.items():
                 if key_hotkey == hotkey:
                     uid = key_uid
                     break
-            validator_chain = "commune"
-            is_commune = 1
         elif uid is None and hotkey in metagraph.hotkeys:
             # get uid of bittensor validator
             uid = metagraph.hotkeys.index(hotkey)
-            validator_chain = "bittensor"
-            is_bittensor = 1
 
-        start_time = time.time()
         # Note: by passing in the request object, we can choose to load the body of the request when
         # we are ready to process it, which is important because the request body here can be huge
         audio_ids, upload_data = await score.upload_audio_metadata(request)
@@ -717,7 +705,7 @@ async def main():
         ) and not authenticate_with_commune(hotkey, commune_keys):
             raise HTTPException(
                 status_code=status.HTTP_403_FORBIDDEN,
-                detail=f"Valid hotkey required.",
+                detail="Valid hotkey required.",
             )
 
         return random.choice(PROXY_LIST)
@@ -855,7 +843,7 @@ async def main():
             }
 
     @app.get("/api/focus/miner_purchase_scores/{miner_hotkeys}")
-    async def miner_purchase_scores(
+    async def miner_purchase_scores_hotkeys(
         miner_hotkeys: str,
     ) -> Dict[str, MinerPurchaseStats]:
         return focus_video_cache.miner_purchase_stats()
@@ -897,7 +885,7 @@ async def main():
 
             while attempt < max_attempts:
                 try:
-                    max_focus_alpha = await get_max_focus_alpha_per_day()
+                    await get_max_focus_alpha_per_day()
                     break  # Exit the loop if the function succeeds
 
                 # In case of unforeseen errors, the api will log the error and continue operations.
@@ -929,7 +917,7 @@ async def main():
     async def get_mm_topics(api_key: str = Security(get_api_key)):
         try:
             connection = connect_to_db()
-            query = f"SELECT DISTINCT query FROM omega_multimodal"
+            query = "SELECT DISTINCT query FROM omega_multimodal"
             cursor = connection.cursor()
             cursor.execute(query)
             data = [row[0] for row in cursor.fetchall()]
@@ -947,7 +935,7 @@ async def main():
     async def get_mm_topic_video_count(api_key: str = Security(get_api_key)):
         try:
             connection = connect_to_db()
-            query = f"SELECT query, COUNT(*) AS num_videos FROM omega_multimodal GROUP BY query"
+            query = "SELECT query, COUNT(*) AS num_videos FROM omega_multimodal GROUP BY query"
             cursor = connection.cursor(dictionary=True)
             cursor.execute(query)
             data = cursor.fetchall()

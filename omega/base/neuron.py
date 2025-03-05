@@ -16,7 +16,6 @@
 # DEALINGS IN THE SOFTWARE.
 
 import copy
-import typing
 import datetime as dt
 
 import bittensor as bt

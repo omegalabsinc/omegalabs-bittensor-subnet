@@ -5,7 +5,6 @@ import bittensor as bt
 import random
 import torch.nn.functional as F
 from omega.imagebind_wrapper import (
-    split_text_by_token_limit,
     SimpleTokenizer,
     BPE_PATH,
     split_text_by_token_limit,

@@ -2,7 +2,6 @@ from datetime import datetime
 from typing import Optional
 
 from sqlalchemy import Column, String, DateTime, Integer, select
-from pydantic import BaseModel, ConfigDict
 
 from validator_api.database import Base
 from validator_api.config import DB_STRING_LENGTH

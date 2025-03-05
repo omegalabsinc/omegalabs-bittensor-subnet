@@ -12,7 +12,6 @@ from omega.constants import (
     MAX_VIDEO_LENGTH,
     FIVE_MINUTES,
     MAX_AUDIO_LENGTH_SECONDS,
-    MIN_AUDIO_LENGTH_SECONDS,
 )
 from omega import video_utils
 from omega.diarization_pipeline import CustomDiarizationPipeline

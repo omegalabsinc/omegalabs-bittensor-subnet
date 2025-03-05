@@ -1,8 +1,8 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, Float
-from typing import List, Optional, Dict
+from sqlalchemy import func
+from typing import Optional, Dict
 import json
 import traceback
 import asyncio
@@ -19,9 +19,7 @@ from validator_api.database.models.focus_video_record import (
 )
 from validator_api.database.models.user import UserRecord
 from validator_api.utils.marketplace import (
-    get_max_focus_alpha_per_day,
     get_variable_reward_pool_alpha,
-    get_max_focus_points_available_today,
 )
 from pydantic import BaseModel
 from validator_api.scoring.scoring_service import VideoScore, FocusVideoEmbeddings

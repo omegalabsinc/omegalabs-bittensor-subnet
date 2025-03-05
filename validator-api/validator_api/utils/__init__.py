@@ -1,4 +1,5 @@
-import asyncio, functools
+import asyncio
+import functools
 
 RETRIES = 3
 DELAY_SECS = 2

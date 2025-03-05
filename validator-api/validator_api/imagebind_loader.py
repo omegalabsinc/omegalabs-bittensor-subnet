@@ -1,7 +1,6 @@
 from typing import Optional
 from fastapi import HTTPException
 import asyncio
-import threading
 from concurrent.futures import ThreadPoolExecutor
 from omega.imagebind_wrapper import ImageBind
 

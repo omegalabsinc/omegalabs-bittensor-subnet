@@ -3,7 +3,7 @@ import uuid
 from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
-from sqlalchemy import Column, String, DateTime, Float, Enum, Integer
+from sqlalchemy import Column, String, DateTime, Float, Enum
 
 from validator_api.database import Base
 from sqlalchemy.dialects.postgresql import JSONB
