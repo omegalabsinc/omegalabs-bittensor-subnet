@@ -34,7 +34,7 @@ from traceback import print_exception
 from omega.base.neuron import BaseNeuron
 from omega.mock import MockDendrite
 from omega.utils.config import add_validator_args
-from omega.constants import FOCUS_REWARDS_PERCENT, AUDIO_REWARDS_PERCENT
+from omega.constants import AUDIO_REWARDS_PERCENT
 
 
 class BaseValidatorNeuron(BaseNeuron):
@@ -74,7 +74,7 @@ class BaseValidatorNeuron(BaseNeuron):
         self.audio_score_arr = torch.zeros(
             self.metagraph.n, dtype=torch.float32, device=self.device
         )
-        
+
         # Serve axon to enable external connections.
         if not self.config.neuron.axon_off:
             self.serve_axon()
@@ -117,37 +117,38 @@ class BaseValidatorNeuron(BaseNeuron):
                 pass
 
         except Exception as e:
-            bt.logging.error(
-                f"Failed to create Axon initialize with exception: {e}"
-            )
+            bt.logging.error(f"Failed to create Axon initialize with exception: {e}")
             pass
 
     async def concurrent_forward(self):
         coroutines = [
-            self.forward()
-            for _ in range(self.config.neuron.num_concurrent_forwards)
+            self.forward() for _ in range(self.config.neuron.num_concurrent_forwards)
         ]
         await asyncio.gather(*coroutines)
 
     def is_git_latest(self) -> bool:
-        p = Popen(['git', 'rev-parse', 'HEAD'], stdout=PIPE, stderr=PIPE)
+        p = Popen(["git", "rev-parse", "HEAD"], stdout=PIPE, stderr=PIPE)
         out, err = p.communicate()
         if err:
             return False
         current_commit = out.decode().strip()
-        p = Popen(['git', 'ls-remote', 'origin', 'HEAD'], stdout=PIPE, stderr=PIPE)
+        p = Popen(["git", "ls-remote", "origin", "HEAD"], stdout=PIPE, stderr=PIPE)
         out, err = p.communicate()
         if err:
             return False
         latest_commit = out.decode().split()[0]
-        bt.logging.info(f'Current commit: {current_commit}, Latest commit: {latest_commit}')
+        bt.logging.info(
+            f"Current commit: {current_commit}, Latest commit: {latest_commit}"
+        )
         return current_commit == latest_commit
 
     def should_restart(self) -> bool:
         # Check if enough time has elapsed since the last update check, if not assume we are up to date.
-        if (datetime.now() - self.last_update_check).seconds < self.update_check_interval:
+        if (
+            datetime.now() - self.last_update_check
+        ).seconds < self.update_check_interval:
             return False
-        
+
         self.last_update_check = datetime.now()
 
         return not self.is_git_latest()
@@ -190,7 +191,7 @@ class BaseValidatorNeuron(BaseNeuron):
                     break
 
                 if self.config.neuron.auto_update and self.should_restart():
-                    bt.logging.info(f'Validator is out of date, quitting to restart.')
+                    bt.logging.info("Validator is out of date, quitting to restart.")
                     raise KeyboardInterrupt
 
                 # Sync metagraph and potentially set weights.
@@ -221,10 +222,14 @@ class BaseValidatorNeuron(BaseNeuron):
                 if (dt.datetime.now() - self.load_focus_rewards_start) >= dt.timedelta(
                     hours=1
                 ):
-                    bt.logging.info("Reloading focus videos rewards percent after 1 hour.")
+                    bt.logging.info(
+                        "Reloading focus videos rewards percent after 1 hour."
+                    )
                     self.FOCUS_REWARDS_PERCENT = self.load_focus_rewards_percent()
                     self.AUDIO_REWARDS_PERCENT = AUDIO_REWARDS_PERCENT
-                    self.YOUTUBE_REWARDS_PERCENT = 1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT
+                    self.YOUTUBE_REWARDS_PERCENT = (
+                        1.0 - self.FOCUS_REWARDS_PERCENT - self.AUDIO_REWARDS_PERCENT
+                    )
                     self.load_focus_rewards_start = dt.datetime.now()
 
         # If someone intentionally stops the validator, it'll safely terminate operations.
@@ -236,9 +241,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # In case of unforeseen errors, the validator will log the error and continue operations.
         except Exception as err:
             bt.logging.error("Error during validation", str(err))
-            bt.logging.debug(
-                print_exception(type(err), err, err.__traceback__)
-            )
+            bt.logging.debug(print_exception(type(err), err, err.__traceback__))
 
     def run_in_background_thread(self):
         """
@@ -317,20 +320,33 @@ class BaseValidatorNeuron(BaseNeuron):
         # Check if self.scores contains any NaN values and log a warning if it does.
         if torch.isnan(self.scores).any():
             bt.logging.warning(
-                f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
+                "Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
 
-        self.scores, self.focus_scores, self.audio_score_arr = self.pad_tensors(self.scores, self.focus_scores, self.audio_score_arr)
+        self.scores, self.focus_scores, self.audio_score_arr = self.pad_tensors(
+            self.scores, self.focus_scores, self.audio_score_arr
+        )
 
-        bt.logging.debug(f"Normalizing scores with YOUTUBE_REWARDS_PERCENT: {self.YOUTUBE_REWARDS_PERCENT}, FOCUS_REWARDS_PERCENT: {self.FOCUS_REWARDS_PERCENT}, AUDIO_REWARDS_PERCENT: {self.AUDIO_REWARDS_PERCENT}")
+        bt.logging.debug(
+            f"Normalizing scores with YOUTUBE_REWARDS_PERCENT: {self.YOUTUBE_REWARDS_PERCENT}, FOCUS_REWARDS_PERCENT: {self.FOCUS_REWARDS_PERCENT}, AUDIO_REWARDS_PERCENT: {self.AUDIO_REWARDS_PERCENT}"
+        )
         # Calculate the average reward for each uid across non-zero values.
         # Replace any NaN values with 0.
         # Normalize the youtube rewards and scale by the percentage.
-        raw_weights_youtube = torch.nn.functional.normalize(self.scores, p=1, dim=0) * self.YOUTUBE_REWARDS_PERCENT
+        raw_weights_youtube = (
+            torch.nn.functional.normalize(self.scores, p=1, dim=0)
+            * self.YOUTUBE_REWARDS_PERCENT
+        )
         # Normalize the focus rewards and scale by the percentage.
-        raw_weights_focus = torch.nn.functional.normalize(self.focus_scores, p=1, dim=0) * self.FOCUS_REWARDS_PERCENT
+        raw_weights_focus = (
+            torch.nn.functional.normalize(self.focus_scores, p=1, dim=0)
+            * self.FOCUS_REWARDS_PERCENT
+        )
         # Normalize the audio rewards and scale by the percentage.
-        raw_weights_audio = torch.nn.functional.normalize(self.audio_score_arr, p=1, dim=0) * self.AUDIO_REWARDS_PERCENT
+        raw_weights_audio = (
+            torch.nn.functional.normalize(self.audio_score_arr, p=1, dim=0)
+            * self.AUDIO_REWARDS_PERCENT
+        )
 
         # Combine the youtube and focus rewards.
         raw_weights = raw_weights_youtube + raw_weights_focus + raw_weights_audio
@@ -341,8 +357,10 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug("raw_weights", raw_weights)
         bt.logging.debug("raw_weight_uids", self.metagraph.uids.to("cpu"))
         if raw_weights.shape[0] > self.metagraph.uids.shape[0]:
-            bt.logging.warning("More raw_weights than metagraph uids, truncating raw_weights.")
-        raw_weights = raw_weights[:self.metagraph.uids.shape[0]]
+            bt.logging.warning(
+                "More raw_weights than metagraph uids, truncating raw_weights."
+            )
+        raw_weights = raw_weights[: self.metagraph.uids.shape[0]]
         # Process the raw weights to final_weights via subtensor limitations.
         try:
             (
@@ -358,7 +376,9 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.debug("processed_weights", processed_weights)
             bt.logging.debug("processed_weight_uids", processed_weight_uids)
         except Exception as e:
-            bt.logging.error(f"Failed to process weights with exception: {e}, skipping set_weights this time")
+            bt.logging.error(
+                f"Failed to process weights with exception: {e}, skipping set_weights this time"
+            )
             return
 
         # Convert to uint16 weights and uids.
@@ -413,9 +433,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # If so, we need to add new hotkeys and moving averages.
         if len(self.hotkeys) < len(self.metagraph.hotkeys):
             # Update the size of the moving average scores.
-            new_moving_average = torch.zeros((self.metagraph.n)).to(
-                self.device
-            )
+            new_moving_average = torch.zeros((self.metagraph.n)).to(self.device)
             min_len = min(len(self.hotkeys), len(self.scores))
             new_moving_average[:min_len] = self.scores[:min_len]
             self.scores = new_moving_average
@@ -433,11 +451,15 @@ class BaseValidatorNeuron(BaseNeuron):
             return
 
         if len(uids) == 0:
-            bt.logging.debug("self.update_scores: Miner UIDs list is empty, returning early")
+            bt.logging.debug(
+                "self.update_scores: Miner UIDs list is empty, returning early"
+            )
             return
 
         if len(rewards) != len(uids):
-            bt.logging.exception("self.update_scores: Rewards are not the same size as UIDs list (THIS SHOULD NEVER HAPPEN!)")
+            bt.logging.exception(
+                "self.update_scores: Rewards are not the same size as UIDs list (THIS SHOULD NEVER HAPPEN!)"
+            )
             return
 
         # Check if rewards contains NaN values.
@@ -454,9 +476,11 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Compute forward pass rewards, assumes uids are mutually exclusive.
         # shape: [ metagraph.n ]
-        scattered_rewards: torch.FloatTensor = self.scores.to(self.device).scatter(
-            0, uids_tensor.to(self.device), rewards.to(self.device)
-        ).to(self.device)
+        scattered_rewards: torch.FloatTensor = (
+            self.scores.to(self.device)
+            .scatter(0, uids_tensor.to(self.device), rewards.to(self.device))
+            .to(self.device)
+        )
         bt.logging.debug(f"Scattered rewards: {rewards}")
 
         # Update scores with rewards produced by this step.
@@ -468,7 +492,7 @@ class BaseValidatorNeuron(BaseNeuron):
         bt.logging.debug(f"Updated moving avg scores: {self.scores}")
 
     def update_focus_scores(self, rewards: torch.FloatTensor, uids: List[int]):
-        """ Unlike other update_*_scores functions, this function does not perform an exponential moving average. """
+        """Unlike other update_*_scores functions, this function does not perform an exponential moving average."""
         # Check if rewards contains NaN values.
         if torch.isnan(rewards).any():
             bt.logging.warning(f"NaN values detected in rewards: {rewards}")
@@ -483,9 +507,11 @@ class BaseValidatorNeuron(BaseNeuron):
 
         # Compute forward pass rewards, assumes uids are mutually exclusive.
         # shape: [ metagraph.n ]
-        self.focus_scores: torch.FloatTensor = self.focus_scores.to(self.device).scatter(
-            0, uids_tensor.to(self.device), rewards.to(self.device)
-        ).to(self.device)
+        self.focus_scores: torch.FloatTensor = (
+            self.focus_scores.to(self.device)
+            .scatter(0, uids_tensor.to(self.device), rewards.to(self.device))
+            .to(self.device)
+        )
         bt.logging.debug(f"Scattered rewards: {self.focus_scores}")
 
     def update_audio_scores(self, rewards: torch.FloatTensor, uids: List[int]):
@@ -496,18 +522,20 @@ class BaseValidatorNeuron(BaseNeuron):
             bt.logging.warning(f"NaN values detected in rewards: {rewards}")
             # Replace any NaN values in rewards with 0.
             rewards = torch.nan_to_num(rewards, 0)
-        
+
         # check if `uids` is already a tensor and clone it to avoid the warning.
         if isinstance(uids, torch.Tensor):
             uids_tensor = uids.clone().detach()
         else:
             uids_tensor = torch.tensor(uids).to(self.device)
-        
+
         # compute forward pass rewards, assumes uids are mutually exclusive.
         # shape: [metagraph.n]
-        scattered_rewards: torch.FloatTensor = self.audio_score_arr.to(self.device).scatter(
-            0, uids_tensor.to(self.device), rewards.to(self.device)
-        ).to(self.device)
+        scattered_rewards: torch.FloatTensor = (
+            self.audio_score_arr.to(self.device)
+            .scatter(0, uids_tensor.to(self.device), rewards.to(self.device))
+            .to(self.device)
+        )
         bt.logging.debug(f"Scattered rewards: {rewards}")
 
         # update scores with rewards produced by this step.
@@ -543,7 +571,9 @@ class BaseValidatorNeuron(BaseNeuron):
             return
 
         # Load the state of the validator from file.
-        state = torch.load(self.config.neuron.full_path + "/state.pt", map_location=self.device)
+        state = torch.load(
+            self.config.neuron.full_path + "/state.pt", map_location=self.device
+        )
         self.step = state["step"]
         self.scores = state["scores"]
         if "focus_scores" in state:
@@ -552,7 +582,7 @@ class BaseValidatorNeuron(BaseNeuron):
             state["focus_scores"] = torch.zeros(
                 self.metagraph.n, dtype=torch.float32, device=self.device
             )
-        
+
         if "audio_score_arr" in state:
             self.audio_score_arr = state["audio_score_arr"]
         else:

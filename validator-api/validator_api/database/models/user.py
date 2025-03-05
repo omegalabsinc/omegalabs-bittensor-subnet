@@ -3,12 +3,12 @@ from datetime import datetime
 from sqlalchemy import Column, String, Float, DateTime
 from pydantic import BaseModel
 
-from validator_api.config import DB_STRING_LENGTH, DB_STRING_LENGTH_LONG
+from validator_api.config import DB_STRING_LENGTH
 from validator_api.database import Base
 
 
 class UserRecord(Base):
-    __tablename__ = 'users'
+    __tablename__ = "users"
 
     id = Column(String, primary_key=True, nullable=False)
     email = Column(String(DB_STRING_LENGTH), primary_key=True, nullable=False)

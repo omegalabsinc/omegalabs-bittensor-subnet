@@ -5,8 +5,9 @@ from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
 
+
 class TaskRecordPG(Base):
-    __tablename__ = 'tasks'
+    __tablename__ = "tasks"
     id = Column(String(DB_STRING_LENGTH), primary_key=True, nullable=False)
     info = Column(String(DB_STRING_LENGTH))
     description = Column(String(DB_STRING_LENGTH))

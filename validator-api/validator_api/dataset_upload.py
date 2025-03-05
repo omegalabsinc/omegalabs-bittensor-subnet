@@ -1,4 +1,3 @@
-import asyncio
 from io import BytesIO
 from typing import List
 from datetime import datetime
@@ -27,10 +26,13 @@ def get_data_path(batch_ulid_str: str) -> str:
 
 
 def get_random_batch_size(batch_size: int) -> int:
-    return random.choice([
-        batch_size // 2,
-        batch_size,
-    ])
+    return random.choice(
+        [
+            batch_size // 2,
+            batch_size,
+        ]
+    )
+
 
 def create_repo(name: str) -> None:
     try:
@@ -38,11 +40,12 @@ def create_repo(name: str) -> None:
             repo_id=name,
             repo_type=config.REPO_TYPE,
             exist_ok=True,
-            token=config.HF_TOKEN
+            token=config.HF_TOKEN,
         )
         print("Successfully created/verified repository")
     except Exception as e:
         print(f"Error creating repository: {e}")
+
 
 class DatasetUploader:
     def __init__(self):
@@ -51,39 +54,52 @@ class DatasetUploader:
         self.min_batch_size = 32
 
     def add_videos(
-        self, metadata: List[VideoMetadata], video_ids: List[str],
-        description_relevance_scores: List[float], query_relevance_scores: List[float],
+        self,
+        metadata: List[VideoMetadata],
+        video_ids: List[str],
+        description_relevance_scores: List[float],
+        query_relevance_scores: List[float],
         query: str,
     ) -> None:
         curr_time = datetime.now()
-        self.current_batch.extend([
-            {
-                "video_id": vid_uuid,
-                "youtube_id": video.video_id,
-                "description": video.description,
-                "views": video.views,
-                "start_time": video.start_time,
-                "end_time": video.end_time,
-                "video_embed": video.video_emb,
-                "audio_embed": video.audio_emb,
-                "description_embed": video.description_emb,
-                "description_relevance_score": desc_score,
-                "query_relevance_score": query_score,
-                "query": query,
-                "submitted_at": int(curr_time.timestamp()),
-            }
-            for vid_uuid, video, desc_score, query_score
-            in zip(video_ids, metadata, description_relevance_scores, query_relevance_scores)
-        ])
-        print(f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}")
+        self.current_batch.extend(
+            [
+                {
+                    "video_id": vid_uuid,
+                    "youtube_id": video.video_id,
+                    "description": video.description,
+                    "views": video.views,
+                    "start_time": video.start_time,
+                    "end_time": video.end_time,
+                    "video_embed": video.video_emb,
+                    "audio_embed": video.audio_emb,
+                    "description_embed": video.description_emb,
+                    "description_relevance_score": desc_score,
+                    "query_relevance_score": query_score,
+                    "query": query,
+                    "submitted_at": int(curr_time.timestamp()),
+                }
+                for vid_uuid, video, desc_score, query_score in zip(
+                    video_ids,
+                    metadata,
+                    description_relevance_scores,
+                    query_relevance_scores,
+                )
+            ]
+        )
+        print(
+            f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}"
+        )
         if len(self.current_batch) >= self.desired_batch_size:
             self.submit()
 
     def submit(self) -> None:
         if len(self.current_batch) < self.min_batch_size:
-            print(f"Need at least {self.min_batch_size} videos to submit, but have {len(self.current_batch)}")
+            print(
+                f"Need at least {self.min_batch_size} videos to submit, but have {len(self.current_batch)}"
+            )
             return
-        data = self.current_batch[:self.desired_batch_size]
+        data = self.current_batch[: self.desired_batch_size]
         print(f"Uploading batch of {len(self.current_batch)} videos")
         with BytesIO() as f:
             dataset = Dataset.from_list(data)
@@ -99,8 +115,9 @@ class DatasetUploader:
                 print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
-        self.current_batch = self.current_batch[self.desired_batch_size:]
+        self.current_batch = self.current_batch[self.desired_batch_size :]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
+
 
 class AudioDatasetUploader:
     def __init__(self):
@@ -117,46 +134,67 @@ class AudioDatasetUploader:
         return temp_audiofile.read()
 
     def add_audios(
-        self, metadata: List[AudioMetadata], audio_ids: List[str],
-        inverse_der: float, audio_length_score: float,
-        audio_quality_total_score: float, audio_query_score: float,
-        query: str, total_score: float
+        self,
+        metadata: List[AudioMetadata],
+        audio_ids: List[str],
+        inverse_der: float,
+        audio_length_score: float,
+        audio_quality_total_score: float,
+        audio_query_score: float,
+        query: str,
+        total_score: float,
     ) -> None:
         curr_time = datetime.now()
 
-        audio_files = [self.convert_audio_to_wav(audio.audio_bytes) for audio in metadata]
+        audio_files = [
+            self.convert_audio_to_wav(audio.audio_bytes) for audio in metadata
+        ]
 
-        self.current_batch.extend([
-            {
-                "audio_id": audio_uuid,
-                "youtube_id": audio.video_id,
-                # "audio_bytes": audio.audio_bytes,
-                "audio": {"path": audio_file, "array": sf.read(BytesIO(base64.b64decode(audio.audio_bytes)))[0], "sampling_rate": 16000},
-                "start_time": audio.start_time,
-                "end_time": audio.end_time,
-                "audio_embed": audio.audio_emb,
-                "diar_timestamps_start": audio.diar_timestamps_start,
-                "diar_timestamps_end": audio.diar_timestamps_end,
-                "diar_speakers": audio.diar_speakers,
-                "inverse_der": inverse_der,
-                "audio_length_score": audio_length_score,
-                "audio_quality_score": audio_quality_total_score,
-                "query_relevance_score": audio_query_score,
-                "total_score": total_score,
-                "query": query,
-                "submitted_at": int(curr_time.timestamp()),
-            }
-            for audio_uuid, audio_file, audio in zip(audio_ids, audio_files, metadata)
-        ])
-        print(f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}")
+        self.current_batch.extend(
+            [
+                {
+                    "audio_id": audio_uuid,
+                    "youtube_id": audio.video_id,
+                    # "audio_bytes": audio.audio_bytes,
+                    "audio": {
+                        "path": audio_file,
+                        "array": sf.read(BytesIO(base64.b64decode(audio.audio_bytes)))[
+                            0
+                        ],
+                        "sampling_rate": 16000,
+                    },
+                    "start_time": audio.start_time,
+                    "end_time": audio.end_time,
+                    "audio_embed": audio.audio_emb,
+                    "diar_timestamps_start": audio.diar_timestamps_start,
+                    "diar_timestamps_end": audio.diar_timestamps_end,
+                    "diar_speakers": audio.diar_speakers,
+                    "inverse_der": inverse_der,
+                    "audio_length_score": audio_length_score,
+                    "audio_quality_score": audio_quality_total_score,
+                    "query_relevance_score": audio_query_score,
+                    "total_score": total_score,
+                    "query": query,
+                    "submitted_at": int(curr_time.timestamp()),
+                }
+                for audio_uuid, audio_file, audio in zip(
+                    audio_ids, audio_files, metadata
+                )
+            ]
+        )
+        print(
+            f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}"
+        )
         if len(self.current_batch) >= self.desired_batch_size:
             self.submit()
 
     def submit(self) -> None:
         if len(self.current_batch) < self.min_batch_size:
-            print(f"Need at least {self.min_batch_size} audios to submit, but have {len(self.current_batch)}")
+            print(
+                f"Need at least {self.min_batch_size} audios to submit, but have {len(self.current_batch)}"
+            )
             return
-        data = self.current_batch[:self.desired_batch_size]
+        data = self.current_batch[: self.desired_batch_size]
         print(f"Uploading batch of {len(self.current_batch)} audios")
         with BytesIO() as f:
             dataset = Dataset.from_list(data)
@@ -173,10 +211,8 @@ class AudioDatasetUploader:
                 print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
-        self.current_batch = self.current_batch[self.desired_batch_size:]
+        self.current_batch = self.current_batch[self.desired_batch_size :]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
-
-
 
 
 audio_dataset_uploader = AudioDatasetUploader()
@@ -186,7 +222,7 @@ video_dataset_uploader = DatasetUploader()
 if __name__ == "__main__":
     audio_wav_file = "../example.wav"
     with open(audio_wav_file, "rb") as f:
-        audio_bytes = base64.b64encode(f.read()).decode('utf-8')
+        audio_bytes = base64.b64encode(f.read()).decode("utf-8")
     for _ in range(100):
         audio_dataset_uploader.add_audios(
             metadata=[
@@ -201,7 +237,8 @@ if __name__ == "__main__":
                     diar_timestamps_end=[],
                     diar_speakers=[],
                 )
-            ] * 10,
+            ]
+            * 10,
             audio_ids=list(range(10)),
             inverse_der=0.0,
             audio_length_score=0.0,
@@ -213,5 +250,6 @@ if __name__ == "__main__":
         # audio_dataset_uploader.submit()
         import psutil
         import os
+
         process = psutil.Process(os.getpid())
         print(f"Current RAM usage: {process.memory_info().rss / 1024 / 1024:.2f} MB")

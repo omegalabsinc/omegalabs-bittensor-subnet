@@ -4,7 +4,6 @@ provides deepseek chat via chutes api
 
 import httpx
 import json
-import traceback
 import os
 import asyncio
 from typing import Iterable, Type, Optional, Union
@@ -19,6 +18,7 @@ openai_client = AsyncOpenAI(
     api_key=OPENAI_API_KEY,
 )
 
+
 async def query_llm(
     messages: Iterable[ChatCompletionMessageParam],
     output_model: Optional[Type[BaseModel]] = None,
@@ -26,7 +26,7 @@ async def query_llm(
 ) -> Union[BaseModel, dict]:
     """
     Query LLM models with fallback behavior. Tries DeepSeek first, falls back to OpenAI if DeepSeek fails.
-    
+
     Args:
         messages: An iterable of chat completion messages following the OpenAI format.
             Each message should have 'role' and 'content' fields.
@@ -46,14 +46,15 @@ async def query_llm(
         print(f"Chutes API DeepSeek call failed, falling back to OpenAI: {str(e)}")
         return await query_openai(messages, output_model, retries)
 
+
 async def query_openai(
     messages: Iterable[ChatCompletionMessageParam],
     output_model: Optional[Type[BaseModel]] = None,
-    retries: int = 3
+    retries: int = 3,
 ) -> Union[BaseModel, dict]:
     """
     Query the OpenAI o1 model with retries.
-    
+
     Args:
         messages: An iterable of chat completion messages following the OpenAI format.
             Each message should have 'role' and 'content' fields.
@@ -79,27 +80,30 @@ async def query_openai(
                 raise Exception("Empty response from API")
 
             parsed_data = json.loads(response.choices[0].message.content)
-            
+
             if output_model is not None:
                 return output_model.model_validate(parsed_data)
             return parsed_data
-            
+
         except Exception as e:
             if attempt < retries - 1:
-                sleep_time = 2 ** attempt
-                print(f"OpenAI attempt {attempt + 1} failed: {str(e)}. Retrying in {sleep_time} seconds...")
+                sleep_time = 2**attempt
+                print(
+                    f"OpenAI attempt {attempt + 1} failed: {str(e)}. Retrying in {sleep_time} seconds..."
+                )
                 await asyncio.sleep(sleep_time)
                 continue
             raise e
 
+
 async def query_deepseek(
     messages: Iterable[ChatCompletionMessageParam],
     output_model: Optional[Type[BaseModel]] = None,
-    retries: int = 3
+    retries: int = 3,
 ) -> Union[BaseModel, dict]:
     """
     Query the DeepSeek chat model via the Chutes API with streaming (non-streaming appears to be broken).
-    
+
     This function sends a chat completion request to DeepSeek, processes the streamed response,
     and optionally validates it against a provided Pydantic model.
     Your prompt must have the "json" keyword somewhere and an example; reference:
@@ -131,13 +135,13 @@ async def query_deepseek(
         - JSON responses are expected and enforced via the API's response_format parameter
     """
     last_exception = None
-    
+
     for attempt in range(retries):
         try:
             async with httpx.AsyncClient(timeout=120.0) as client:
                 headers = {
                     "Authorization": f"Bearer {CHUTES_API_TOKEN}",
-                    "Content-Type": "application/json"
+                    "Content-Type": "application/json",
                 }
                 payload = {
                     "model": "deepseek-ai/DeepSeek-R1",
@@ -145,21 +149,19 @@ async def query_deepseek(
                     "stream": True,
                     "max_tokens": 1000,
                     "temperature": 0.5,
-                    "response_format": {
-                        "type": "json_object"
-                    }
+                    "response_format": {"type": "json_object"},
                 }
-                
+
                 async with client.stream(
                     "POST",
                     "https://chutes-deepseek-ai-deepseek-r1.chutes.ai/v1/chat/completions",
                     headers=headers,
                     json=payload,
-                    timeout=120.0
+                    timeout=120.0,
                 ) as response:
                     response.raise_for_status()
                     content = ""
-                    
+
                     try:
                         async for line in response.aiter_lines():
                             if line.strip():
@@ -168,27 +170,35 @@ async def query_deepseek(
                                     line = line[6:]
                                 if line == "[DONE]":
                                     continue
-                                    
+
                                 try:
                                     chunk = json.loads(line)
-                                    if delta_content := chunk.get("choices", [{}])[0].get("delta", {}).get("content"):
+                                    if (
+                                        delta_content := chunk.get("choices", [{}])[0]
+                                        .get("delta", {})
+                                        .get("content")
+                                    ):
                                         content += delta_content
                                 except json.JSONDecodeError as e:
                                     print(f"Failed to parse chunk: {e}")
                                     continue
                                 except IndexError:
-                                    print("Received malformed response chunk from Chutes API call")
+                                    print(
+                                        "Received malformed response chunk from Chutes API call"
+                                    )
                                     continue
-                        
+
                         if not content:  # Check if we got any content
                             raise ValueError("No content received from API")
 
-                        content = content.replace('```json', '').replace('```', '').strip()
-                        
-                        if '</think>' in content:
+                        content = (
+                            content.replace("```json", "").replace("```", "").strip()
+                        )
+
+                        if "</think>" in content:
                             # get the content after the </think> tag
-                            content = content.split('</think>')[-1].strip()
-                        
+                            content = content.split("</think>")[-1].strip()
+
                         # Parse JSON and optionally validate against output model
                         try:
                             parsed_data = json.loads(content)
@@ -197,21 +207,25 @@ async def query_deepseek(
                                 return output_model.model_validate(parsed_data)
                             return parsed_data
                         except json.JSONDecodeError:
-                            raise ValueError(f"Failed to parse response as JSON: {content}")
-                        
+                            raise ValueError(
+                                f"Failed to parse response as JSON: {content}"
+                            )
+
                     except httpx.ReadTimeout:
                         raise TimeoutError("Request timed out while reading the stream")
                     finally:
                         await response.aclose()
-                        
+
         except Exception as e:
             last_exception = e
             if attempt < retries - 1:
-                sleep_time = 2 ** attempt
-                print(f"Chutes API call attempt {attempt + 1} failed with error: {str(e)}. Retrying in {sleep_time} seconds...")
+                sleep_time = 2**attempt
+                print(
+                    f"Chutes API call attempt {attempt + 1} failed with error: {str(e)}. Retrying in {sleep_time} seconds..."
+                )
                 await asyncio.sleep(sleep_time)
             continue
-            
+
     # If we get here, all retries failed
     print(f"All {retries} attempts failed in deepseek_model")
     raise last_exception

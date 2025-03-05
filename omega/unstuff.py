@@ -5,15 +5,20 @@ import bittensor as bt
 import random
 import torch.nn.functional as F
 from omega.imagebind_wrapper import (
-    split_text_by_token_limit,
     SimpleTokenizer,
     BPE_PATH,
     split_text_by_token_limit,
 )
+
 CHUNK_SIZE = 60
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH, context_length=10000)
 
-UNSTUFF = pipeline("text-classification", "jondurbin/unstuffer-v0.2", device="cuda" if torch.cuda.is_available() else "cpu")
+UNSTUFF = pipeline(
+    "text-classification",
+    "jondurbin/unstuffer-v0.2",
+    device="cuda" if torch.cuda.is_available() else "cpu",
+)
+
 
 def is_stuffed(description: str) -> Tuple[bool, float]:
     result = UNSTUFF(description, truncation=True, max_length=512)
@@ -22,8 +27,11 @@ def is_stuffed(description: str) -> Tuple[bool, float]:
     if stuffed and confidence > 0.75:
         print(f"Detected stuffed description [{confidence=}]: {description}")
     elif not stuffed and random.random() <= 0.01:
-        print(f"Description does not appear to be stuffed [{confidence=}]: {description}")
+        print(
+            f"Description does not appear to be stuffed [{confidence=}]: {description}"
+        )
     return stuffed, confidence
+
 
 def check_extraneous_chunks(description, video_emb, audio_emb, imagebind):
     bt.logging.info(f"Length of description: {len(description)}")

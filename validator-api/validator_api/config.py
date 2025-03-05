@@ -7,35 +7,39 @@ from omega import constants
 
 load_dotenv(override=True)
 
+
 def get_secret(secret_name, region_name):
     # Create a Secrets Manager client
     session = boto3.session.Session()
     client = session.client(
-        service_name='secretsmanager',
+        service_name="secretsmanager",
         region_name=region_name,
     )
 
-    get_secret_value_response = client.get_secret_value(
-        SecretId=secret_name
-    )
+    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
 
     # For a list of exceptions thrown, see
     # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
 
     # Decrypts secret using the associated KMS key.
-    secret = get_secret_value_response['SecretString']
+    secret = get_secret_value_response["SecretString"]
 
     return secret
+
 
 def parse_proxies(proxy_list: List[str]) -> List[str]:
     transformed_proxies = []
     for proxy in proxy_list:
-        proxy_ip, proxy_port, proxy_user, proxy_pass = proxy.split(':')
-        transformed_proxies.append(f"http://{proxy_user}:{proxy_pass}@{proxy_ip}:{proxy_port}")
+        proxy_ip, proxy_port, proxy_user, proxy_pass = proxy.split(":")
+        transformed_proxies.append(
+            f"http://{proxy_user}:{proxy_pass}@{proxy_ip}:{proxy_port}"
+        )
     return transformed_proxies
 
+
 def robust_json_loads(json_str: str) -> List[str]:
-    return json.loads(json_str.replace("\\\"", '"'))
+    return json.loads(json_str.replace('\\"', '"'))
+
 
 PORT = int(os.environ.get("PORT", 8002))
 NETWORK = os.environ["NETWORK"]
@@ -67,10 +71,10 @@ UPLOAD_BATCH_SIZE = int(os.environ.get("UPLOAD_BATCH_SIZE", 1024))
 UPLOAD_AUDIO_BATCH_SIZE = int(os.environ.get("UPLOAD_AUDIO_BATCH_SIZE", 256))
 
 DB_CONFIG = {
-    'user': os.environ["DBUSER"],
-    'password': os.environ["DBPASS"],
-    'host': os.environ["DBHOST"],
-    'database': os.environ["DBNAME"]
+    "user": os.environ["DBUSER"],
+    "password": os.environ["DBPASS"],
+    "host": os.environ["DBHOST"],
+    "database": os.environ["DBNAME"],
 }
 
 # Omega Focus Constants
@@ -87,10 +91,14 @@ ENCRYPTION_KEY = os.environ["ENCRYPTION_KEY"]
 
 BT_TESTNET = "test"
 BT_MAINNET = "finney"
-assert NETWORK in [BT_TESTNET, BT_MAINNET], "SUBTENSOR_NETWORK must be either test or finney"
-TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv('TAO_REFRESH_INTERVAL_MINUTES', 10))
+assert NETWORK in [BT_TESTNET, BT_MAINNET], (
+    "SUBTENSOR_NETWORK must be either test or finney"
+)
+TAO_REFRESH_INTERVAL_MINUTES = int(os.getenv("TAO_REFRESH_INTERVAL_MINUTES", 10))
 
-FOCUS_REWARDS_PERCENT = float(os.getenv('FOCUS_REWARDS_PERCENT', constants.FOCUS_REWARDS_PERCENT))
+FOCUS_REWARDS_PERCENT = float(
+    os.getenv("FOCUS_REWARDS_PERCENT", constants.FOCUS_REWARDS_PERCENT)
+)
 FOCUS_API_KEYS = robust_json_loads(os.environ["FOCUS_API_KEYS"])
 FOCUS_API_URL = os.environ["FOCUS_API_URL"]
 GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
@@ -100,9 +108,13 @@ AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
 AWS_S3_REGION = os.environ["AWS_S3_REGION"]
 AWS_S3_BUCKET_NAME = os.environ["AWS_S3_BUCKET_NAME"]
 
-MAX_FOCUS_POINTS_PER_HOUR = int(os.getenv("MAX_FOCUS_POINTS_PER_HOUR", 80))  # $80 / hour
+MAX_FOCUS_POINTS_PER_HOUR = int(
+    os.getenv("MAX_FOCUS_POINTS_PER_HOUR", 80)
+)  # $80 / hour
 FIXED_TAO_USD_ESTIMATE = float(os.getenv("FIXED_TAO_USD_ESTIMATE", 300.0))
-FIXED_ALPHA_TAO_ESTIMATE = float(os.getenv("FIXED_ALPHA_TAO_ESTIMATE", 0.0208))  # 1 alpha to tao, changes over time, you can find this with `btcli subnet list`
+FIXED_ALPHA_TAO_ESTIMATE = float(
+    os.getenv("FIXED_ALPHA_TAO_ESTIMATE", 0.0208)
+)  # 1 alpha to tao, changes over time, you can find this with `btcli subnet list`
 FIXED_TAO_ALPHA_ESTIMATE = 1 / FIXED_ALPHA_TAO_ESTIMATE
 FIXED_ALPHA_USD_ESTIMATE = FIXED_ALPHA_TAO_ESTIMATE * FIXED_TAO_USD_ESTIMATE
 BOOSTED_TASKS_PERCENTAGE = float(os.getenv("BOOSTED_TASKS_PERCENTAGE", 0.7))

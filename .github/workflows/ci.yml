@@ -1,0 +1,38 @@
+name: ci
+
+on:
+    workflow_dispatch:
+    push:
+        branches: [main]
+    pull_request:
+        branches: [main]
+
+jobs:
+    ci:
+        runs-on: ubuntu-latest  
+        steps:
+        - name: Checkout repository
+          uses: actions/checkout@v3
+
+        - name: Set up Python
+          uses: actions/setup-python@v4
+          with:
+            python-version: '3.11.4'
+
+        - name: Set up UV
+          uses: astral-sh/setup-uv@v5
+
+        - name: Install dependencies
+          run: |
+            python -m venv env
+            source env/bin/activate
+            uv pip install --pre -r requirements.txt
+            uv pip install --pre -r requirements_api.txt
+        - name: Run Ruff formatting
+          run: |
+            source env/bin/activate
+            ruff format --check
+        - name: Run Ruff linting
+          run: |
+            source env/bin/activate
+            ruff check

@@ -1,9 +1,11 @@
 import time
-from typing import Tuple, Dict
 import requests
 import bittensor as bt
 from validator_api.config import (
-    NETWORK, BT_TESTNET, NETUID, FOCUS_REWARDS_PERCENT, FIXED_ALPHA_USD_ESTIMATE,
+    NETWORK,
+    NETUID,
+    FOCUS_REWARDS_PERCENT,
+    FIXED_ALPHA_USD_ESTIMATE,
     BOOSTED_TASKS_PERCENTAGE,
 )
 from validator_api.utils import run_with_retries, run_async
@@ -22,6 +24,7 @@ TASK_TYPE_MAP = {
 async def get_subtensor() -> bt.subtensor:
     def _internal() -> bt.subtensor:
         return bt.subtensor(network=NETWORK)
+
     return await run_with_retries(_internal)
 
 
@@ -34,13 +37,12 @@ async def get_tao_price() -> float:
         )
     )
 
+
 # Global cache for max focus alpha
-max_focus_alpha_per_day_cache = {
-    'value': None,
-    'timestamp': 0
-}
+max_focus_alpha_per_day_cache = {"value": None, "timestamp": 0}
 
 CACHE_DURATION = 30 * 60  # 30 minutes in seconds
+
 
 async def get_max_focus_alpha_per_day() -> float:
     """
@@ -49,12 +51,15 @@ async def get_max_focus_alpha_per_day() -> float:
     global max_focus_alpha_per_day_cache
     current_time = time.time()
 
-    if max_focus_alpha_per_day_cache['value'] is not None and current_time - max_focus_alpha_per_day_cache['timestamp'] < CACHE_DURATION:
-        return max_focus_alpha_per_day_cache['value']
+    if (
+        max_focus_alpha_per_day_cache["value"] is not None
+        and current_time - max_focus_alpha_per_day_cache["timestamp"] < CACHE_DURATION
+    ):
+        return max_focus_alpha_per_day_cache["value"]
 
     # If cache is invalid or empty, recalculate
     subtensor = await get_subtensor()
-    
+
     def _internal_sync():
         subnet = subtensor.subnet(netuid=NETUID)
         alpha_emission_per_block = subnet.alpha_out_emission.tao
@@ -73,8 +78,8 @@ async def get_max_focus_alpha_per_day() -> float:
     max_focus_alpha_per_day = await run_with_retries(_internal_async)
     # print(f"max_focus_alpha_per_day: {max_focus_alpha_per_day}")
     # Update cache
-    max_focus_alpha_per_day_cache['value'] = max_focus_alpha_per_day
-    max_focus_alpha_per_day_cache['timestamp'] = current_time
+    max_focus_alpha_per_day_cache["value"] = max_focus_alpha_per_day
+    max_focus_alpha_per_day_cache["timestamp"] = current_time
 
     return max_focus_alpha_per_day
 
@@ -87,11 +92,9 @@ async def get_fixed_reward_pool_alpha() -> float:
     """
     async with get_db_context() as db:
         twenty_four_hours_ago = datetime.utcnow() - timedelta(days=1)
-        query = select(
-            func.sum(FocusVideoRecord.earned_reward_alpha)
-        ).where(
+        query = select(func.sum(FocusVideoRecord.earned_reward_alpha)).where(
             FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
-            FocusVideoRecord.updated_at >= twenty_four_hours_ago
+            FocusVideoRecord.updated_at >= twenty_four_hours_ago,
         )
         result = await db.execute(query)
         return result.scalar() or 0.0
@@ -111,11 +114,13 @@ async def get_variable_reward_pool_alpha() -> float:
 
 
 def get_dollars_available_today(max_focus_alpha: float) -> float:
-    """ Use a fixed ΩTAO - USD estimate to keep consistent for the sake of miner rewards """
+    """Use a fixed ΩTAO - USD estimate to keep consistent for the sake of miner rewards"""
     return max_focus_alpha * FIXED_ALPHA_USD_ESTIMATE
+
 
 def get_max_focus_points_available_today(max_focus_alpha: float) -> float:
     # 1 point = 1 dollar
     return int(get_dollars_available_today(max_focus_alpha))
+
 
 MAX_TASK_REWARD_TAO = 0.1

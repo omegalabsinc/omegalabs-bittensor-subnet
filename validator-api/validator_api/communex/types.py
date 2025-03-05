@@ -65,8 +65,8 @@ class SubnetParams(TypedDict):
 # redundant "TypedDict" inheritance because of pdoc warns.
 # see https://github.com/mitmproxy/pdoc/blob/26d40827ddbe1658e8ac46cd092f17a44cf0287b/pdoc/doc.py#L691-L692
 class SubnetParamsWithEmission(SubnetParams, TypedDict):
-    """SubnetParams with emission field.
-    """
+    """SubnetParams with emission field."""
+
     emission: int
     """Subnet emission percentage (0-100).
     """

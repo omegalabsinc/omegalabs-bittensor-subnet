@@ -7,17 +7,22 @@ from typing import List, BinaryIO, Optional
 from imagebind import data
 from imagebind.models import imagebind_model
 from imagebind.models.imagebind_model import ModalityType
-from imagebind.models.multimodal_preprocessors import SimpleTokenizer, TextPreprocessor
+from imagebind.models.multimodal_preprocessors import SimpleTokenizer
 from pydantic import BaseModel
 import torch
 
 from omega import video_utils
 
-BPE_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz")
-V2_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".checkpoints", "videobind-v0.2.pth")
+BPE_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), "bpe", "bpe_simple_vocab_16e6.txt.gz"
+)
+V2_PATH = os.path.join(
+    os.path.dirname(os.path.abspath(__file__)), ".checkpoints", "videobind-v0.2.pth"
+)
 TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH)
 LENGTH_TOKENIZER = SimpleTokenizer(bpe_path=BPE_PATH, context_length=1024)
 TOKEN_CHUNK_SIZE = 74
+
 
 class Embeddings(BaseModel):
     class Config:
@@ -52,7 +57,9 @@ def split_text_by_token_limit(text, tokenizer, max_tokens=TOKEN_CHUNK_SIZE):
         result = []
         current_segment = ""
         for part in parts:
-            candidate_segment = current_segment + (delimiter if current_segment else '') + part
+            candidate_segment = (
+                current_segment + (delimiter if current_segment else "") + part
+            )
             if fits_in_token_limit(candidate_segment):
                 current_segment = candidate_segment
             else:
@@ -73,12 +80,10 @@ def split_text_by_token_limit(text, tokenizer, max_tokens=TOKEN_CHUNK_SIZE):
         tokens = tokenizer(text)
         tokens = tokens[tokens != 0][1:-1].tolist()
         chunks = np.array_split(tokens, int(len(tokens) / max_tokens) or 1)
-        return [
-            tokenizer.decode(segment_tokens)
-            for segment_tokens in chunks
-        ]
+        return [tokenizer.decode(segment_tokens) for segment_tokens in chunks]
 
-    return recursive_split(text, ['\n', '.', '!', '?', ',', ' '])
+    return recursive_split(text, ["\n", ".", "!", "?", ",", " "])
+
 
 def load_and_transform_text_chunks(text, device):
     if not text:
@@ -90,6 +95,7 @@ def load_and_transform_text_chunks(text, device):
         load_and_transform_text([segment], device)
         for segment in split_text_by_token_limit(text, LENGTH_TOKENIZER)
     ]
+
 
 def run_async(func, *args, **kwargs):
     loop = asyncio.get_event_loop()
@@ -116,9 +122,9 @@ class ImageBind:
 
     def generate_text_embeddings(self, text: str):
         if not self.v2:
-            return self.imagebind({
-                ModalityType.TEXT: load_and_transform_text([text], self.device)
-            })[ModalityType.TEXT]
+            return self.imagebind(
+                {ModalityType.TEXT: load_and_transform_text([text], self.device)}
+            )[ModalityType.TEXT]
         chunks = load_and_transform_text_chunks(text, self.device)
         embeddings = [
             self.imagebind({ModalityType.TEXT: chunk})[ModalityType.TEXT]
@@ -129,7 +135,7 @@ class ImageBind:
     def get_inputs(self, video_file: BinaryIO) -> dict:
         audio_file = video_utils.copy_audio(video_file.name)
         try:
-            duration = video_utils.get_video_duration(video_file.name)
+            video_utils.get_video_duration(video_file.name)
             video_data = data.load_and_transform_video_data(
                 [video_file.name],
                 self.device,
@@ -160,45 +166,54 @@ class ImageBind:
                     description=text_embeddings,
                 )
             else:
-                return_value.video = torch.cat((return_value.video, embeddings[ModalityType.VISION]))
-                return_value.audio = torch.cat((return_value.audio, embeddings[ModalityType.AUDIO]))
-                return_value.description = torch.cat((return_value.description, text_embeddings))
+                return_value.video = torch.cat(
+                    (return_value.video, embeddings[ModalityType.VISION])
+                )
+                return_value.audio = torch.cat(
+                    (return_value.audio, embeddings[ModalityType.AUDIO])
+                )
+                return_value.description = torch.cat(
+                    (return_value.description, text_embeddings)
+                )
         return return_value
 
     @torch.no_grad()
     def embed_only_video(self, video_files: List[BinaryIO]) -> Embeddings:
         video_filepaths = [video_file.name for video_file in video_files]
-        durations = [video_utils.get_video_duration(f.name) for f in video_files]
-        embeddings = self.imagebind({
-            ModalityType.VISION: [
-                data.load_and_transform_video_data(
-                    [video_filepaths[idx]],
-                    self.device,
-                )[0]
-                for idx in range(len(video_filepaths))
-            ]
-        })
+        embeddings = self.imagebind(
+            {
+                ModalityType.VISION: [
+                    data.load_and_transform_video_data(
+                        [video_filepaths[idx]],
+                        self.device,
+                    )[0]
+                    for idx in range(len(video_filepaths))
+                ]
+            }
+        )
         return Embeddings(
             video=embeddings[ModalityType.VISION],
         )
 
     @torch.no_grad()
-    def embed_video_and_text(self, video_files: List[BinaryIO], descriptions: List[str]) -> Embeddings:
+    def embed_video_and_text(
+        self, video_files: List[BinaryIO], descriptions: List[str]
+    ) -> Embeddings:
         video_filepaths = [video_file.name for video_file in video_files]
-        durations = [video_utils.get_video_duration(f.name) for f in video_files]
-        embeddings = self.imagebind({
-            ModalityType.VISION: [
-                data.load_and_transform_video_data(
-                    [video_filepaths[idx]],
-                    self.device,
-                )[0]
-                for idx in range(len(video_filepaths))
-            ],
-        })
-        description_embeddings = torch.stack([
-            self.generate_text_embeddings(description)
-            for description in descriptions
-        ])
+        embeddings = self.imagebind(
+            {
+                ModalityType.VISION: [
+                    data.load_and_transform_video_data(
+                        [video_filepaths[idx]],
+                        self.device,
+                    )[0]
+                    for idx in range(len(video_filepaths))
+                ],
+            }
+        )
+        description_embeddings = torch.stack(
+            [self.generate_text_embeddings(description) for description in descriptions]
+        )
         return Embeddings(
             video=embeddings[ModalityType.VISION],
             description=description_embeddings,
@@ -216,12 +231,16 @@ class ImageBind:
         return return_value
 
     @torch.no_grad()
-    async def embed_async(self, descriptions: List[str], video_files: List[BinaryIO]) -> Embeddings:
+    async def embed_async(
+        self, descriptions: List[str], video_files: List[BinaryIO]
+    ) -> Embeddings:
         return_value = None
         for idx in range(len(descriptions)):
             inputs = self.get_inputs(video_files[idx])  # cannot be async
             embeddings = await run_async(self.imagebind, inputs)
-            text_embeddings = await run_async(self.generate_text_embeddings, descriptions[idx])
+            text_embeddings = await run_async(
+                self.generate_text_embeddings, descriptions[idx]
+            )
             if not return_value:
                 return_value = Embeddings(
                     video=embeddings[ModalityType.VISION],
@@ -229,9 +248,15 @@ class ImageBind:
                     description=text_embeddings,
                 )
             else:
-                return_value.video = torch.cat((return_value.video, embeddings[ModalityType.VISION]))
-                return_value.audio = torch.cat((return_value.audio, embeddings[ModalityType.AUDIO]))
-                return_value.description = torch.cat((return_value.description, text_embeddings))
+                return_value.video = torch.cat(
+                    (return_value.video, embeddings[ModalityType.VISION])
+                )
+                return_value.audio = torch.cat(
+                    (return_value.audio, embeddings[ModalityType.AUDIO])
+                )
+                return_value.description = torch.cat(
+                    (return_value.description, text_embeddings)
+                )
         return return_value
 
     async def embed_text_async(self, texts: List[str]) -> torch.Tensor:

@@ -1,8 +1,7 @@
 import pydantic
 import bittensor as bt
 
-from abc import ABC, abstractmethod
-from typing import List, Union, Callable, Awaitable
+from typing import List
 from starlette.responses import StreamingResponse
 
 
@@ -85,9 +84,7 @@ class StreamPrompting(bt.StreamingSynapse):
         """
         if self.completion is None:
             self.completion = ""
-        bt.logging.debug(
-            "Processing streaming response (StreamingSynapse base class)."
-        )
+        bt.logging.debug("Processing streaming response (StreamingSynapse base class).")
         async for chunk in response.content.iter_any():
             bt.logging.debug(f"Processing chunk: {chunk}")
             tokens = chunk.decode("utf-8").split("\n")

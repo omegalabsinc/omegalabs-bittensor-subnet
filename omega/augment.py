@@ -21,7 +21,7 @@ class AbstractAugment:
         except Exception as e:
             print(f"Error augmenting query: {e}")
             return query
-        
+
     def augment_query(self, query: str) -> str:
         raise NotImplementedError
 
@@ -38,10 +38,20 @@ class LocalLLMAugment(AbstractAugment):
     def __init__(self, **kwargs):
         self.device = kwargs.get("device")
         if self.device == "cpu":
-            raise ValueError("Cannot run Local LLM on CPU. Please move to a GPU instance or restart miner with `--neuron.query_augment OpenAIAugment` to use the GPT-4 API for augmenting instead of a local LLM.")
+            raise ValueError(
+                "Cannot run Local LLM on CPU. Please move to a GPU instance or restart miner with `--neuron.query_augment OpenAIAugment` to use the GPT-4 API for augmenting instead of a local LLM."
+            )
         model_name = "teknium/OpenHermes-2.5-Mistral-7B"
-        self.pipe = pipeline("text-generation", model=model_name, device=self.device, torch_dtype=torch.float16, pad_token_id=32000)
-        bt.logging.info(f"Running query augmentation with local LLM {model_name} (thanks Nous!)")
+        self.pipe = pipeline(
+            "text-generation",
+            model=model_name,
+            device=self.device,
+            torch_dtype=torch.float16,
+            pad_token_id=32000,
+        )
+        bt.logging.info(
+            f"Running query augmentation with local LLM {model_name} (thanks Nous!)"
+        )
 
     def augment_query(self, query: str) -> str:
         prompt = f"""<|im_start|>system
@@ -50,7 +60,12 @@ class LocalLLMAugment(AbstractAugment):
         {get_llm_prompt(query)}<|im_end|>
         <|im_start|>assistant
         Detailed query: """
-        new_query = self.pipe(prompt, max_new_tokens=64)[0]["generated_text"][len(prompt):].strip().strip("\"").strip("'")
+        new_query = (
+            self.pipe(prompt, max_new_tokens=64)[0]["generated_text"][len(prompt) :]
+            .strip()
+            .strip('"')
+            .strip("'")
+        )
         return new_query
 
 
@@ -62,14 +77,9 @@ class OpenAIAugment(AbstractAugment):
     def augment_query(self, query: str) -> str:
         response = self.client.chat.completions.create(
             model="gpt-4-turbo-preview",
-            messages=[
-                {
-                    "role": "user",
-                    "content": get_llm_prompt(query)
-                }
-            ],
+            messages=[{"role": "user", "content": get_llm_prompt(query)}],
             temperature=0.9,
             max_tokens=64,
             top_p=1,
         )
-        return response.choices[0].message.content.strip("\"").strip("'")
+        return response.choices[0].message.content.strip('"').strip("'")
