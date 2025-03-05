@@ -262,7 +262,7 @@ async def run_focus_scoring(
             video_record = result.scalar_one_or_none()
             if video_record is None:
                 raise HTTPException(404, detail="Focus video not found")
-            if video_record.task_type.value == TaskType.MARKETPLACE.value:
+            if video_record.task_type == TaskType.MARKETPLACE.value:
                 update_stmt = (
                     update(FocusVideoRecord)
                     .where(FocusVideoRecord.video_id == video_id)
