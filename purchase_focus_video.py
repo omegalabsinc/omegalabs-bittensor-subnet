@@ -60,10 +60,10 @@ Remember to keep your wallet information secure and never share your private key
 
 import argparse
 import json
-import multiprocessing
 import os
 import sys
 import time
+import asyncio
 from datetime import datetime
 
 import bittensor as bt
@@ -151,9 +151,18 @@ def reset_terminal():
     sys.stdout.write('\033[0m')
     sys.stdout.flush()
 
-def transfer_operation(wallet, transfer_address_to, transfer_balance, result_queue):
+async def transfer_operation(wallet, transfer_address_to, transfer_balance):
     try:
+        print(f"{CYAN}Initializing subtensor connection...{RESET}")
         subtensor = initialize_subtensor()
+        
+        print(f"{CYAN}Transfer details:{RESET}")
+        print(f"- From address: {wallet.get_hotkey().ss58_address}")
+        print(f"- To address: {transfer_address_to}")
+        print(f"- Amount: {transfer_balance} TAO")
+        print(f"- Current balance: {subtensor.get_balance(wallet.get_hotkey().ss58_address)} TAO")
+        
+        print(f"\n{CYAN}Initiating transfer...{RESET}")
         success, block_hash, err_msg = subtensor._do_transfer(
             wallet,
             transfer_address_to,
@@ -161,31 +170,45 @@ def transfer_operation(wallet, transfer_address_to, transfer_balance, result_que
             wait_for_finalization=True,
             wait_for_inclusion=True,
         )
-        result_queue.put((success, block_hash, err_msg))
+        
+        if not success:
+            print(f"{RED}Transfer failed with error: {err_msg}{RESET}")
+            if "Inability to pay some fees" in str(err_msg):
+                print(f"{RED}Insufficient balance to cover transfer amount + fees. Please ensure you have enough TAO.{RESET}")
+            elif "Invalid Transaction" in str(err_msg):
+                print(f"{RED}Transaction was rejected. Please verify your wallet and transfer details.{RESET}")
+        
+        return success, block_hash, err_msg
     except Exception as e:
-        result_queue.put((False, None, str(e)))
+        error_msg = str(e)
+        print(f"{RED}Exception during transfer:{RESET}")
+        print(f"- Error type: {type(e).__name__}")
+        print(f"- Error message: {error_msg}")
+        
+        if "1010: Invalid Transaction" in error_msg:
+            print(f"{RED}Transaction was rejected by the network. Common causes:{RESET}")
+            print("1. Insufficient balance for transfer + fees")
+            print("2. Invalid destination address")
+            print("3. Wallet permissions issue")
+        elif "EOF occurred in violation of protocol" in error_msg:
+            print(f"{RED}Network connection error. The connection to the Bittensor network was interrupted.{RESET}")
+        
+        return False, None, error_msg
 
-def transfer_with_timeout(wallet, transfer_address_to, transfer_balance):
-    result_queue = multiprocessing.Queue()
-    
-    transfer_process = multiprocessing.Process(
-        target=transfer_operation,
-        args=(wallet, transfer_address_to, transfer_balance, result_queue)
-    )
-    
-    transfer_process.start()
-    transfer_process.join(timeout=150)  # 2m 30s = 150 seconds
-    
-    if transfer_process.is_alive():
-        transfer_process.terminate()
-        transfer_process.join()
+async def transfer_with_timeout(wallet, transfer_address_to, transfer_balance):
+    try:
+        print(f"{CYAN}Starting transfer with 2.5 minute timeout...{RESET}")
+        async with asyncio.timeout(150):  # 2.5 minutes timeout
+            result = await transfer_operation(wallet, transfer_address_to, transfer_balance)
+            return result
+    except asyncio.TimeoutError:
         reset_terminal()
-        print("\nTransfer operation timed out after 2 minutes 30 seconds. Exiting.")
-    
-    if not result_queue.empty():
-        return result_queue.get()
-    else:
-        return False, None, "Transfer process exited without result"
+        print(f"\n{RED}Transfer operation timed out after 2 minutes 30 seconds.{RESET}")
+        print("This could be due to:")
+        print("1. Network congestion")
+        print("2. Slow connection to Bittensor network")
+        print("3. System resource constraints")
+        return False, None, "Transfer process timed out"
 
 def get_wallet(wallet_name=None, wallet_hotkey=None, wallet_path=None):
     if wallet_name is not None:
@@ -215,7 +238,7 @@ def get_auth_headers(wallet):
     miner_hotkey_signature = f"0x{hotkey.sign(miner_hotkey).hex()}"
     return miner_hotkey, miner_hotkey_signature
 
-def purchase_video(
+async def purchase_video(
     video_id=None,
     wallet_name=None,
     wallet_hotkey=None,
@@ -255,36 +278,23 @@ def purchase_video(
         print(f"Initiating transfer of {transfer_amount} TAO for video {video_id}...")
         
         transfer_balance = bt.Balance.from_tao(transfer_amount)
-        
 
         try:
-            success, block_hash, err_msg = transfer_with_timeout(wallet, transfer_address_to, transfer_balance)
+            success, block_hash, err_msg = await transfer_with_timeout(wallet, transfer_address_to, transfer_balance)
         except TransferTimeout:
             print(f"\n{RED}Transfer operation timed out after 2 minutes and 30 seconds. Aborting purchase.{RESET}")
             reset_terminal()
-            revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature)
             repurchase_input(video_id, name, hotkey_name, path)
             return
-        
-        """
-        success, block_hash, err_msg = subtensor._do_transfer(
-            wallet,
-            transfer_address_to,
-            transfer_balance,
-            wait_for_finalization=True,
-            wait_for_inclusion=True,
-        )
-        """
 
         if success:
             print(f"{GREEN}Transfer finalized. Block Hash: {block_hash}{RESET}")
             save_purchase_info(video_id, miner_hotkey, block_hash, "purchased", transfer_amount)
-            verify_result = verify_purchase(video_id, miner_hotkey, block_hash, miner_hotkey_signature)
+            verify_result = await verify_purchase(video_id, miner_hotkey, block_hash, miner_hotkey_signature)
             if not verify_result:
                 print(f"{RED}There was an error verifying your purchase after successfully transferring TAO. Please try the 'Verify Purchase' option immediately and contact an admin if you are unable to successfully verify.{RESET}")
         else:
             print(f"{RED}Failed to complete transfer for video {video_id}.{RESET}")
-            revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature)
             repurchase_input(video_id, name, hotkey_name, path)
 
     except Exception as e:
@@ -292,29 +302,12 @@ def purchase_video(
         if "EOF occurred in violation of protocol" in str(e):
             print(f"{RED}Subtensor connection error detected. Re-initializing subtensor.{RESET}")
             initialize_subtensor()
-        revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature)
         repurchase_input(video_id, name, hotkey_name, path)
-
-def revert_pending_purchase(video_id, miner_hotkey, miner_hotkey_signature):
-    print(f"Reverting Pending Purchasing of video {video_id}...")
-    revert_response = requests.post(
-        API_BASE + "/api/focus/revert-pending-purchase",
-        auth=(miner_hotkey, miner_hotkey_signature),
-        json={"video_id": video_id},
-        headers={"Content-Type": "application/json"},
-        timeout=60
-    )
-    if revert_response.status_code != 200:
-        print(f"{RED}Error reverting pending purchase of video {video_id}: {revert_response.status_code}{RESET}")
-        return
-    if revert_response.status_code == 200:
-        print(f"{GREEN}Pending purchase of video {video_id} reverted successfully.{RESET}")
-    return
 
 def repurchase_input(video_id, wallet_name=None, wallet_hotkey=None, wallet_path=None):
     repurchase = input(f"{CYAN}Do you want to repurchase video {video_id}? (y/n): {RESET}").lower()
     if repurchase == 'y':
-        purchase_video(video_id, wallet_name, wallet_hotkey, wallet_path)
+        asyncio.run(purchase_video(video_id, wallet_name, wallet_hotkey, wallet_path))
     elif repurchase != 'n':
         print(f"{RED}Invalid input. Please enter 'y' or 'n'.{RESET}")
         repurchase_input(video_id, wallet_name, wallet_hotkey, wallet_path)
@@ -411,7 +404,7 @@ def select_order_for_full_display(purchases):
         else:
             print(f"{RED}Invalid input. Please try again.{RESET}")
 
-def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None, miner_hotkey_signature=None):
+async def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None, miner_hotkey_signature=None):
     if miner_hotkey_signature is None:
         wallet, name, hotkey_name, path = get_wallet()
         miner_hotkey, miner_hotkey_signature = get_auth_headers(wallet)
@@ -442,12 +435,12 @@ def verify_purchase(video_id=None, miner_hotkey=None, block_hash=None, miner_hot
             
             if attempt < retries - 1:
                 print(f"{CYAN}Attempt #{attempt + 1} to verify purchase failed. Retrying in 2 seconds...{RESET}")
-                time.sleep(2)
+                await asyncio.sleep(2)
         except Exception as e:
             if attempt < retries - 1:
                 print(f"{CYAN}Attempt #{attempt + 1} to verify purchase failed. Retrying in 2 seconds...{RESET}")
                 print(f"{RED}Error: {str(e)}{RESET}")
-                time.sleep(2)
+                await asyncio.sleep(2)
             else:
                 print(f"{RED}All {retries} attempts failed. Unable to verify purchase.{RESET}")
                 return False
@@ -488,7 +481,7 @@ def save_purchase_info(video_id, hotkey, block_hash, state, amount=None):
     
     print(f"{GREEN}Purchase information {'updated' if state == 'verified' else 'saved'} to {purchases_file}{RESET}")
 
-def main():
+async def main():
     while True:
         print(f"\n{CYAN}Welcome to the OMEGA Focus Videos Purchase System{RESET}")
         print("1. View + Purchase Focus Videos")
@@ -507,7 +500,7 @@ def main():
                 if purchase_option.isdigit():
                     video_index = int(purchase_option) - 1
                     if 0 <= video_index < len(videos_data):
-                        purchase_video(videos_data[video_index]['video_id'])
+                        await purchase_video(videos_data[video_index]['video_id'])
                     else:
                         print(f"{RED}Invalid video number.{RESET}")
                 elif purchase_option != 'n':
@@ -515,9 +508,9 @@ def main():
             else:
                 print(f"\n{RED}No videos available for purchase at this time.{RESET}")
         elif choice == '2':
-            purchase_video()
+            await purchase_video()
         elif choice == '3':
-            verify_purchase()
+            await verify_purchase()
         elif choice == '4':
             purchases = display_saved_orders()
             select_order_for_full_display(purchases)
@@ -529,8 +522,7 @@ def main():
 
 if __name__ == "__main__":
     try:
-        multiprocessing.freeze_support()
-        main()
+        asyncio.run(main())
     except KeyboardInterrupt:
         print("\nScript interrupted by user. Exiting.")
         reset_terminal()
