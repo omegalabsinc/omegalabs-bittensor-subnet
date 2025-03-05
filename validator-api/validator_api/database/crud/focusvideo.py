@@ -354,7 +354,7 @@ async def set_focus_video_score(
     video_record.processing_state = FocusVideoStateInternal.READY.value
     video_record.updated_at = datetime.utcnow()
     video_record.task_type = (
-        TaskType.BOOSTED if score_details.boosted_multiplier > 1.0 else TaskType.USER
+        TaskType.BOOSTED.value if score_details.boosted_multiplier > 1.0 else TaskType.USER.value
     )
     db.add(video_record)
     await db.commit()
