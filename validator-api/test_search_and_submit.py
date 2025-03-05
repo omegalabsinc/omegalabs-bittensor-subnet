@@ -1,8 +1,5 @@
-from omega.miner_utils import search_and_embed_youtube_videos, ImageBind, video_utils
+from omega.miner_utils import search_and_embed_youtube_videos, ImageBind
 from omega.protocol import Videos
-from validator_api.dataset_upload import dataset_uploader
-from validator_api.score import score_and_upload_videos
-import asyncio
 import time
 
 imagebind = ImageBind()

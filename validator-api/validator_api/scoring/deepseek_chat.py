@@ -1,3 +1,18 @@
+from typing import Iterable, Optional, Type, Union
+from pydantic import BaseModel
+from openai.resources.beta.chat.completions import ChatCompletionMessageParam
+from openai import AsyncOpenAI
+from validator_api.scoring.query_deepseek import query_deepseek
+import os
+import json
+import asyncio
+
+OPENAI_API_KEY = os.getenv("OPENAI_API_KEY")
+openai_client = AsyncOpenAI(
+    api_key=OPENAI_API_KEY,
+)
+
+
 async def query_openai(
     messages: Iterable[ChatCompletionMessageParam],
     output_model: Optional[Type[BaseModel]] = None,

@@ -34,7 +34,7 @@ from traceback import print_exception
 from omega.base.neuron import BaseNeuron
 from omega.mock import MockDendrite
 from omega.utils.config import add_validator_args
-from omega.constants import FOCUS_REWARDS_PERCENT, AUDIO_REWARDS_PERCENT
+from omega.constants import AUDIO_REWARDS_PERCENT
 
 
 class BaseValidatorNeuron(BaseNeuron):
@@ -191,7 +191,7 @@ class BaseValidatorNeuron(BaseNeuron):
                     break
 
                 if self.config.neuron.auto_update and self.should_restart():
-                    bt.logging.info(f"Validator is out of date, quitting to restart.")
+                    bt.logging.info("Validator is out of date, quitting to restart.")
                     raise KeyboardInterrupt
 
                 # Sync metagraph and potentially set weights.
@@ -320,7 +320,7 @@ class BaseValidatorNeuron(BaseNeuron):
         # Check if self.scores contains any NaN values and log a warning if it does.
         if torch.isnan(self.scores).any():
             bt.logging.warning(
-                f"Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
+                "Scores contain NaN values. This may be due to a lack of responses from miners, or a bug in your reward functions."
             )
 
         self.scores, self.focus_scores, self.audio_score_arr = self.pad_tensors(

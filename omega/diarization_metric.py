@@ -1,4 +1,4 @@
-from pyannote.core import Segment, Timeline, Annotation
+from pyannote.core import Segment, Annotation
 from pyannote.metrics.diarization import DiarizationErrorRate
 from omega.diarization_pipeline import CustomDiarizationPipeline
 import numpy as np

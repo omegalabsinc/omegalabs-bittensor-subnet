@@ -8,8 +8,6 @@ import bittensor as bt
 import ffmpeg
 from pydantic import BaseModel
 from yt_dlp import YoutubeDL
-import librosa
-import numpy as np
 
 from omega.constants import FIVE_MINUTES
 

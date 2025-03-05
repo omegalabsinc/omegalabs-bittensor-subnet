@@ -27,7 +27,7 @@ __spec_version__ = (
 )
 
 # Import all submodules.
-from . import protocol
-from . import base
-from . import validator
-from .subnet_links import SUBNET_LINKS
+from . import protocol  # noqa: E402, F401
+from . import base  # noqa: E402, F401
+from . import validator  # noqa: E402, F401
+from .subnet_links import SUBNET_LINKS  # noqa: E402, F401

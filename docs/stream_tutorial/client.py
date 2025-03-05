@@ -48,9 +48,6 @@ async def query_synapse(my_uid, wallet_name, hotkey, network, netuid):
                     print()
                 if isinstance(chunk, list):
                     print(chunk[0], end="", flush=True)
-                else:
-                    # last object yielded is the synapse itself with completion filled
-                    synapse = chunk
             break
 
     # Run the main function with asyncio

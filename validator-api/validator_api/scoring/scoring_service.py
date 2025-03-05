@@ -398,7 +398,7 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
             #     print(f"  - ID: {match.get('id', 'N/A')}")
             #     print(f"  - Metadata: {match.get('metadata', {})}")
         else:
-            print(f"No pinecone matches, returning 0")
+            print("No pinecone matches, returning 0")
             similarity_score = 0
         similarity_score = max(0.0, min(similarity_score, 1.0))
         return 1.0 - similarity_score
@@ -618,7 +618,6 @@ class FocusScoringService:
 def main():
     service = FocusScoringService()
     import asyncio
-    import time
 
     async def main():
         video_id = "29f91a6f-1393-4765-ba00-263b4cff28b6"

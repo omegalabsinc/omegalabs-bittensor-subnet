@@ -22,10 +22,7 @@ import os
 os.environ["USE_TORCH"] = "1"
 
 import time
-import json
 import typing
-import requests
-import asyncio
 import bittensor as bt
 
 # Bittensor Miner Template:

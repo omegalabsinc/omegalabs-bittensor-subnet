@@ -48,10 +48,8 @@ from omega.constants import (
     MIN_LENGTH_BOOST_TOKEN_COUNT,
     MAX_LENGTH_BOOST_TOKEN_COUNT,
     STUFFED_DESCRIPTION_PUNISHMENT,
-    FOCUS_MIN_SCORE,
     MIN_AUDIO_LENGTH_SECONDS,
     MAX_AUDIO_LENGTH_SECONDS,
-    MIN_AUDIO_LENGTH_SCORE,
     SPEECH_CONTENT_SCALING_FACTOR,
     SPEAKER_DOMINANCE_SCALING_FACTOR,
     BACKGROUND_NOISE_SCALING_FACTOR,
@@ -78,7 +76,7 @@ import requests
 import traceback
 import random
 import datetime as dt
-from typing import List, Tuple, Optional, BinaryIO, Dict
+from typing import List, Tuple, Optional, Dict
 import asyncio
 from aiohttp import ClientSession, BasicAuth
 import os
@@ -918,7 +916,8 @@ class Validator(BaseValidatorNeuron):
             score = max(score, MIN_SCORE)
 
             # Log all our scores
-            bt.logging.info(f"""
+            bt.logging.info(
+                f"""
                 is_unique: {[not is_sim for is_sim in is_too_similar]},
                 video cosine sim: {video_description_relevance_scores},
                 audio cosine sim: {audio_description_relevance_scores},
@@ -926,7 +925,8 @@ class Validator(BaseValidatorNeuron):
                 query relevance scores: {query_relevance_scores},
                 length scalers: {length_scalers},
                 total score: {score}
-            """)
+            """
+            )
 
             # Upload our final results to API endpoint for index and dataset insertion. Include leaderboard statistics
             miner_hotkey = videos.axon.hotkey
@@ -1031,7 +1031,7 @@ class Validator(BaseValidatorNeuron):
                     json=payload,
                 ) as response:
                     response.raise_for_status()
-                    result = await response.json()
+                    await response.json()
             return True
         except Exception as e:
             bt.logging.debug(f"Error trying upload_video_metadata_endpoint: {e}")
@@ -1084,7 +1084,7 @@ class Validator(BaseValidatorNeuron):
                     json=payload,
                 ) as response:
                     response.raise_for_status()
-                    result = await response.json()
+                    await response.json()
             return True
         except Exception as e:
             bt.logging.debug(f"Error trying upload_audio_metadata_endpoint: {e}")

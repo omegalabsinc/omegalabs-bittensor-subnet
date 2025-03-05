@@ -1,6 +1,4 @@
 import bittensor as bt
-from bittensor_wallet import Wallet
-from bittensor import Balance, tao
 import time
 import random
 

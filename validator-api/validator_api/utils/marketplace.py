@@ -1,10 +1,8 @@
 import time
-from typing import Tuple, Dict
 import requests
 import bittensor as bt
 from validator_api.config import (
     NETWORK,
-    BT_TESTNET,
     NETUID,
     FOCUS_REWARDS_PERCENT,
     FIXED_ALPHA_USD_ESTIMATE,
