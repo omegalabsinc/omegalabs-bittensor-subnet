@@ -39,6 +39,7 @@ def is_cuda_available():
         pass
     return "cpu"
 
+
 def check_config(cls, config: "bt.Config"):
     r"""Checks/validates the config namespace object."""
     bt.logging.check_config(config)
@@ -173,7 +174,7 @@ def add_miner_args(cls, parser):
         help="If set, miners will accept queries from non registered entities. (Dangerous!)",
         default=False,
     )
-    
+
     parser.add_argument(
         "--blacklist.validator_min_stake",
         help="Minimum stake a validator must have to allow queries",
@@ -276,15 +277,18 @@ def add_validator_args(cls, parser):
         "--topics_url",
         type=str,
         help="URL to fetch topics from.",
-        default="https://docs.google.com/spreadsheets/d/e/2PACX-1vR3jKfd4qkxXt5rTvXTTSsz_RYGkxcxh6-jvB9H0Mljiz-nai7xG-E63qEQ9jQhQabBrIAeJWtgKg5j/pub?gid=0&single=true&output=csv"
+        default="https://docs.google.com/spreadsheets/d/e/2PACX-1vR3jKfd4qkxXt5rTvXTTSsz_RYGkxcxh6-jvB9H0Mljiz-nai7xG-E63qEQ9jQhQabBrIAeJWtgKg5j/pub?gid=0&single=true&output=csv",
     )
 
     parser.add_argument(
         "--topics_path",
         type=str,
         help="Path to text file containing a list of random topics to collect data for.",
-        default=os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "topics.txt")
+        default=os.path.join(
+            os.path.dirname(os.path.abspath(__file__)), "..", "..", "topics.txt"
+        ),
     )
+
 
 def config(cls):
     """

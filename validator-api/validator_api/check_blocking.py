@@ -15,7 +15,9 @@ async def detect_blocking(request_name: str, username: str):
         nonlocal last_yield, yielded
         current = loop.time()
         if current - last_yield > 0.1:  # Blocked for >100ms
-            print(f"Blocking operation detected in {request_name}! Blocked for {current - last_yield:.2f}s (username: {username})")
+            print(
+                f"Blocking operation detected in {request_name}! Blocked for {current - last_yield:.2f}s (username: {username})"
+            )
         last_yield = current
         yielded = True
 

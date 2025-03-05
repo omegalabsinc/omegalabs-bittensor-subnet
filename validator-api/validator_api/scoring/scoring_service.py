@@ -1,18 +1,18 @@
 """
 Description of scoring system:
-- Phase 0: generate detailed annotation for video; 
+- Phase 0: generate detailed annotation for video;
 - Phase 1: spam detection + rejection (can order from least to greatest cost)
-	- Working:
+        - Working:
         - length of video (too long or short)
-		- uniqueness detection (video embedding vector similarity)
-		- chat-only detection (openai o1 + text description)
-	- Not working:
-		- YouTube/movie video-watching detection (gemini + first and last video chunks)
-		- exploit/screen recording video watching detection (gemini + first and last video chunks)
-			- prompt can be found in old subnet commits
-		- automation detection (??) (I don't think this is reliably working yet)
+                - uniqueness detection (video embedding vector similarity)
+                - chat-only detection (openai o1 + text description)
+        - Not working:
+                - YouTube/movie video-watching detection (gemini + first and last video chunks)
+                - exploit/screen recording video watching detection (gemini + first and last video chunks)
+                        - prompt can be found in old subnet commits
+                - automation detection (??) (I don't think this is reliably working yet)
 - Phase 2: actual scoring
-	- can be gemini evaluation on the whole video, but I think it's probably more cost-efficient to use a reasoning model with the task descriptions
+        - can be gemini evaluation on the whole video, but I think it's probably more cost-efficient to use a reasoning model with the task descriptions
 """
 
 import asyncio
@@ -27,34 +27,43 @@ from pinecone import Pinecone
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from validator_api.config import (GOOGLE_CLOUD_BUCKET_NAME, GOOGLE_LOCATION,
-                                  GOOGLE_PROJECT_ID, OPENAI_API_KEY,
-                                  PINECONE_API_KEY)
+from validator_api.config import (
+    GOOGLE_CLOUD_BUCKET_NAME,
+    GOOGLE_LOCATION,
+    GOOGLE_PROJECT_ID,
+    OPENAI_API_KEY,
+    PINECONE_API_KEY,
+)
 from validator_api.database import get_db_context
 from validator_api.database.models.boosted_task import BoostedTask
 from validator_api.database.models.focus_video_record import (
-    FocusVideoInternal, FocusVideoRecord)
-from validator_api.database.models.scoring import (CompletionScore,
-                                                   CompletionScoreWithoutRange,
-                                                   DetailedVideoDescription,
-                                                   FocusVideoEmbeddings,
-                                                   LegitimacyCheckError,
-                                                   VideoScore,
-                                                   VideoTooLongError,
-                                                   VideoTooShortError,
-                                                   VideoUniquenessError)
+    FocusVideoInternal,
+    FocusVideoRecord,
+)
+from validator_api.database.models.scoring import (
+    CompletionScore,
+    CompletionScoreWithoutRange,
+    DetailedVideoDescription,
+    FocusVideoEmbeddings,
+    LegitimacyCheckError,
+    VideoScore,
+    VideoTooLongError,
+    VideoTooShortError,
+    VideoUniquenessError,
+)
 from validator_api.database.models.task import TaskRecordPG
 from validator_api.scoring import focus_scoring_prompts
 from validator_api.scoring.legitimacy_checks import ChatOnlyCheck
 from validator_api.scoring.query_llm import query_llm
 from validator_api.utils import run_async, run_with_retries
 from vertexai.generative_models import Part
-from vertexai.preview.generative_models import (GenerationConfig,
-                                                GenerativeModel,
-                                                HarmBlockThreshold,
-                                                HarmCategory)
-from vertexai.vision_models import (MultiModalEmbeddingModel, Video,
-                                    VideoSegmentConfig)
+from vertexai.preview.generative_models import (
+    GenerationConfig,
+    GenerativeModel,
+    HarmBlockThreshold,
+    HarmCategory,
+)
+from vertexai.vision_models import MultiModalEmbeddingModel, Video, VideoSegmentConfig
 
 TWO_MINUTES = 120  # in seconds
 NINETY_MINUTES = 5400  # in seconds
@@ -62,18 +71,20 @@ FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
 MIN_VIDEO_UNIQUENESS_SCORE = 0.02
 
-async def get_video_metadata(db: AsyncSession, video_id: str) -> Optional[FocusVideoInternal]:
-    query = select(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id
-    )
+
+async def get_video_metadata(
+    db: AsyncSession, video_id: str
+) -> Optional[FocusVideoInternal]:
+    query = select(FocusVideoRecord).filter(FocusVideoRecord.video_id == video_id)
     result = await db.execute(query)
     video = result.scalar_one_or_none()
-    
+
     if video and video.deleted_at is not None:
         print(f"Video {video_id} has been deleted")
         return None
-    
+
     return video
+
 
 async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
     """
@@ -99,7 +110,7 @@ async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
             )
             result = await db.execute(query)
             task = result.scalar_one_or_none()
-            
+
             if task and task.boosted_id:
                 query = select(BoostedTask).filter(
                     BoostedTask.id == task.boosted_id,
@@ -107,6 +118,7 @@ async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
                 result = await db.execute(query)
                 return result.scalar_one_or_none()
     return None
+
 
 async def get_video_duration_seconds(video_id: str) -> int:
     async with get_db_context() as db:
@@ -122,13 +134,18 @@ async def get_video_duration_seconds(video_id: str) -> int:
 
         return video_duration_seconds
 
+
 def get_s3_path(video_id: str) -> str:
     return f"clips/{video_id}.webm"
+
 
 def get_gcs_uri(video_id: str) -> str:
     return f"gs://{GOOGLE_CLOUD_BUCKET_NAME}/{get_s3_path(video_id)}"
 
-async def _make_gemini_request(system_prompt: str, user_prompt: str, video_id: str, OutputClassSchema: BaseModel) -> GenerativeModel:
+
+async def _make_gemini_request(
+    system_prompt: str, user_prompt: str, video_id: str, OutputClassSchema: BaseModel
+) -> GenerativeModel:
     """
     Makes a request to the Gemini model with specified prompts and video content.
 
@@ -149,7 +166,7 @@ async def _make_gemini_request(system_prompt: str, user_prompt: str, video_id: s
         HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
     }
-    
+
     model = GenerativeModel(
         model_name,
         system_instruction=system_prompt.strip(),
@@ -169,10 +186,13 @@ async def _make_gemini_request(system_prompt: str, user_prompt: str, video_id: s
     response = await model.generate_content_async(parts)
     return OutputClassSchema(**json.loads(response.text))
 
-async def _make_gemini_request_with_retries(system_prompt: str, user_prompt: str, video_id: str, OutputClassSchema: BaseModel) -> str:
+
+async def _make_gemini_request_with_retries(
+    system_prompt: str, user_prompt: str, video_id: str, OutputClassSchema: BaseModel
+) -> str:
     """
     Makes a request to Gemini with automatic retries on failure.
-    
+
     Handles JSON parsing errors, validation errors, and general exceptions with 3 retry attempts.
     Delays between retries.
 
@@ -192,46 +212,69 @@ async def _make_gemini_request_with_retries(system_prompt: str, user_prompt: str
     for retry_idx in range(num_retries):
         try:
             start = time.time()
-            output = await _make_gemini_request(system_prompt, user_prompt, video_id, OutputClassSchema)
-            print(f"Got gemini output in {time.time() - start} seconds for {OutputClassSchema.__name__}")
+            output = await _make_gemini_request(
+                system_prompt, user_prompt, video_id, OutputClassSchema
+            )
+            print(
+                f"Got gemini output in {time.time() - start} seconds for {OutputClassSchema.__name__}"
+            )
             return output
         except json.JSONDecodeError as e:
-            print(f"Error parsing JSON from Gemini response for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})")
+            print(
+                f"Error parsing JSON from Gemini response for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})"
+            )
             await asyncio.sleep(1)
         except ValidationError as e:
-            print(f"Error turning parsed JSON into Pydantic object for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})")
+            print(
+                f"Error turning parsed JSON into Pydantic object for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})"
+            )
             await asyncio.sleep(1)
         except Exception as e:
-            print(f"Error making Gemini request for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})")
+            print(
+                f"Error making Gemini request for {OutputClassSchema.__name__}, trying again: {e} ({retry_idx + 1}/{num_retries})"
+            )
             await asyncio.sleep(6)
-    raise Exception(f"Failed to turn Gemini response into JSON and then into Pydantic object for {OutputClassSchema.__name__} after {num_retries} attempts")
+    raise Exception(
+        f"Failed to turn Gemini response into JSON and then into Pydantic object for {OutputClassSchema.__name__} after {num_retries} attempts"
+    )
 
-async def get_detailed_video_description(video_id: str, task_overview: str, recompute: bool = False) -> DetailedVideoDescription:
+
+async def get_detailed_video_description(
+    video_id: str, task_overview: str, recompute: bool = False
+) -> DetailedVideoDescription:
     if not recompute:
-        async with get_db_context() as db:  # get already computed description from db if it exists
+        async with (
+            get_db_context() as db
+        ):  # get already computed description from db if it exists
             query = select(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
-                FocusVideoRecord.deleted_at.is_(None)
+                FocusVideoRecord.deleted_at.is_(None),
             )
             result = await db.execute(query)
             video_record = result.scalar_one_or_none()
-        
+
             if video_record is None:
                 raise ValueError(f"Video not found: {video_id}")
-            
-            if video_record.video_details and "detailed_video_description" in video_record.video_details:
+
+            if (
+                video_record.video_details
+                and "detailed_video_description" in video_record.video_details
+            ):
                 return DetailedVideoDescription.model_validate(
                     video_record.video_details["detailed_video_description"]
                 )
-    
+
     description = await _make_gemini_request_with_retries(
         system_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_SYSTEM_PROMPT,
-        user_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_USER_PROMPT.format(task_overview=task_overview),
+        user_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_USER_PROMPT.format(
+            task_overview=task_overview
+        ),
         video_id=video_id,
         OutputClassSchema=DetailedVideoDescription,
     )
 
     return description
+
 
 # async def get_task_score_from_gemini(self, task_overview: str) -> TaskScoreBreakdown:
 #     return await _make_gemini_request_with_retries(
@@ -240,6 +283,7 @@ async def get_detailed_video_description(video_id: str, task_overview: str, reco
 #         video_id=None,
 #         OutputClassSchema=TaskScoreBreakdown,
 #     )
+
 
 async def _get_completion_score_breakdown(
     task_overview: str,
@@ -262,32 +306,40 @@ async def _get_completion_score_breakdown(
     """
     messages = [
         {"role": "system", "content": system_prompt},
-        {"role": "user", "content": user_prompt.format(
-            task_overview=task_overview,
-            applications_used=detailed_video_description.applications_used,
-            completion_sequence_steps=detailed_video_description.completion_sequence_steps,
-        )}
+        {
+            "role": "user",
+            "content": user_prompt.format(
+                task_overview=task_overview,
+                applications_used=detailed_video_description.applications_used,
+                completion_sequence_steps=detailed_video_description.completion_sequence_steps,
+            ),
+        },
     ]
 
     try:
         completion_score_without_range = await query_llm(
             messages=messages,
             # OpenAI API doesn't like it when there's a range in the Pydantic model
-            output_model=CompletionScoreWithoutRange
+            output_model=CompletionScoreWithoutRange,
         )
         return CompletionScore(
             rationale=completion_score_without_range.rationale,
-            completion_score=max(0.0, min(1.0, completion_score_without_range.completion_score))
+            completion_score=max(
+                0.0, min(1.0, completion_score_without_range.completion_score)
+            ),
         )
 
     except Exception as e:
         print(f"Error getting completion score: {str(e)}")
         raise
 
-async def get_video_embedding(video_id: str, video_duration_seconds: int) -> List[float]:
+
+async def get_video_embedding(
+    video_id: str, video_duration_seconds: int
+) -> List[float]:
     """
     Generates an embedding vector for a video segment using Google's multimodal embedding model.
-    
+
     Takes a random 120-second segment from the video if the video is longer than 2 minutes.
 
     Args:
@@ -297,6 +349,7 @@ async def get_video_embedding(video_id: str, video_duration_seconds: int) -> Lis
     Returns:
         List[float]: The embedding vector for the video segment
     """
+
     async def _internal_async():
         model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding")
         start_offset_sec = random.randint(0, max(0, video_duration_seconds - 120))
@@ -307,16 +360,18 @@ async def get_video_embedding(video_id: str, video_duration_seconds: int) -> Lis
             video_segment_config=VideoSegmentConfig(
                 start_offset_sec=start_offset_sec,
                 end_offset_sec=end_offset_sec,
-                interval_sec=end_offset_sec - start_offset_sec
-            )
+                interval_sec=end_offset_sec - start_offset_sec,
+            ),
         )
         return embeddings.video_embeddings[0].embedding
+
     return await run_with_retries(_internal_async)
+
 
 async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float:
     """
     Queries a Pinecone index with a vector to find the most similar existing vector.
-    
+
     Returns a uniqueness score based on the inverse of the similarity score (1 - similarity).
     Ensures the returned score is between 0 and 1.
 
@@ -327,6 +382,7 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
     Returns:
         float: The uniqueness score (1 - similarity score)
     """
+
     async def _internal_async():
         response = await run_async(
             pinecone_index.query,
@@ -346,23 +402,37 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
             similarity_score = 0
         similarity_score = max(0.0, min(similarity_score, 1.0))
         return 1.0 - similarity_score
+
     return await run_with_retries(_internal_async)
+
 
 class FocusScoringService:
     def __init__(self):
         vertexai.init(project=GOOGLE_PROJECT_ID, location=GOOGLE_LOCATION)
-        self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-task-overview-index")
-        self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-video-description-index")
-        self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index("focus-completion-video-index")
+        self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index(
+            "focus-task-overview-index"
+        )
+        self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index(
+            "focus-video-description-index"
+        )
+        self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index(
+            "focus-completion-video-index"
+        )
         self.openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.legitimacy_checks = [ChatOnlyCheck()]
 
     # Pinecone is used for similarity search and scoring (uniqueness check)
-    async def _get_task_uniqueness_score(self, task_overview_embedding: List[float]) -> float:
+    async def _get_task_uniqueness_score(
+        self, task_overview_embedding: List[float]
+    ) -> float:
         return await query_pinecone(self.task_overview_index, task_overview_embedding)
 
-    async def get_description_uniqueness_score(self, detailed_video_description_embedding: List[float]) -> float:
-        return await query_pinecone(self.video_description_index, detailed_video_description_embedding)
+    async def get_description_uniqueness_score(
+        self, detailed_video_description_embedding: List[float]
+    ) -> float:
+        return await query_pinecone(
+            self.video_description_index, detailed_video_description_embedding
+        )
 
     async def get_video_uniqueness_score(self, video_embedding: List[float]) -> float:
         return await query_pinecone(self.completion_video_index, video_embedding)
@@ -371,7 +441,7 @@ class FocusScoringService:
     async def get_text_embedding(self, text: str) -> Optional[List[float]]:
         """
         Generates an embedding vector for text using OpenAI's embedding model.
-        
+
         Implements timeout and retry logic for reliability.
 
         Args:
@@ -380,11 +450,14 @@ class FocusScoringService:
         Returns:
             Optional[List[float]]: The embedding vector, or None if the request fails
         """
+
         async def _internal_async():
-            response = await asyncio.wait_for(self.openai_client.embeddings.create(
-                input=text,
-                model="text-embedding-3-large"
-            ), timeout=10)
+            response = await asyncio.wait_for(
+                self.openai_client.embeddings.create(
+                    input=text, model="text-embedding-3-large"
+                ),
+                timeout=10,
+            )
             return response.data[0].embedding
 
         try:
@@ -393,13 +466,17 @@ class FocusScoringService:
             print(f"Error getting text embedding: {e}")
             return None
 
-    async def embed_and_get_task_uniqueness_score(self, task_overview: str) -> Tuple[Optional[List[float]], Optional[float]]:
+    async def embed_and_get_task_uniqueness_score(
+        self, task_overview: str
+    ) -> Tuple[Optional[List[float]], Optional[float]]:
         embedding = await self.get_text_embedding(task_overview)
         if embedding is None:
             return None, None
         return embedding, await self._get_task_uniqueness_score(embedding)
 
-    async def embed_and_get_video_uniqueness_score(self, video_id: str, video_duration_seconds: int):
+    async def embed_and_get_video_uniqueness_score(
+        self, video_id: str, video_duration_seconds: int
+    ):
         try:
             embedding = await get_video_embedding(video_id, video_duration_seconds)
             return embedding, await self.get_video_uniqueness_score(embedding)
@@ -407,24 +484,36 @@ class FocusScoringService:
             print(f"Failed to create video embedding for {video_id}: {str(e)}")
             return None, 0.1  # Assumes unique if we can't check
 
-    async def get_detailed_video_description_embedding_score(self, video_id, task_overview):
-        detailed_video_description = await get_detailed_video_description(video_id, task_overview)
-        embedding = await self.get_text_embedding(detailed_video_description.model_dump_json())
+    async def get_detailed_video_description_embedding_score(
+        self, video_id, task_overview
+    ):
+        detailed_video_description = await get_detailed_video_description(
+            video_id, task_overview
+        )
+        embedding = await self.get_text_embedding(
+            detailed_video_description.model_dump_json()
+        )
         if embedding is None:
             return detailed_video_description, None, None
-        return detailed_video_description, embedding, await self.get_description_uniqueness_score(embedding)
+        return (
+            detailed_video_description,
+            embedding,
+            await self.get_description_uniqueness_score(embedding),
+        )
 
-    async def score_video(self, video_id: str, focusing_task: str, focusing_description: str):
+    async def score_video(
+        self, video_id: str, focusing_task: str, focusing_description: str
+    ):
         """
         Generates a comprehensive score for a video submission based on multiple factors.
-        
+
         The scoring process includes:
         1. Checking video duration constraints
         2. Computing task, description, and video uniqueness scores
         3. Running legitimacy checks
         4. Generating a completion score
         5. Applying any boost multipliers
-        
+
         Exceptions raised here make the video rejected.
 
         Args:
@@ -450,48 +539,65 @@ class FocusScoringService:
         video_duration_seconds = await get_video_duration_seconds(video_id)
 
         if video_duration_seconds < TWO_MINUTES:
-            raise VideoTooShortError(f"Video duration is too short: {video_duration_seconds} seconds")
+            raise VideoTooShortError(
+                f"Video duration is too short: {video_duration_seconds} seconds"
+            )
 
         if video_duration_seconds > NINETY_MINUTES:
-            raise VideoTooLongError(f"Video duration is too long: {video_duration_seconds} seconds")
+            raise VideoTooLongError(
+                f"Video duration is too long: {video_duration_seconds} seconds"
+            )
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
 
         (
             (task_overview_embedding, task_uniqueness_score),
             # task_score_breakdown,
-            (video_description, video_description_embedding, video_description_uniqueness_score),
+            (
+                video_description,
+                video_description_embedding,
+                video_description_uniqueness_score,
+            ),
             (video_embedding, video_uniqueness_score),
         ) = await asyncio.gather(
-            self.embed_and_get_task_uniqueness_score(task_overview),  # uses openai to get embedding
+            self.embed_and_get_task_uniqueness_score(
+                task_overview
+            ),  # uses openai to get embedding
             # self.get_task_score_from_gemini(task_overview),  # uses gemini to score task
-            self.get_detailed_video_description_embedding_score(video_id, task_overview),  # uses gemini to get detailed description
+            self.get_detailed_video_description_embedding_score(
+                video_id, task_overview
+            ),  # uses gemini to get detailed description
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
-        
+
         if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
             raise VideoUniquenessError("Video uniqueness score is too low.")
-        
+
         if self.legitimacy_checks:
             check_results = await asyncio.gather(
-                *(check.passes_check(video_id, video_description) for check in self.legitimacy_checks)
+                *(
+                    check.passes_check(video_id, video_description)
+                    for check in self.legitimacy_checks
+                )
             )
-            
+
             for passed, failure_reason in check_results:
                 if not passed:
-                    raise LegitimacyCheckError(f"Video failed legitimacy check: {failure_reason}. If you think this is a mistake, please contact us through the app or the OMEGA Focus Discord server.")
-        
+                    raise LegitimacyCheckError(
+                        f"Video failed legitimacy check: {failure_reason}. If you think this is a mistake, please contact us through the app or the OMEGA Focus Discord server."
+                    )
+
         completion_score_breakdown = await _get_completion_score_breakdown(
             task_overview,
             detailed_video_description=video_description,
         )
-        
+
         completion_gemini_score = completion_score_breakdown.completion_score
         final_score = completion_gemini_score * boosted_multiplier
-        
+
         print(f"Final score: {final_score}")
         print(f"completion score breakdown: {completion_score_breakdown}")
-        
+
         return VideoScore(
             task_uniqueness_score=task_uniqueness_score,
             video_completion_score=completion_gemini_score,
@@ -522,7 +628,9 @@ def main():
 Read the Show-O peper to understand how they have trained a unified diffusion and autoregressive model for multimodal tokenization.
 """.strip()
 
-        score_details = await service.score_video(video_id, task_overview, "description")
+        score_details = await service.score_video(
+            video_id, task_overview, "description"
+        )
         print(score_details)
 
         # task_overview_embedding = await service.get_text_embedding(task_overview)

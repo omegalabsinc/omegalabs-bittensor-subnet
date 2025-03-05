@@ -1,6 +1,7 @@
 import random
 
-class ComxSettings():
+
+class ComxSettings:
     # TODO: improve node lists
     NODE_URLS: list[str] = [
         "wss://commune-api-node-0.communeai.net",
@@ -36,8 +37,7 @@ class ComxSettings():
         "wss://commune-api-node-30.communeai.net",
         "wss://commune-api-node-31.communeai.net",
     ]
-    TESTNET_NODE_URLS: list[str] = [
-        "wss://testnet-commune-api-node-0.communeai.net"]
+    TESTNET_NODE_URLS: list[str] = ["wss://testnet-commune-api-node-0.communeai.net"]
 
 
 def get_node_url(
