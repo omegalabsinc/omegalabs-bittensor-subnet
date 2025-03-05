@@ -32,3 +32,7 @@ jobs:
           run: |
             source env/bin/activate
             ruff format --check
+        - name: Run Ruff linting
+          run: |
+            source env/bin/activate
+            ruff check
