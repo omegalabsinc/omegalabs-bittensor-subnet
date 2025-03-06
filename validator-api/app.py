@@ -743,7 +743,7 @@ async def main():
     @limiter.limit("5/minute")
     async def _get_available_focus_video_list(request: Request):
         """
-        Return all available focus videos
+        Return available focus videos for purchase
         """
         return focus_video_cache.get_all_available_focus()
 

@@ -2,7 +2,7 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
-from typing import Optional, Dict
+from typing import Optional, Dict, List
 import json
 import traceback
 import asyncio
@@ -66,25 +66,53 @@ class CachedValue:
         return self._value
 
 
-async def _fetch_available_focus():
+async def _fetch_available_focus() -> List[FocusVideoInternal]:
+    """
+    Fetch 10 available focus videos for purchase
+    Prioritize marketplace videos (TaskType.MARKETPLACE) ordered by oldest updated_at
+    and then every other video ordered by oldest updated_at
+    """
     async with get_db_context() as db:
-        # Show oldest videos first so they get rewarded fastest
-        query = (
+        # First, get marketplace videos ordered by oldest first
+        marketplace_query = (
             select(FocusVideoRecord)
             .filter(
-                FocusVideoRecord.processing_state
-                == FocusVideoStateInternal.SUBMITTED.value,
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
                 FocusVideoRecord.deleted_at.is_(None),
                 FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-                # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+                FocusVideoRecord.task_type == TaskType.MARKETPLACE.value
             )
             .order_by(FocusVideoRecord.updated_at.asc())
             .limit(10)
         )
 
-        result = await db.execute(query)
-        items = result.scalars().all()
-        return [FocusVideoInternal.model_validate(record) for record in items]
+        result = await db.execute(marketplace_query)
+        marketplace_items = result.scalars().all()
+        
+        # If we have less than 10 marketplace videos, get other videos to fill the remainder
+        if len(marketplace_items) < 10:
+            remaining_slots = 10 - len(marketplace_items)
+            other_query = (
+                select(FocusVideoRecord)
+                .filter(
+                    FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
+                    FocusVideoRecord.deleted_at.is_(None),
+                    FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+                    FocusVideoRecord.task_type != TaskType.MARKETPLACE.value
+                )
+                .order_by(FocusVideoRecord.updated_at.asc())
+                .limit(remaining_slots)
+            )
+
+            result = await db.execute(other_query)
+            other_items = result.scalars().all()
+            
+            # Combine both lists
+            all_items = marketplace_items + other_items
+        else:
+            all_items = marketplace_items
+
+        return [FocusVideoInternal.model_validate(record) for record in all_items]
 
 
 async def _alpha_to_tao_rate() -> float:
