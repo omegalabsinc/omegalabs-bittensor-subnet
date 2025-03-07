@@ -146,13 +146,14 @@ class TransferTimeout(Exception):
     pass
 
 def reset_terminal():
+    # pass
     # Try multiple methods to reset the terminal
     os.system('stty sane')
     os.system('reset')
     sys.stdout.write('\033[0m')
     sys.stdout.flush()
 
-async def transfer_operation(wallet, transfer_address_to, transfer_balance):
+async def transfer_operation(wallet, transfer_address_to: str, transfer_balance: bt.Balance):
     try:
         print(f"{CYAN}Initializing subtensor connection...{RESET}")
         subtensor = initialize_subtensor()
@@ -161,7 +162,7 @@ async def transfer_operation(wallet, transfer_address_to, transfer_balance):
         print(f"- From address: {wallet.get_hotkey().ss58_address}")
         print(f"- To address: {transfer_address_to}")
         print(f"- Amount: {transfer_balance} TAO")
-        print(f"- Current balance: {subtensor.get_balance(wallet.get_hotkey().ss58_address)} TAO")
+        # print(f"- Current balance: {subtensor.get_balance(wallet.get_coldkey())} TAO")
         
         print(f"\n{CYAN}Initiating transfer...{RESET}")
         success, block_hash, err_msg = _do_transfer(
@@ -286,7 +287,7 @@ async def purchase_video(
         except TransferTimeout:
             print(f"\n{RED}Transfer operation timed out after 2 minutes and 30 seconds. Aborting purchase.{RESET}")
             reset_terminal()
-            repurchase_input(video_id, name, hotkey_name, path)
+            await repurchase_input(video_id, name, hotkey_name, path)
             return
 
         if success:
@@ -297,22 +298,22 @@ async def purchase_video(
                 print(f"{RED}There was an error verifying your purchase after successfully transferring TAO. Please try the 'Verify Purchase' option immediately and contact an admin if you are unable to successfully verify.{RESET}")
         else:
             print(f"{RED}Failed to complete transfer for video {video_id}.{RESET}")
-            repurchase_input(video_id, name, hotkey_name, path)
+            await repurchase_input(video_id, name, hotkey_name, path)
 
     except Exception as e:
         print(f"{RED}Error transferring TAO tokens: {str(e)}{RESET}")
         if "EOF occurred in violation of protocol" in str(e):
             print(f"{RED}Subtensor connection error detected. Re-initializing subtensor.{RESET}")
             initialize_subtensor()
-        repurchase_input(video_id, name, hotkey_name, path)
+        await repurchase_input(video_id, name, hotkey_name, path)
 
-def repurchase_input(video_id, wallet_name=None, wallet_hotkey=None, wallet_path=None):
+async def repurchase_input(video_id, wallet_name=None, wallet_hotkey=None, wallet_path=None):
     repurchase = input(f"{CYAN}Do you want to repurchase video {video_id}? (y/n): {RESET}").lower()
     if repurchase == 'y':
-        asyncio.run(purchase_video(video_id, wallet_name, wallet_hotkey, wallet_path))
+        await purchase_video(video_id, wallet_name, wallet_hotkey, wallet_path)
     elif repurchase != 'n':
         print(f"{RED}Invalid input. Please enter 'y' or 'n'.{RESET}")
-        repurchase_input(video_id, wallet_name, wallet_hotkey, wallet_path)
+        await repurchase_input(video_id, wallet_name, wallet_hotkey, wallet_path)
 
 def display_saved_orders(for_verification=False):
     purchases_file = os.path.expanduser("~/.omega/focus_videos.json")
