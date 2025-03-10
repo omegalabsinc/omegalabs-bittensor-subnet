@@ -201,10 +201,9 @@ async def check_and_purchase_videos():
                         print(f"Failed to purchase video {video['video_id']}")
                 else:
                     print(f"Insufficient balance for video {video['video_id']} (cost: {video_cost} TAO)")
-            
+            break
             print(f"Waiting {CHECK_INTERVAL} seconds before next check...")
             await asyncio.sleep(CHECK_INTERVAL)
-            
         except Exception as e:
             print(f"Error in main loop: {str(e)}")
             await asyncio.sleep(CHECK_INTERVAL)
@@ -212,6 +211,16 @@ async def check_and_purchase_videos():
 if __name__ == "__main__":
     try:
         asyncio.run(check_and_purchase_videos())
+        # async def main():
+        #     miner_hotkey, miner_hotkey_signature = get_auth_headers(wallet)
+        #     return await verify_purchase(
+        #         "p7sNMdfsv",
+        #         miner_hotkey,
+        #         "0xa6798908e3e8d895a327b1226ba9345d7234268c6b175ef2f7012208916bbbfb",
+        #         miner_hotkey_signature
+        #     )
+        
+        # print(asyncio.run(main()))
     except KeyboardInterrupt:
         print("\nScript interrupted by user. Exiting.")
         sys.exit(0)
