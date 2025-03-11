@@ -317,7 +317,6 @@ pm2 start neurons/validator.py --name omega-validator -- \
 ## Contributing
 
 We believe in the power of community and collaboration. Join us in building the world's largest decentralized multimodal dataset for AGI research! Whether you're a researcher, developer, or data enthusiast, there are many ways to contribute:
-
 - Submit high-quality videos and annotations
 - Develop and improve data validation and quality control mechanisms
 - Train and fine-tune models on the dataset
