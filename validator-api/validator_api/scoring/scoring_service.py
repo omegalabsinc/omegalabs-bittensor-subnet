@@ -502,7 +502,7 @@ class FocusScoringService:
         )
 
     async def score_video(
-        self, video_id: str, focusing_task: str, focusing_description: str
+        self, video_id: str, focusing_task: str, focusing_description: str, bypass_checks: bool = False
     ):
         """
         Generates a comprehensive score for a video submission based on multiple factors.
@@ -573,7 +573,7 @@ class FocusScoringService:
         if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
             raise VideoUniquenessError("Video uniqueness score is too low.")
 
-        if self.legitimacy_checks:
+        if not bypass_checks and self.legitimacy_checks:
             check_results = await asyncio.gather(
                 *(
                     check.passes_check(video_id, video_description)

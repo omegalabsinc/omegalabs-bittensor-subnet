@@ -79,7 +79,7 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
             .filter(
                 FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
                 FocusVideoRecord.deleted_at.is_(None),
-                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+                # FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
                 FocusVideoRecord.task_type == TaskType.MARKETPLACE.value
             )
             .order_by(FocusVideoRecord.updated_at.asc())
@@ -88,6 +88,7 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
 
         result = await db.execute(marketplace_query)
         marketplace_items = result.scalars().all()
+        print(f"Marketplace items: {len(marketplace_items)}")
         
         # If we have less than 10 marketplace videos, get other videos to fill the remainder
         if len(marketplace_items) < 10:
@@ -381,9 +382,10 @@ async def set_focus_video_score(
     video_record.embeddings = json.loads(embeddings.model_dump_json())
     video_record.processing_state = FocusVideoStateInternal.READY.value
     video_record.updated_at = datetime.utcnow()
-    video_record.task_type = (
-        TaskType.BOOSTED.value if score_details.boosted_multiplier > 1.0 else TaskType.USER.value
-    )
+    if video_record.task_type != TaskType.MARKETPLACE.value:
+        video_record.task_type = (
+            TaskType.BOOSTED.value if score_details.boosted_multiplier > 1.0 else TaskType.USER.value
+        )
     db.add(video_record)
     await db.commit()
 

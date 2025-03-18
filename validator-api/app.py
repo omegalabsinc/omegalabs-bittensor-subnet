@@ -297,7 +297,22 @@ async def run_focus_scoring(
             video_record = result.scalar_one_or_none()
             if video_record is None:
                 raise HTTPException(404, detail="Focus video not found")
+
+        score_details, embeddings = await focus_scoring_service.score_video(
+            video_id, focusing_task, focusing_description,
+            bypass_checks=video_record.task_type == TaskType.MARKETPLACE.value
+        )
+        print(f"Score for focus video <{video_id}>: {score_details.final_score}")
+        MIN_FINAL_SCORE = 0.1
+        # todo: measure and tune these
+        # MIN_TASK_UNIQUENESS_SCORE = 0
+        # MIN_VIDEO_UNIQUENESS_SCORE = 0
+        # get the db after scoring the video so it's not open for too long
+        async with get_db_context() as db:
             if video_record.task_type == TaskType.MARKETPLACE.value:
+                # if the video is a marketplace video, we need the AI feedback to set the score
+                # and then we need to update the video record to pending human review
+                await set_focus_video_score(db, video_id, score_details, embeddings)
                 update_stmt = (
                     update(FocusVideoRecord)
                     .where(FocusVideoRecord.video_id == video_id)
@@ -308,17 +323,6 @@ async def run_focus_scoring(
                 await db.execute(update_stmt)
                 await db.commit()
                 return {"success": True}
-
-        score_details, embeddings = await focus_scoring_service.score_video(
-            video_id, focusing_task, focusing_description
-        )
-        print(f"Score for focus video <{video_id}>: {score_details.final_score}")
-        MIN_FINAL_SCORE = 0.1
-        # todo: measure and tune these
-        # MIN_TASK_UNIQUENESS_SCORE = 0
-        # MIN_VIDEO_UNIQUENESS_SCORE = 0
-        # get the db after scoring the video so it's not open for too long
-        async with get_db_context() as db:
             if score_details.final_score < MIN_FINAL_SCORE:
                 rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
