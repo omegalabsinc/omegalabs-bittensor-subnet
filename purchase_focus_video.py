@@ -128,8 +128,8 @@ def display_videos(videos_data):
     table_data = []
     for idx, video in enumerate(videos_data, 1):
         # Convert created_at to a more readable format
-        created_at = datetime.fromisoformat(video["created_at"].replace("Z", "+00:00"))
-        formatted_date = created_at.strftime("%Y-%m-%d %H:%M:%S")
+        # created_at = datetime.fromisoformat(video["created_at"].replace("Z", "+00:00"))
+        # formatted_date = created_at.strftime("%Y-%m-%d %H:%M:%S")
 
         table_data.append(
             [
@@ -259,11 +259,11 @@ def get_wallet(wallet_name=None, wallet_hotkey=None, wallet_path=None):
         )
 
     wallet = btcli_wallet(name=name, hotkey=hotkey_name, path=path)
-    try:
-        hotkey = wallet.get_hotkey()
-    except Exception as e:
-        print(f"{RED}Error loading hotkey: {e} {RESET}")
-        return
+    # try:
+    #     hotkey = wallet.get_hotkey()
+    # except Exception as e:
+    #     print(f"{RED}Error loading hotkey: {e} {RESET}")
+    #     return
     return wallet, name, hotkey_name, path
 
 
@@ -433,7 +433,7 @@ def select_order_for_verification():
     while True:
         if purchases:
             print(
-                f"*** NOTE: A purchase is finalized when the purchase state is 'verified'. ***"
+                "*** NOTE: A purchase is finalized when the purchase state is 'verified'. ***"
             )
             choice = input(
                 f"{CYAN}Enter the number of the order to verify, 'm' for manual input, or 'n' to cancel: {RESET}"

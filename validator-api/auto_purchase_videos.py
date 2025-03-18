@@ -1,4 +1,3 @@
-import argparse
 import json
 import os
 import sys
@@ -130,7 +129,7 @@ async def purchase_video(video_id, wallet):
             )
             if not verify_result:
                 print(
-                    f"Error verifying purchase after transfer. Please verify manually."
+                    "Error verifying purchase after transfer. Please verify manually."
                 )
             return True
         else:
@@ -157,7 +156,7 @@ async def verify_purchase(video_id, miner_hotkey, block_hash, miner_hotkey_signa
         )
 
         if verify_response.status_code == 200:
-            print(f"Purchase verified successfully!")
+            print("Purchase verified successfully!")
             save_purchase_info(video_id, miner_hotkey, block_hash, "verified")
             return True
         return False
