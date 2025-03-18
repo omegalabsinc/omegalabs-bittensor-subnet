@@ -299,8 +299,10 @@ async def run_focus_scoring(
                 raise HTTPException(404, detail="Focus video not found")
 
         score_details, embeddings = await focus_scoring_service.score_video(
-            video_id, focusing_task, focusing_description,
-            bypass_checks=video_record.task_type == TaskType.MARKETPLACE.value
+            video_id,
+            focusing_task,
+            focusing_description,
+            bypass_checks=video_record.task_type == TaskType.MARKETPLACE.value,
         )
         print(f"Score for focus video <{video_id}>: {score_details.final_score}")
         MIN_FINAL_SCORE = 0.1

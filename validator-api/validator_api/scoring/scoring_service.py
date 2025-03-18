@@ -502,7 +502,11 @@ class FocusScoringService:
         )
 
     async def score_video(
-        self, video_id: str, focusing_task: str, focusing_description: str, bypass_checks: bool = False
+        self,
+        video_id: str,
+        focusing_task: str,
+        focusing_description: str,
+        bypass_checks: bool = False,
     ):
         """
         Generates a comprehensive score for a video submission based on multiple factors.
