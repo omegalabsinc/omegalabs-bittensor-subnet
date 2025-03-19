@@ -541,16 +541,16 @@ class FocusScoringService:
             boosted_multiplier = 1.0
 
         video_duration_seconds = await get_video_duration_seconds(video_id)
+        if not bypass_checks:
+            if video_duration_seconds < TWO_MINUTES:
+                raise VideoTooShortError(
+                    f"Video duration is too short: {video_duration_seconds} seconds"
+                )
 
-        if video_duration_seconds < TWO_MINUTES:
-            raise VideoTooShortError(
-                f"Video duration is too short: {video_duration_seconds} seconds"
-            )
-
-        if video_duration_seconds > NINETY_MINUTES:
-            raise VideoTooLongError(
-                f"Video duration is too long: {video_duration_seconds} seconds"
-            )
+            if video_duration_seconds > NINETY_MINUTES:
+                raise VideoTooLongError(
+                    f"Video duration is too long: {video_duration_seconds} seconds"
+                )
 
         task_overview = f"# {focusing_task}\n\n{focusing_description}"
 
@@ -573,23 +573,24 @@ class FocusScoringService:
             ),  # uses gemini to get detailed description
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
+        
+        if not bypass_checks:
+            if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
+                raise VideoUniquenessError("Video uniqueness score is too low.")
 
-        if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
-            raise VideoUniquenessError("Video uniqueness score is too low.")
-
-        if not bypass_checks and self.legitimacy_checks:
-            check_results = await asyncio.gather(
-                *(
-                    check.passes_check(video_id, video_description)
-                    for check in self.legitimacy_checks
-                )
-            )
-
-            for passed, failure_reason in check_results:
-                if not passed:
-                    raise LegitimacyCheckError(
-                        f"Video failed legitimacy check: {failure_reason}. If you think this is a mistake, please contact us through the app or the OMEGA Focus Discord server."
+            if self.legitimacy_checks:
+                check_results = await asyncio.gather(
+                    *(
+                        check.passes_check(video_id, video_description)
+                        for check in self.legitimacy_checks
                     )
+                )
+
+                for passed, failure_reason in check_results:
+                    if not passed:
+                        raise LegitimacyCheckError(
+                            f"Video failed legitimacy check: {failure_reason}. If you think this is a mistake, please contact us through the app or the OMEGA Focus Discord server."
+                        )
 
         completion_score_breakdown = await _get_completion_score_breakdown(
             task_overview,
