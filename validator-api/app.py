@@ -737,6 +737,7 @@ async def main():
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
         print(f"starting get_focus_score | video_id <{video_id}>")
+
         async def run_focus_scoring_task(
             video_id: str, focusing_task: str, focusing_description: str
         ):
