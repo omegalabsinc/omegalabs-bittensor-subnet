@@ -337,6 +337,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                 )
             else:
                 await set_focus_video_score(db, video_id, score_details, embeddings)
+        print(f"finished get_focus_score | video_id <{video_id}>")
         return {"success": True}
 
     except Exception as e:
@@ -735,6 +736,7 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
+        print(f"starting get_focus_score | video_id <{video_id}>")
         async def run_focus_scoring_task(
             video_id: str, focusing_task: str, focusing_description: str
         ):

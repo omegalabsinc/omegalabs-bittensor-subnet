@@ -398,7 +398,7 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
             #     print(f"  - ID: {match.get('id', 'N/A')}")
             #     print(f"  - Metadata: {match.get('metadata', {})}")
         else:
-            print("No pinecone matches, returning 0")
+            # print("No pinecone matches, returning 0")
             similarity_score = 0
         similarity_score = max(0.0, min(similarity_score, 1.0))
         return 1.0 - similarity_score
@@ -573,7 +573,7 @@ class FocusScoringService:
             ),  # uses gemini to get detailed description
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
-        
+
         if not bypass_checks:
             if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
                 raise VideoUniquenessError("Video uniqueness score is too low.")
