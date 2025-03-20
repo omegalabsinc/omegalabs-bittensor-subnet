@@ -573,7 +573,7 @@ class FocusScoringService:
             ),  # uses gemini to get detailed description
             self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
         )
-        
+
         if not bypass_checks:
             if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
                 raise VideoUniquenessError("Video uniqueness score is too low.")
