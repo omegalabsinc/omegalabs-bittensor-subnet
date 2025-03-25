@@ -99,7 +99,7 @@ from sqlalchemy import select, update
 print("IMPORT_SCORE:", IMPORT_SCORE)
 
 if IMPORT_SCORE is not False:
-    from validator_api import score
+    import validator_api.validator_api.score as score
 else:
     # remove cuda error on mac
     score = None
