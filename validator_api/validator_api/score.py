@@ -15,8 +15,7 @@ from validator_api.validator_api import config
 from validator_api.validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
 
 
-PINECONE_INDEX = Pinecone(
-    api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
+PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
 PINECONE_AUDIO_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(
     config.PINECONE_AUDIO_INDEX
 )
@@ -32,14 +31,11 @@ async def query_pinecone(vector: List[float]) -> float:
         PINECONE_INDEX.query,
         vector=vector,
         top_k=1,
-        filter={
-            "modality_type": {"$eq": VIDEO_TYPE},
-        },
     )
     if len(response["matches"]) > 0:
         return 1 - response["matches"][0]["score"]
     else:
-        # print("No pinecone matches, returning 0")
+        print("No pinecone matches, returning 0")
         return 0
 
 
@@ -59,7 +55,7 @@ def compute_novelty_score_among_batch(emb: Embeddings) -> List[float]:
     novelty_scores = []
     for i in range(num_videos - 1):
         similarity_score = F.cosine_similarity(
-            video_tensor[[i]], video_tensor[i + 1:]
+            video_tensor[[i]], video_tensor[i + 1 :]
         ).max()
         novelty_scores.append(1 - similarity_score.item())
     novelty_scores.append(1.0)  # last video is 100% novel
@@ -87,8 +83,7 @@ async def compute_novelty_score(embeddings: Embeddings) -> Tuple[float, List[boo
             local_novelty_scores, global_novelty_scores
         )
     ]
-    is_too_similar = [
-        score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
+    is_too_similar = [score < DIFFERENCE_THRESHOLD for score in true_novelty_scores]
     novelty_score = sum(
         [
             score
@@ -156,8 +151,7 @@ async def upload_video_metadata(
     embeddings = Embeddings(
         video=torch.stack([torch.tensor(v.video_emb) for v in metadata]),
         audio=torch.stack([torch.tensor(v.audio_emb) for v in metadata]),
-        description=torch.stack(
-            [torch.tensor(v.description_emb) for v in metadata]),
+        description=torch.stack([torch.tensor(v.description_emb) for v in metadata]),
     )
     # upload embeddings and metadata to pinecone
     video_ids = await asyncio.to_thread(upload_to_pinecone, embeddings, metadata)

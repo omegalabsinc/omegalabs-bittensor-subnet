@@ -54,7 +54,7 @@ from validator_api.validator_api.database.models.scoring import (
 from validator_api.validator_api.database.models.task import TaskRecordPG
 from validator_api.validator_api.scoring import focus_scoring_prompts
 from validator_api.validator_api.scoring.legitimacy_checks import ChatOnlyCheck
-from validator_api.validator_api.scoring.deepseek_chat import query_llm
+from validator_api.validator_api.scoring.query_llm import query_llm
 from validator_api.validator_api.utils import run_async, run_with_retries
 from vertexai.generative_models import Part
 from vertexai.preview.generative_models import (
@@ -158,7 +158,7 @@ async def _make_gemini_request(
     Returns:
         An instance of OutputClassSchema containing the parsed model response
     """
-    model_name = "gemini-1.5-pro-001"
+    model_name = "gemini-2.0-flash"
     # print(f"Video text annotation is using model: {model_name}")
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
