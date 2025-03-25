@@ -9,20 +9,20 @@ import asyncio
 import bittensor
 from sqlalchemy.sql import select
 
-from validator_api.config import NETWORK, NETUID
-from validator_api.database import get_db_context
-from validator_api.database.models.focus_video_record import (
+from validator_api.validator_api.config import NETWORK, NETUID
+from validator_api.validator_api.database import get_db_context
+from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
     FocusVideoInternal,
     FocusVideoStateInternal,
     TaskType,
 )
-from validator_api.database.models.user import UserRecord
-from validator_api.utils.marketplace import (
+from validator_api.validator_api.database.models.user import UserRecord
+from validator_api.validator_api.utils.marketplace import (
     get_variable_reward_pool_alpha,
 )
 from pydantic import BaseModel
-from validator_api.scoring.scoring_service import VideoScore, FocusVideoEmbeddings
+from validator_api.validator_api.scoring.scoring_service import VideoScore, FocusVideoEmbeddings
 
 
 MIN_REWARD_TAO = 0.001

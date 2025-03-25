@@ -6,7 +6,7 @@ from sqlalchemy.types import TypeDecorator, LargeBinary
 from sqlalchemy.engine.interfaces import Dialect
 from pydantic import BaseModel
 
-from validator_api.config import ENCRYPTION_KEY
+from validator_api.validator_api.config import ENCRYPTION_KEY
 
 
 fernet = Fernet(ENCRYPTION_KEY)

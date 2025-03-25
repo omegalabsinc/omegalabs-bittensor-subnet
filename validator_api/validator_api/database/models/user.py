@@ -3,8 +3,8 @@ from datetime import datetime
 from sqlalchemy import Column, String, Float, DateTime
 from pydantic import BaseModel
 
-from validator_api.config import DB_STRING_LENGTH
-from validator_api.database import Base
+from validator_api.validator_api.config import DB_STRING_LENGTH
+from validator_api.validator_api.database import Base
 
 
 class UserRecord(Base):

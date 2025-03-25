@@ -6,7 +6,7 @@ import asyncio
 
 # from validator_api.utils import run_with_retries, run_async
 from typing import List
-from validator_api.config import NETWORK
+from validator_api.validator_api.config import NETWORK
 
 
 # Global cache for TAO/USD rate

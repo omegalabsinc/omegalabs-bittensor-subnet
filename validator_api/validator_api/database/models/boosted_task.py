@@ -1,5 +1,5 @@
 from sqlalchemy import Column, String, Float, Integer, DateTime, Boolean
-from validator_api.database import Base
+from validator_api.validator_api.database import Base
 from datetime import datetime
 
 

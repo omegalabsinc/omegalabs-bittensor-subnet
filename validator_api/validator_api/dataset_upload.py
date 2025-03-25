@@ -12,7 +12,7 @@ import base64
 
 from omega.protocol import VideoMetadata, AudioMetadata
 
-from validator_api import config
+from validator_api.validator_api import config
 
 
 HF_API = HfApi(token=config.HF_TOKEN)

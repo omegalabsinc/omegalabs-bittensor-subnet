@@ -36,10 +36,10 @@ from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
 from substrateinterface import Keypair
-from validator_api.check_blocking import detect_blocking
-from validator_api.communex._common import get_node_url
-from validator_api.communex.client import CommuneClient
-from validator_api.config import (
+from validator_api.validator_api.check_blocking import detect_blocking
+from validator_api.validator_api.communex._common import get_node_url
+from validator_api.validator_api.communex.client import CommuneClient
+from validator_api.validator_api.config import (
     API_KEY_NAME,
     API_KEYS,
     COMMUNE_NETUID,
@@ -58,12 +58,12 @@ from validator_api.config import (
     PROXY_LIST,
     SENTRY_DSN,
 )
-from validator_api.cron.confirm_purchase import (
+from validator_api.validator_api.cron.confirm_purchase import (
     confirm_transfer,
     confirm_video_purchased,
 )
-from validator_api.database import get_db, get_db_context
-from validator_api.database.crud.focusvideo import (
+from validator_api.validator_api.database import get_db, get_db_context
+from validator_api.validator_api.database.crud.focusvideo import (
     MinerPurchaseStats,
     TaskType,
     FocusVideoCache,
@@ -72,26 +72,26 @@ from validator_api.database.crud.focusvideo import (
     mark_video_rejected,
     set_focus_video_score,
 )
-from validator_api.database.models.focus_video_record import (
+from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
     FocusVideoStateExternal,
 )
-from validator_api.dataset_upload import audio_dataset_uploader, video_dataset_uploader
-from validator_api.limiter import limiter
-from validator_api.scoring.scoring_service import (
+from validator_api.validator_api.dataset_upload import audio_dataset_uploader, video_dataset_uploader
+from validator_api.validator_api.limiter import limiter
+from validator_api.validator_api.scoring.scoring_service import (
     FocusScoringService,
     LegitimacyCheckError,
     VideoTooLongError,
     VideoTooShortError,
     VideoUniquenessError,
 )
-from validator_api.utils.marketplace import (
+from validator_api.validator_api.utils.marketplace import (
     TASK_TYPE_MAP,
     get_max_focus_alpha_per_day,
     get_variable_reward_pool_alpha,
     get_fixed_reward_pool_alpha,
 )
-from validator_api.database.models.miner_bans import miner_banned_until
+from validator_api.validator_api.database.models.miner_bans import miner_banned_until
 
 from omega.protocol import VideoMetadata
 from sqlalchemy import select, update
@@ -384,8 +384,7 @@ async def main():
         await shutdown_event()
 
     app = FastAPI(lifespan=lifespan)
-    # Mount the static directory to serve static files
-    app.mount("/static", StaticFiles(directory="validator-api/static"), name="static")
+    app.mount("/static", StaticFiles(directory="validator_api/static"), name="static")
 
     subtensor = bittensor.subtensor(network=NETWORK)
     metagraph: bittensor.metagraph = subtensor.metagraph(NETUID)
@@ -734,9 +733,9 @@ async def main():
         video_id: Annotated[str, Body()] = None,
         focusing_task: Annotated[str, Body()] = None,
         focusing_description: Annotated[str, Body()] = None,
-        background_tasks: BackgroundTasks = BackgroundTasks(),
+        background_tasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
-        print(f"starting get_focus_score | video_id <{video_id}>")
+        print(f"<CBT> starting get_focus_score | video_id <{video_id}>")
 
         async def run_focus_scoring_task(
             video_id: str, focusing_task: str, focusing_description: str
