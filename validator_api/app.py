@@ -76,7 +76,10 @@ from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
     FocusVideoStateExternal,
 )
-from validator_api.validator_api.dataset_upload import audio_dataset_uploader, video_dataset_uploader
+from validator_api.validator_api.dataset_upload import (
+    audio_dataset_uploader,
+    video_dataset_uploader,
+)
 from validator_api.validator_api.limiter import limiter
 from validator_api.validator_api.scoring.scoring_service import (
     FocusScoringService,
@@ -733,7 +736,7 @@ async def main():
         video_id: Annotated[str, Body()] = None,
         focusing_task: Annotated[str, Body()] = None,
         focusing_description: Annotated[str, Body()] = None,
-        background_tasks = BackgroundTasks(),
+        background_tasks=BackgroundTasks(),
     ) -> Dict[str, bool]:
         print(f"<CBT> starting get_focus_score | video_id <{video_id}>")
 

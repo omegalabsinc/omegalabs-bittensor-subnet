@@ -11,8 +11,15 @@ from substrateinterface import Keypair  # type: ignore
 from substrateinterface import SubstrateInterface  # type: ignore
 from substrateinterface.storage import StorageKey  # type: ignore
 
-from validator_api.validator_api.communex.errors import ChainTransactionError, NetworkQueryError
-from validator_api.validator_api.communex.types import NetworkParams, Ss58Address, SubnetParams
+from validator_api.validator_api.communex.errors import (
+    ChainTransactionError,
+    NetworkQueryError,
+)
+from validator_api.validator_api.communex.types import (
+    NetworkParams,
+    Ss58Address,
+    SubnetParams,
+)
 
 # TODO: InsufficientBalanceError, MismatchedLengthError etc
 

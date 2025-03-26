@@ -3,7 +3,9 @@ from typing import Tuple, Optional
 from pydantic import BaseModel, Field
 from sqlalchemy import select
 from validator_api.validator_api.database import get_db_context
-from validator_api.validator_api.database.models.focus_video_record import FocusVideoRecord
+from validator_api.validator_api.database.models.focus_video_record import (
+    FocusVideoRecord,
+)
 from validator_api.validator_api.scoring.scoring_service import DetailedVideoDescription
 from validator_api.validator_api.scoring.deepseek_chat import query_llm
 

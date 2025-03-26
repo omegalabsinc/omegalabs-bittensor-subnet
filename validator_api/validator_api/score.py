@@ -12,7 +12,10 @@ from omega.protocol import VideoMetadata, AudioMetadata
 from omega.constants import DIFFERENCE_THRESHOLD
 from omega.imagebind_wrapper import Embeddings, run_async
 from validator_api.validator_api import config
-from validator_api.validator_api.dataset_upload import video_dataset_uploader, audio_dataset_uploader
+from validator_api.validator_api.dataset_upload import (
+    video_dataset_uploader,
+    audio_dataset_uploader,
+)
 
 
 PINECONE_INDEX = Pinecone(api_key=config.PINECONE_API_KEY).Index(config.PINECONE_INDEX)
