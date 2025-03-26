@@ -58,7 +58,7 @@ from validator_api.validator_api.config import (
     PROXY_LIST,
     SENTRY_DSN,
 )
-from validator_api.validator_api.cron.confirm_purchase import (
+from confirm_purchase import (
     confirm_transfer,
     confirm_video_purchased,
 )
@@ -81,13 +81,6 @@ from validator_api.validator_api.dataset_upload import (
     video_dataset_uploader,
 )
 from validator_api.validator_api.limiter import limiter
-from validator_api.validator_api.scoring.scoring_service import (
-    FocusScoringService,
-    LegitimacyCheckError,
-    VideoTooLongError,
-    VideoTooShortError,
-    VideoUniquenessError,
-)
 from validator_api.validator_api.utils.marketplace import (
     TASK_TYPE_MAP,
     get_max_focus_alpha_per_day,
@@ -129,8 +122,6 @@ api_key_header = APIKeyHeader(name=API_KEY_NAME, auto_error=False)
 focus_api_key_header = APIKeyHeader(name="FOCUS_API_KEY", auto_error=False)
 
 security = HTTPBasic()
-
-focus_scoring_service = FocusScoringService()
 
 print("SENTRY_DSN:", SENTRY_DSN)
 sentry_sdk.init(
@@ -281,95 +272,6 @@ def update_commune_keys(commune_client, commune_keys):
     except Exception as err:
         print("Error during commune keys update", str(err))
         return commune_keys
-
-
-async def run_focus_scoring(
-    video_id: Annotated[str, Body()],
-    focusing_task: Annotated[str, Body()],
-    focusing_description: Annotated[str, Body()],
-) -> Dict[str, Any]:
-    score_details = None
-    embeddings = None
-    try:
-        async with get_db_context() as db:
-            query = select(FocusVideoRecord).filter(
-                FocusVideoRecord.video_id == video_id,
-                FocusVideoRecord.deleted_at.is_(None),
-            )
-            result = await db.execute(query)
-            video_record = result.scalar_one_or_none()
-            if video_record is None:
-                raise HTTPException(404, detail="Focus video not found")
-
-        score_details, embeddings = await focus_scoring_service.score_video(
-            video_id,
-            focusing_task,
-            focusing_description,
-            bypass_checks=video_record.task_type == TaskType.MARKETPLACE.value,
-        )
-        print(f"Score for focus video <{video_id}>: {score_details.final_score}")
-        MIN_FINAL_SCORE = 0.1
-        # todo: measure and tune these
-        # MIN_TASK_UNIQUENESS_SCORE = 0
-        # MIN_VIDEO_UNIQUENESS_SCORE = 0
-        # get the db after scoring the video so it's not open for too long
-        async with get_db_context() as db:
-            if video_record.task_type == TaskType.MARKETPLACE.value:
-                # if the video is a marketplace video, we need the AI feedback to set the score
-                # and then we need to update the video record to pending human review
-                await set_focus_video_score(db, video_id, score_details, embeddings)
-                update_stmt = (
-                    update(FocusVideoRecord)
-                    .where(FocusVideoRecord.video_id == video_id)
-                    .values(
-                        processing_state=FocusVideoStateExternal.PENDING_HUMAN_REVIEW.value
-                    )
-                )
-                await db.execute(update_stmt)
-                await db.commit()
-                return {"success": True}
-            if score_details.final_score < MIN_FINAL_SCORE:
-                rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
-Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
-                await mark_video_rejected(
-                    db,
-                    video_id,
-                    rejection_reason,
-                    score_details=score_details,
-                    embeddings=embeddings,
-                )
-            else:
-                await set_focus_video_score(db, video_id, score_details, embeddings)
-        print(f"finished get_focus_score | video_id <{video_id}>")
-        return {"success": True}
-
-    except Exception as e:
-        exception_string = traceback.format_exc()
-        error_string = f"{str(e)}\n{exception_string}"
-        print(f"Error scoring focus video <{video_id}>: {error_string}")
-
-        # Determine appropriate rejection reason based on error type
-        if isinstance(e, VideoTooShortError):
-            rejection_reason = "Video is too short. Please ensure the video is at least 10 seconds long."
-        elif isinstance(e, VideoTooLongError):
-            rejection_reason = "Video is too long. Please ensure the video is less than 10 minutes long."
-        elif isinstance(e, VideoUniquenessError):
-            rejection_reason = "Task recording is not unique. If you believe this is an error, please contact a team member."
-        elif isinstance(e, LegitimacyCheckError):
-            rejection_reason = "An anomaly was detected in the video. If you believe this is an error, please contact a team member via the OMEGA Focus Discord channel."
-        else:
-            rejection_reason = "Error scoring video"
-
-        async with get_db_context() as db:
-            await mark_video_rejected(
-                db,
-                video_id,
-                rejection_reason,
-                score_details=score_details,
-                embeddings=embeddings,
-                exception_string=exception_string,
-            )
-        return {"success": False, "error": error_string}
 
 
 async def main():
@@ -736,18 +638,21 @@ async def main():
         video_id: Annotated[str, Body()] = None,
         focusing_task: Annotated[str, Body()] = None,
         focusing_description: Annotated[str, Body()] = None,
-        background_tasks=BackgroundTasks(),
     ) -> Dict[str, bool]:
         print(f"<CBT> starting get_focus_score | video_id <{video_id}>")
 
-        async def run_focus_scoring_task(
-            video_id: str, focusing_task: str, focusing_description: str
-        ):
-            await run_focus_scoring(video_id, focusing_task, focusing_description)
+        # async def run_focus_scoring_task(
+        #     video_id: str, focusing_task: str, focusing_description: str
+        # ):
+        #     # await run_focus_scoring(video_id, focusing_task, focusing_description)
+        #     pass
 
-        background_tasks.add_task(
-            run_focus_scoring_task, video_id, focusing_task, focusing_description
-        )
+        # background_tasks.add_task(
+        #     run_focus_scoring_task, video_id, focusing_task, focusing_description
+        # )
+        
+        # TODO: move this to celery task
+    
         return {"success": True}
 
     @app.get("/api/focus/get_list")
@@ -762,7 +667,6 @@ async def main():
     @limiter.limit("2/minute")
     async def purchase_video(
         request: Request,
-        background_tasks: BackgroundTasks,
         video_id: Annotated[str, Body(embed=True)],
         hotkey: Annotated[str, Depends(get_hotkey)],
         db: AsyncSession = Depends(get_db),
@@ -793,10 +697,12 @@ async def main():
             )  # run with_lock True
 
             # Create a standalone async function for the background task
-            async def run_confirm_video_purchased(video_id: str):
-                await confirm_video_purchased(video_id, True)
+            # async def run_confirm_video_purchased(video_id: str):
+            #     await confirm_video_purchased(video_id, True)
 
-            background_tasks.add_task(run_confirm_video_purchased, video_id)
+            # background_tasks.add_task(run_confirm_video_purchased, video_id)
+            
+            # TODO: move this to celery task
 
             return {
                 "status": "success",
@@ -824,25 +730,25 @@ async def main():
         video_id: Annotated[str, Body()],
         block_hash: Annotated[str, Body()],
         db: AsyncSession = Depends(get_db),
-        background_tasks: BackgroundTasks = BackgroundTasks(),
     ):
-        async def run_stake(video_id):
-            async with aiohttp.ClientSession() as session:
-                async with session.post(
-                    f"{FOCUS_API_URL}/auth/stake",
-                    json={"video_id": video_id},
-                    headers={"FOCUS_API_KEY": FOCUS_API_KEYS[0]},
-                ) as response:
-                    res = await response.json()
-                    print(f"Got res={res} from {FOCUS_API_URL}/auth/stake")
-                    return res
+        # async def run_stake(video_id):
+        #     async with aiohttp.ClientSession() as session:
+        #         async with session.post(
+        #             f"{FOCUS_API_URL}/auth/stake",
+        #             json={"video_id": video_id},
+        #             headers={"FOCUS_API_KEY": FOCUS_API_KEYS[0]},
+        #         ) as response:
+        #             res = await response.json()
+        #             print(f"Got res={res} from {FOCUS_API_URL}/auth/stake")
+        #             return res
 
         video_owner_coldkey = await get_video_owner_coldkey(db, video_id)
         result = await confirm_transfer(
             db, video_owner_coldkey, video_id, miner_hotkey, block_hash
         )
         if result:
-            background_tasks.add_task(run_stake, video_id)
+            # background_tasks.add_task(run_stake, video_id)
+            # TODO: move this to celery task
             return {
                 "status": "success",
                 "message": "Video purchase verification was successful",
