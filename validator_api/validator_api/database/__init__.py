@@ -1,4 +1,4 @@
-from validator_api import config
+from validator_api.validator_api import config
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
 from sqlalchemy.schema import MetaData
 from sqlalchemy.ext.declarative import declarative_base

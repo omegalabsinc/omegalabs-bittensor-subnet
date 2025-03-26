@@ -27,20 +27,20 @@ from pinecone import Pinecone
 from pydantic import BaseModel, ValidationError
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from validator_api.config import (
+from validator_api.validator_api.config import (
     GOOGLE_CLOUD_BUCKET_NAME,
     GOOGLE_LOCATION,
     GOOGLE_PROJECT_ID,
     OPENAI_API_KEY,
     PINECONE_API_KEY,
 )
-from validator_api.database import get_db_context
-from validator_api.database.models.boosted_task import BoostedTask
-from validator_api.database.models.focus_video_record import (
+from validator_api.validator_api.database import get_db_context
+from validator_api.validator_api.database.models.boosted_task import BoostedTask
+from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoInternal,
     FocusVideoRecord,
 )
-from validator_api.database.models.scoring import (
+from validator_api.validator_api.database.models.scoring import (
     CompletionScore,
     CompletionScoreWithoutRange,
     DetailedVideoDescription,
@@ -51,11 +51,11 @@ from validator_api.database.models.scoring import (
     VideoTooShortError,
     VideoUniquenessError,
 )
-from validator_api.database.models.task import TaskRecordPG
-from validator_api.scoring import focus_scoring_prompts
-from validator_api.scoring.legitimacy_checks import ChatOnlyCheck
-from validator_api.scoring.query_llm import query_llm
-from validator_api.utils import run_async, run_with_retries
+from validator_api.validator_api.database.models.task import TaskRecordPG
+from validator_api.validator_api.scoring import focus_scoring_prompts
+from validator_api.validator_api.scoring.legitimacy_checks import ChatOnlyCheck
+from validator_api.validator_api.scoring.query_llm import query_llm
+from validator_api.validator_api.utils import run_async, run_with_retries
 from vertexai.generative_models import Part
 from vertexai.preview.generative_models import (
     GenerationConfig,

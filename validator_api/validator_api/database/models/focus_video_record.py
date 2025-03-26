@@ -5,9 +5,9 @@ from typing import Optional
 from pydantic import BaseModel, ConfigDict
 from sqlalchemy import Column, String, DateTime, Float, Enum
 
-from validator_api.database import Base
+from validator_api.validator_api.database import Base
 from sqlalchemy.dialects.postgresql import JSONB
-from validator_api.config import DB_STRING_LENGTH
+from validator_api.validator_api.config import DB_STRING_LENGTH
 
 import enum
 

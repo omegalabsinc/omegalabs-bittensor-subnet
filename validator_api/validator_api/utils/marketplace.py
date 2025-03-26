@@ -1,17 +1,17 @@
 import time
 import requests
 import bittensor as bt
-from validator_api.config import (
+from validator_api.validator_api.config import (
     NETWORK,
     NETUID,
     FOCUS_REWARDS_PERCENT,
     FIXED_ALPHA_USD_ESTIMATE,
     BOOSTED_TASKS_PERCENTAGE,
 )
-from validator_api.utils import run_with_retries, run_async
-from validator_api.database.models.focus_video_record import TaskType
-from validator_api.database.crud.focusvideo import FocusVideoRecord
-from validator_api.database import get_db_context
+from validator_api.validator_api.utils import run_with_retries, run_async
+from validator_api.validator_api.database.models.focus_video_record import TaskType
+from validator_api.validator_api.database.crud.focusvideo import FocusVideoRecord
+from validator_api.validator_api.database import get_db_context
 from sqlalchemy import select, func
 from datetime import datetime, timedelta
 

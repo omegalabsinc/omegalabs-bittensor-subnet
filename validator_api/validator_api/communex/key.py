@@ -3,7 +3,7 @@ from typing import TypeGuard
 from substrateinterface import Keypair  # type: ignore
 from substrateinterface.utils import ss58  # type: ignore
 
-from validator_api.communex.types import Ss58Address
+from validator_api.validator_api.communex.types import Ss58Address
 
 
 def is_ss58_address(address: str, ss58_format: int = 42) -> TypeGuard[Ss58Address]:

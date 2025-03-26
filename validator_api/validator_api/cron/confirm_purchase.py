@@ -2,19 +2,19 @@ import asyncio
 from datetime import datetime
 
 import bittensor as bt
-import validator_api.config as config
+import validator_api.validator_api.config as config
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
-from validator_api.database import get_db_context
-from validator_api.database.models.focus_video_record import (
+from validator_api.validator_api.database import get_db_context
+from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
     FocusVideoStateInternal,
 )
-from validator_api.database.models.miner_bans import (
+from validator_api.validator_api.database.models.miner_bans import (
     increment_failed_purchases,
     reset_failed_purchases,
 )
-from validator_api.utils.wallet import get_transaction_from_block_hash
+from validator_api.validator_api.utils.wallet import get_transaction_from_block_hash
 
 
 async def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bool:

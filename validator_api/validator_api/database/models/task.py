@@ -1,6 +1,6 @@
 from sqlalchemy import Column, String, Boolean, Float, DateTime, Integer
-from validator_api.config import DB_STRING_LENGTH
-from validator_api.database import Base
+from validator_api.validator_api.config import DB_STRING_LENGTH
+from validator_api.validator_api.database import Base
 from datetime import datetime
 from pydantic import BaseModel, ConfigDict
 from typing import Optional
