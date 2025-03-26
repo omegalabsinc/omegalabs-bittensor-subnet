@@ -1035,7 +1035,7 @@ async def main():
 
     @app.get("/leaderboard")
     async def leaderboard():
-        return FileResponse("./validator-api/static/leaderboard.html")
+        return FileResponse("./validator_api/static/leaderboard.html")
 
     @app.get("/api/leaderboard-dataset-data")
     async def get_leaderboard_dataset_data():
@@ -1191,7 +1191,7 @@ async def main():
     @app.get("/dashboard")
     async def dashboard():
         print("dashboard()")
-        return FileResponse("validator-api/static/dashboard.html")
+        return FileResponse("validator_api/static/dashboard.html")
 
     ################ END DASHBOARD ################
 
