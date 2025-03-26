@@ -1,37 +1,28 @@
 import asyncio
 import json
-import psutil
 import os
 import random
 import time
-import traceback
 from datetime import datetime
 from tempfile import TemporaryDirectory
 from traceback import print_exception
-from typing import Annotated, Any, Dict, List, Optional
+from typing import Annotated, Dict, List, Optional
 
-import aiohttp
 import bittensor
 import huggingface_hub
 import mysql.connector
+import psutil
 import sentry_sdk
 import ulid
 import uvicorn
 from datasets import load_dataset
-from fastapi import (
-    BackgroundTasks,
-    Body,
-    Depends,
-    FastAPI,
-    HTTPException,
-    Path,
-    Request,
-    Security,
-)
+from fastapi import (Body, Depends, FastAPI, HTTPException, Path, Request,
+                     Security)
 from fastapi.responses import FileResponse
 from fastapi.security import HTTPBasic, HTTPBasicCredentials
 from fastapi.security.api_key import APIKeyHeader
 from fastapi.staticfiles import StaticFiles
+from omega.protocol import VideoMetadata
 from pydantic import BaseModel
 from sqlalchemy.ext.asyncio import AsyncSession
 from starlette import status
@@ -39,58 +30,29 @@ from substrateinterface import Keypair
 from validator_api.validator_api.check_blocking import detect_blocking
 from validator_api.validator_api.communex._common import get_node_url
 from validator_api.validator_api.communex.client import CommuneClient
-from validator_api.validator_api.config import (
-    API_KEY_NAME,
-    API_KEYS,
-    COMMUNE_NETUID,
-    COMMUNE_NETWORK,
-    DB_CONFIG,
-    ENABLE_COMMUNE,
-    FIXED_ALPHA_TAO_ESTIMATE,
-    FOCUS_API_KEYS,
-    FOCUS_API_URL,
-    FOCUS_REWARDS_PERCENT,
-    IMPORT_SCORE,
-    IS_PROD,
-    NETUID,
-    NETWORK,
-    PORT,
-    PROXY_LIST,
-    SENTRY_DSN,
-)
-from confirm_purchase import (
-    confirm_transfer,
-    confirm_video_purchased,
-)
-from validator_api.validator_api.database import get_db, get_db_context
+from validator_api.validator_api.config import (API_KEY_NAME, API_KEYS,
+                                                COMMUNE_NETUID,
+                                                COMMUNE_NETWORK, DB_CONFIG,
+                                                ENABLE_COMMUNE,
+                                                FIXED_ALPHA_TAO_ESTIMATE,
+                                                FOCUS_API_KEYS,
+                                                FOCUS_REWARDS_PERCENT,
+                                                IMPORT_SCORE, IS_PROD, NETUID,
+                                                NETWORK, PORT, PROXY_LIST,
+                                                SENTRY_DSN)
+from validator_api.validator_api.cron.confirm_purchase import confirm_transfer
+from validator_api.validator_api.database import get_db
 from validator_api.validator_api.database.crud.focusvideo import (
-    MinerPurchaseStats,
-    TaskType,
-    FocusVideoCache,
-    check_availability,
-    get_video_owner_coldkey,
-    mark_video_rejected,
-    set_focus_video_score,
-)
-from validator_api.validator_api.database.models.focus_video_record import (
-    FocusVideoRecord,
-    FocusVideoStateExternal,
-)
-from validator_api.validator_api.dataset_upload import (
-    audio_dataset_uploader,
-    video_dataset_uploader,
-)
+    FocusVideoCache, MinerPurchaseStats, TaskType, check_availability,
+    get_video_owner_coldkey)
+from validator_api.validator_api.database.models.miner_bans import \
+    miner_banned_until
+from validator_api.validator_api.dataset_upload import (audio_dataset_uploader,
+                                                        video_dataset_uploader)
 from validator_api.validator_api.limiter import limiter
 from validator_api.validator_api.utils.marketplace import (
-    TASK_TYPE_MAP,
-    get_max_focus_alpha_per_day,
-    get_variable_reward_pool_alpha,
-    get_fixed_reward_pool_alpha,
-)
-from validator_api.validator_api.database.models.miner_bans import miner_banned_until
-
-from omega.protocol import VideoMetadata
-from sqlalchemy import select, update
+    TASK_TYPE_MAP, get_fixed_reward_pool_alpha, get_max_focus_alpha_per_day,
+    get_variable_reward_pool_alpha)
 
 print("IMPORT_SCORE:", IMPORT_SCORE)
 
