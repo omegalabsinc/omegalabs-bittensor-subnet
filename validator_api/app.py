@@ -291,6 +291,7 @@ async def run_focus_scoring(
     score_details = None
     embeddings = None
     try:
+        print(f"run_focus_scoring started in the background | video_id <{video_id}>")
         async with get_db_context() as db:
             query = select(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
@@ -300,6 +301,7 @@ async def run_focus_scoring(
             video_record = result.scalar_one_or_none()
             if video_record is None:
                 raise HTTPException(404, detail="Focus video not found")
+        print(f"run_focus_scoring video details found | video_id <{video_id}>")
 
         score_details, embeddings = await focus_scoring_service.score_video(
             video_id,
@@ -307,7 +309,7 @@ async def run_focus_scoring(
             focusing_description,
             bypass_checks=video_record.task_type == TaskType.MARKETPLACE.value,
         )
-        print(f"Score for focus video <{video_id}>: {score_details.final_score}")
+        print(f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>")
         MIN_FINAL_SCORE = 0.1
         # todo: measure and tune these
         # MIN_TASK_UNIQUENESS_SCORE = 0
@@ -340,7 +342,7 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                 )
             else:
                 await set_focus_video_score(db, video_id, score_details, embeddings)
-        print(f"finished get_focus_score | video_id <{video_id}>")
+        print(f"run_focus_scoring updated video row in db | video_id <{video_id}>")
         return {"success": True}
 
     except Exception as e:
@@ -738,7 +740,7 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks=BackgroundTasks(),
     ) -> Dict[str, bool]:
-        print(f"<CBT> starting get_focus_score | video_id <{video_id}>")
+        print(f"get_focus_score starting scoring background task | video_id <{video_id}>")
 
         async def run_focus_scoring_task(
             video_id: str, focusing_task: str, focusing_description: str
