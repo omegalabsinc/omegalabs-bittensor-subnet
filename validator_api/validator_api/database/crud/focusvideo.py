@@ -71,9 +71,12 @@ class CachedValue:
 
 async def _fetch_available_focus() -> List[FocusVideoInternal]:
     """
-    Fetch 10 available focus videos for purchase
-    Prioritize marketplace videos (TaskType.MARKETPLACE) ordered by oldest updated_at
-    and then every other video ordered by oldest updated_at
+    Fetch available focus videos for purchase
+    If marketplace videos exist:
+        - Return all marketplace videos (ordered by oldest updated_at)
+        - Plus at most 1 other video type (ordered by oldest updated_at)
+    If no marketplace videos exist:
+        - Return up to 10 other videos (ordered by oldest updated_at)
     """
     async with get_db_context() as db:
         # First, get marketplace videos ordered by oldest first
@@ -94,30 +97,26 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
         marketplace_items = result.scalars().all()
         print(f"Marketplace items: {len(marketplace_items)}")
 
-        # If we have less than 10 marketplace videos, get other videos to fill the remainder
-        if len(marketplace_items) < 10:
-            remaining_slots = 10 - len(marketplace_items)
-            other_query = (
-                select(FocusVideoRecord)
-                .filter(
-                    FocusVideoRecord.processing_state
-                    == FocusVideoStateInternal.SUBMITTED.value,
-                    FocusVideoRecord.deleted_at.is_(None),
-                    FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-                    FocusVideoRecord.task_type != TaskType.MARKETPLACE.value,
-                )
-                .order_by(FocusVideoRecord.updated_at.asc())
-                .limit(remaining_slots)
+        # If we have marketplace videos, only get 1 other video
+        # If no marketplace videos, get up to 10 other videos
+        other_limit = 1 if marketplace_items else 10
+        
+        other_query = (
+            select(FocusVideoRecord)
+            .filter(
+                FocusVideoRecord.processing_state
+                == FocusVideoStateInternal.SUBMITTED.value,
+                FocusVideoRecord.deleted_at.is_(None),
+                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+                FocusVideoRecord.task_type != TaskType.MARKETPLACE.value,
             )
+            .order_by(FocusVideoRecord.updated_at.asc())
+            .limit(other_limit)
+        )
 
-            result = await db.execute(other_query)
-            other_items = result.scalars().all()
-
-            # Combine both lists
-            all_items = marketplace_items + other_items
-        else:
-            all_items = marketplace_items
-
+        result = await db.execute(other_query)
+        use_and_boosted_items = result.scalars().all()
+        all_items = marketplace_items + use_and_boosted_items
         return [FocusVideoInternal.model_validate(record) for record in all_items]
 
 
