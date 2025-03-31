@@ -1,5 +1,5 @@
-bittensor[torch]==9.2.0
-bittensor-cli==9.2.0
+bittensor[torch]==9.1.0
+bittensor-cli==9.1.0
 bittensor-wallet==3.0.4
 torch==2.5.1
 torchaudio==2.5.1
