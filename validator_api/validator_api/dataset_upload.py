@@ -3,6 +3,7 @@ from typing import List
 from datetime import datetime
 import random
 import tempfile
+import gc
 
 from datasets import Dataset, Audio
 from huggingface_hub import HfApi
@@ -117,6 +118,7 @@ class DatasetUploader:
                 print(f"Error uploading to Hugging Face: {e}")
         self.current_batch = self.current_batch[self.desired_batch_size :]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
+        gc.collect()  # force garbage collection after upload
 
 
 class AudioDatasetUploader:
@@ -213,6 +215,7 @@ class AudioDatasetUploader:
                 print(f"Error uploading to Hugging Face: {e}")
         self.current_batch = self.current_batch[self.desired_batch_size :]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
+        gc.collect()  # force garbage collection after upload
 
 
 audio_dataset_uploader = AudioDatasetUploader()
