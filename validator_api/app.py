@@ -99,7 +99,7 @@ from validator_api.validator_api.database.models.miner_bans import miner_banned_
 from omega.protocol import VideoMetadata
 from sqlalchemy import select, update
 
-print("IMPORT_SCORE:", IMPORT_SCORE)
+# print("IMPORT_SCORE:", IMPORT_SCORE)
 
 if IMPORT_SCORE is not False:
     import validator_api.validator_api.score as score
