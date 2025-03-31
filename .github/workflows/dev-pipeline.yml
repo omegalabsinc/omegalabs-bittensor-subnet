@@ -42,13 +42,6 @@ jobs:
       run: |
         echo '${{ secrets.ENV_VARIABLES }}' > .env
 
-    - name: Install Rust toolchain (needed after BT 9.1.x for bittensor-commit-reveal)
-      uses: actions-rs/toolchain@v1
-      with:
-        toolchain: stable
-        profile: minimal
-        override: true
-
     - name: Build Docker image
       run: |
         docker build --platform=linux/amd64 \
