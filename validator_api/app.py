@@ -74,7 +74,7 @@ from validator_api.validator_api.database.crud.focusvideo import (
 )
 from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
-    FocusVideoStateInternal
+    FocusVideoStateInternal,
 )
 from validator_api.validator_api.dataset_upload import (
     audio_dataset_uploader,
@@ -309,7 +309,9 @@ async def run_focus_scoring(
             focusing_description,
             bypass_checks=video_record.task_type == TaskType.MARKETPLACE.value,
         )
-        print(f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>")
+        print(
+            f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>"
+        )
         MIN_FINAL_SCORE = 0.1
         # todo: measure and tune these
         # MIN_TASK_UNIQUENESS_SCORE = 0
@@ -740,7 +742,9 @@ async def main():
         focusing_description: Annotated[str, Body()] = None,
         background_tasks=BackgroundTasks(),
     ) -> Dict[str, bool]:
-        print(f"get_focus_score starting scoring background task | video_id <{video_id}>")
+        print(
+            f"get_focus_score starting scoring background task | video_id <{video_id}>"
+        )
 
         async def run_focus_scoring_task(
             video_id: str, focusing_task: str, focusing_description: str

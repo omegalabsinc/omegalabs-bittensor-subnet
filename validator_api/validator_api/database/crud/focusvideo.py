@@ -100,7 +100,7 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
         # If we have marketplace videos, only get 1 other video
         # If no marketplace videos, get up to 10 other videos
         other_limit = 1 if marketplace_items else 10
-        
+
         other_query = (
             select(FocusVideoRecord)
             .filter(

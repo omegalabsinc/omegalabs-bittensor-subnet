@@ -100,12 +100,12 @@ class DatasetUploader:
                 f"Need at least {self.min_batch_size} videos to submit, but have {len(self.current_batch)}"
             )
             return
-        
+
         # Take a copy of the data we need and immediately clear the original batch
         data_to_upload = self.current_batch[: self.desired_batch_size]
         self.current_batch = self.current_batch[self.desired_batch_size :]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
-        
+
         print(f"Uploading batch of {len(data_to_upload)} videos")
         with BytesIO() as f:
             try:
@@ -203,12 +203,12 @@ class AudioDatasetUploader:
                 f"Need at least {self.min_batch_size} audios to submit, but have {len(self.current_batch)}"
             )
             return
-        
+
         # Take a copy of the data we need and immediately clear the original batch
         data_to_upload = self.current_batch[: self.desired_batch_size]
         self.current_batch = self.current_batch[self.desired_batch_size :]
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
-        
+
         print(f"Uploading batch of {len(data_to_upload)} audios")
         with BytesIO() as f:
             try:
