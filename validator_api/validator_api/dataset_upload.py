@@ -100,12 +100,18 @@ class DatasetUploader:
                 f"Need at least {self.min_batch_size} videos to submit, but have {len(self.current_batch)}"
             )
             return
-        data = self.current_batch[: self.desired_batch_size]
-        print(f"Uploading batch of {len(self.current_batch)} videos")
+        
+        # Take a copy of the data we need and immediately clear the original batch
+        data_to_upload = self.current_batch[: self.desired_batch_size]
+        self.current_batch = self.current_batch[self.desired_batch_size :]
+        self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
+        
+        print(f"Uploading batch of {len(data_to_upload)} videos")
         with BytesIO() as f:
-            dataset = Dataset.from_list(data)
-            num_bytes = dataset.to_parquet(f)
             try:
+                # Create dataset and immediately upload it
+                dataset = Dataset.from_list(data_to_upload)
+                num_bytes = dataset.to_parquet(f)
                 HF_API.upload_file(
                     path_or_fileobj=f,
                     path_in_repo=get_data_path(str(ulid.new())),
@@ -116,9 +122,10 @@ class DatasetUploader:
                 print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
-        self.current_batch = self.current_batch[self.desired_batch_size :]
-        self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
-        gc.collect()  # force garbage collection after upload
+            finally:
+                # Explicitly delete large objects
+                del data_to_upload
+                gc.collect()  # force garbage collection after upload
 
 
 class AudioDatasetUploader:
@@ -196,13 +203,19 @@ class AudioDatasetUploader:
                 f"Need at least {self.min_batch_size} audios to submit, but have {len(self.current_batch)}"
             )
             return
-        data = self.current_batch[: self.desired_batch_size]
-        print(f"Uploading batch of {len(self.current_batch)} audios")
+        
+        # Take a copy of the data we need and immediately clear the original batch
+        data_to_upload = self.current_batch[: self.desired_batch_size]
+        self.current_batch = self.current_batch[self.desired_batch_size :]
+        self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
+        
+        print(f"Uploading batch of {len(data_to_upload)} audios")
         with BytesIO() as f:
-            dataset = Dataset.from_list(data)
-            dataset = dataset.cast_column("audio", Audio())
-            num_bytes = dataset.to_parquet(f)
             try:
+                # Create dataset and immediately upload it
+                dataset = Dataset.from_list(data_to_upload)
+                dataset = dataset.cast_column("audio", Audio())
+                num_bytes = dataset.to_parquet(f)
                 HF_API.upload_file(
                     path_or_fileobj=f,
                     path_in_repo=get_data_path(str(ulid.new())),
@@ -213,9 +226,10 @@ class AudioDatasetUploader:
                 print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
-        self.current_batch = self.current_batch[self.desired_batch_size :]
-        self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
-        gc.collect()  # force garbage collection after upload
+            finally:
+                # Explicitly delete large objects
+                del data_to_upload
+                gc.collect()  # force garbage collection after upload
 
 
 audio_dataset_uploader = AudioDatasetUploader()
