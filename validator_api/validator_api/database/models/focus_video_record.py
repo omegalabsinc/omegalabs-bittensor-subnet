@@ -47,7 +47,9 @@ def map_focus_video_state(state: FocusVideoStateInternal) -> FocusVideoStateExte
     miner sees. All the user needs to know is whether the video has been purchased by a miner.
     """
     state_mapping = {
+        FocusVideoStateInternal.IN_PROGRESS: FocusVideoStateExternal.PROCESSING,
         FocusVideoStateInternal.PROCESSING: FocusVideoStateExternal.PROCESSING,
+        FocusVideoStateInternal.PENDING_HUMAN_REVIEW: FocusVideoStateExternal.PENDING_HUMAN_REVIEW,
         FocusVideoStateInternal.READY: FocusVideoStateExternal.READY,
         FocusVideoStateInternal.REJECTED: FocusVideoStateExternal.REJECTED,
         FocusVideoStateInternal.SUBMITTED: FocusVideoStateExternal.SUBMITTED,

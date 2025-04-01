@@ -74,7 +74,7 @@ from validator_api.validator_api.database.crud.focusvideo import (
 )
 from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
-    FocusVideoStateExternal,
+    FocusVideoStateInternal
 )
 from validator_api.validator_api.dataset_upload import (
     audio_dataset_uploader,
@@ -324,7 +324,7 @@ async def run_focus_scoring(
                     update(FocusVideoRecord)
                     .where(FocusVideoRecord.video_id == video_id)
                     .values(
-                        processing_state=FocusVideoStateExternal.PENDING_HUMAN_REVIEW.value
+                        processing_state=FocusVideoStateInternal.PENDING_HUMAN_REVIEW.value
                     )
                 )
                 await db.execute(update_stmt)
