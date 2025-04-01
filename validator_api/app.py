@@ -740,7 +740,7 @@ async def main():
         video_id: Annotated[str, Body()] = None,
         focusing_task: Annotated[str, Body()] = None,
         focusing_description: Annotated[str, Body()] = None,
-        background_tasks=BackgroundTasks(),
+        background_tasks: BackgroundTasks = BackgroundTasks(),
     ) -> Dict[str, bool]:
         print(
             f"get_focus_score starting scoring background task | video_id <{video_id}>"
