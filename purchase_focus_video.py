@@ -131,11 +131,15 @@ def display_videos(videos_data):
         # created_at = datetime.fromisoformat(video["created_at"].replace("Z", "+00:00"))
         # formatted_date = created_at.strftime("%Y-%m-%d %H:%M:%S")
 
+        # Handle null video_score
+        video_score = video.get('video_score')
+        score_display = f"{video_score:.3f}" if video_score is not None else "N/A"
+
         table_data.append(
             [
                 idx,
                 video["video_id"],
-                f"{video['video_score']:.3f}",
+                score_display,
                 f"{video['expected_reward_tao']:.5f}",
                 f"{float(video['expected_reward_tao']) / 0.9:.5f}",
                 # formatted_date
