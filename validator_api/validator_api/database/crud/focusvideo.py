@@ -2,12 +2,13 @@ from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import func
-from typing import Optional, Dict, List
+from typing import Optional, Dict, List, Any
 import json
 import traceback
 import asyncio
 import bittensor
 from sqlalchemy.sql import select
+import random
 
 from validator_api.validator_api.config import NETWORK, NETUID
 from validator_api.validator_api.database import get_db_context
@@ -69,7 +70,7 @@ class CachedValue:
         return self._value
 
 
-async def _fetch_available_focus() -> List[FocusVideoInternal]:
+async def _fetch_available_focus() -> List[Dict[str, Any]]:
     """
     Fetch available focus videos for purchase
     If marketplace videos exist:
@@ -81,7 +82,11 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
     async with get_db_context() as db:
         # First, get marketplace videos ordered by oldest first
         marketplace_query = (
-            select(FocusVideoRecord)
+            select(
+                FocusVideoRecord.video_id,
+                FocusVideoRecord.video_score,
+                FocusVideoRecord.expected_reward_tao
+            )
             .filter(
                 FocusVideoRecord.processing_state
                 == FocusVideoStateInternal.SUBMITTED.value,
@@ -94,7 +99,7 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
         )
 
         result = await db.execute(marketplace_query)
-        marketplace_items = result.scalars().all()
+        marketplace_items = result.all()
         print(f"Marketplace items: {len(marketplace_items)}")
 
         # If we have marketplace videos, only get 1 other video
@@ -102,7 +107,11 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
         other_limit = 1 if marketplace_items else 10
 
         other_query = (
-            select(FocusVideoRecord)
+            select(
+                FocusVideoRecord.video_id,
+                FocusVideoRecord.video_score,
+                FocusVideoRecord.expected_reward_tao
+            )
             .filter(
                 FocusVideoRecord.processing_state
                 == FocusVideoStateInternal.SUBMITTED.value,
@@ -115,9 +124,20 @@ async def _fetch_available_focus() -> List[FocusVideoInternal]:
         )
 
         result = await db.execute(other_query)
-        use_and_boosted_items = result.scalars().all()
+        use_and_boosted_items = result.all()
         all_items = marketplace_items + use_and_boosted_items
-        return [FocusVideoInternal.model_validate(record) for record in all_items]
+        
+        # Randomize the combined list
+        random.shuffle(all_items)
+        print(f"All items: {all_items}")
+        
+        return [
+            {
+                "video_id": item[0],
+                "video_score": item[1],
+                "expected_reward_tao": item[2]
+            } for item in all_items
+        ]
 
 
 async def _alpha_to_tao_rate() -> float:
