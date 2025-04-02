@@ -136,6 +136,7 @@ class AudioDatasetUploader:
         self.min_batch_size = 8
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_AUDIO_BATCH_SIZE)
         self.temp_dir = tempfile.mkdtemp()
+        self.max_batch_size = 128
     
     def save_audio_to_disk(self, audio_data, sample_rate, audio_id):
         """Save audio data to disk and return the file path"""
@@ -195,6 +196,21 @@ class AudioDatasetUploader:
                 "query": query,
                 "submitted_at": int(curr_time.timestamp()),
             })
+
+        # If the batch exceeds max size, shuffle and trim it
+        if len(self.current_batch) > self.max_batch_size:
+            print(f"Batch exceeds max size of {self.max_batch_size}, shuffling and trimming")
+            random.shuffle(self.current_batch)
+            
+            # Get the paths of files to delete
+            excess_items = self.current_batch[self.max_batch_size:]
+            paths_to_delete = [item["audio"]["path"] for item in excess_items if item["audio"]["path"]]
+            
+            # Delete the files
+            self.cleanup_files(paths_to_delete)
+            
+            # Trim the batch
+            self.current_batch = self.current_batch[:self.max_batch_size]
 
         print(f"Added {len(metadata)} audios to batch, now have {len(self.current_batch)}")
         if len(self.current_batch) >= self.desired_batch_size:
@@ -258,7 +274,7 @@ class AudioDatasetUploader:
                 dataset = dataset.cast_column("audio", Audio())
                 num_bytes = dataset.to_parquet(f.name)
                 
-                HF_API = HfApi()
+                # Use the global HF_API instead of creating a new one
                 HF_API.upload_file(
                     path_or_fileobj=f.name,
                     path_in_repo=get_data_path(str(ulid.new())),
@@ -266,11 +282,11 @@ class AudioDatasetUploader:
                     repo_type=config.REPO_TYPE,
                     token=config.HF_TOKEN
                 )
-                print(f"Uploaded {num_bytes} bytes to Hugging Face with ID {batch_id}")
+                print(f"Uploaded {num_bytes} bytes to Hugging Face")
             except Exception as e:
                 print(f"Error uploading to Hugging Face: {e}")
             finally:
-            # Clean up
+                # Clean up with proper indentation
                 del data_to_upload
                 del dataset
                 
