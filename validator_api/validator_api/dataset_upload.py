@@ -55,6 +55,7 @@ class DatasetUploader:
         self.current_batch = []
         self.desired_batch_size = get_random_batch_size(config.UPLOAD_BATCH_SIZE)
         self.min_batch_size = 32
+        self.max_batch_size = 1024
 
     def add_videos(
         self,
@@ -90,6 +91,9 @@ class DatasetUploader:
                 )
             ]
         )
+        if len(self.current_batch) > self.max_batch_size:
+            random.shuffle(self.current_batch)
+            self.current_batch = self.current_batch[:self.max_batch_size]
         print(
             f"Added {len(metadata)} videos to batch, now have {len(self.current_batch)}"
         )
