@@ -122,6 +122,7 @@ async def confirm_transfer(
                 video.updated_at = datetime.utcnow()
                 video.extrinsic_id = extrinsic_id
                 video.earned_reward_tao = tao_amount
+                video.rewarded_at = datetime.utcnow()
                 # TODO: this is only theoretical, actually do this properly by setting it when the specific earned tao amount is actually staked via OFB
                 video.earned_reward_alpha = video.expected_reward_alpha
                 db.add(video)

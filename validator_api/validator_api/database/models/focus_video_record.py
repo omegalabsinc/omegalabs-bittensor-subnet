@@ -103,6 +103,7 @@ class FocusVideoRecord(Base):
     created_at = Column(DateTime, default=datetime.utcnow)
     updated_at = Column(DateTime, default=datetime.utcnow, onupdate=datetime.utcnow)
     deleted_at = Column(DateTime, nullable=True)
+    rewarded_at = Column(DateTime, nullable=True)
 
     def get_duration(self) -> float:
         return float(self.video_details.get("duration", 0.0))
