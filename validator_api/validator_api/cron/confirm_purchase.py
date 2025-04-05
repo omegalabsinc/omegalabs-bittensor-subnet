@@ -15,6 +15,8 @@ from validator_api.validator_api.database.models.miner_bans import (
     reset_failed_purchases,
 )
 from validator_api.validator_api.utils.wallet import get_transaction_from_block_hash
+from validator_api.validator_api.database.models.user import UserRecord
+from validator_api.validator_api.database.models.focus_video_record import TaskType
 
 
 async def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bool:
@@ -126,6 +128,15 @@ async def confirm_transfer(
                 # TODO: this is only theoretical, actually do this properly by setting it when the specific earned tao amount is actually staked via OFB
                 video.earned_reward_alpha = video.expected_reward_alpha
                 db.add(video)
+                
+                if video.task_type == TaskType.MARKETPLACE.value:
+                    user_query = select(UserRecord).filter(UserRecord.id == video.user_id)
+                    user_result = await db.execute(user_query)
+                    user = user_result.scalar_one_or_none()
+                    if user:
+                        user.latest_mkt_rewarded_at = current_time
+                        db.add(user)
+                
                 await db.commit()
                 return True
 
