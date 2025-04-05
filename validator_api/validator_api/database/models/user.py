@@ -19,6 +19,7 @@ class UserRecord(Base):
     tao_check_time = Column(DateTime, nullable=True)
     focused_task_id = Column(String(DB_STRING_LENGTH), nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow)
+    latest_mkt_rewarded_at = Column(DateTime, nullable=True)
 
 
 class User(BaseModel):

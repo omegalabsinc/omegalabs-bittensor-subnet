@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func
+from sqlalchemy import func, and_, or_, exists
 from typing import Optional, Dict, List, Any
 import json
 import traceback
@@ -19,6 +19,7 @@ from validator_api.validator_api.database.models.focus_video_record import (
     TaskType,
 )
 from validator_api.validator_api.database.models.user import UserRecord
+from validator_api.validator_api.database.models.user_roles import UserRoleRecordPG, UserRoleEnum
 from validator_api.validator_api.utils.marketplace import (
     get_variable_reward_pool_alpha,
 )
@@ -70,6 +71,145 @@ class CachedValue:
         return self._value
 
 
+async def _get_oldest_rewarded_user_id(db: AsyncSession) -> None:
+    """
+    Get the user that has waited the longest for a reward.
+    Get users from the user_roles table with role "trusted".
+    Sort by latest_mkt_rewarded_at ascending.
+    Make sure the user has at least one MARKETPLACE video in the "submitted" state.
+    """
+    # Query to find all trusted users who have at least one MARKETPLACE video in SUBMITTED state
+    query = (
+        select(
+            UserRecord.id,
+            UserRecord.email,
+            UserRecord.latest_mkt_rewarded_at,
+            func.count(FocusVideoRecord.video_id).label('submitted_video_count')
+        )
+        .join(
+            UserRoleRecordPG,
+            UserRecord.id == UserRoleRecordPG.user_id
+        )
+        .outerjoin(
+            FocusVideoRecord,
+            and_(
+                FocusVideoRecord.user_id == UserRecord.id,
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
+                FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
+                FocusVideoRecord.deleted_at.is_(None)
+            )
+        )
+        .filter(
+            UserRoleRecordPG.role == UserRoleEnum.trusted.value
+        )
+        .group_by(
+            UserRecord.id,
+            UserRecord.email,
+            UserRecord.latest_mkt_rewarded_at
+        )
+        .having(
+            func.count(FocusVideoRecord.video_id) > 0
+        )
+        .order_by(
+            # Handle NULL values by putting them first (oldest)
+            UserRecord.latest_mkt_rewarded_at.asc().nulls_first()
+        )
+    )
+    
+    result = await db.execute(query)
+    users = result.all()
+        
+    return users[0].id if users else None
+
+
+async def _get_oldest_rewarded_user_videos(db: AsyncSession, limit: int = 2) -> List[Dict[str, Any]]:
+    """
+    Get the videos from the user that has waited the longest for a reward
+    """
+    oldest_rewarded_user_id = await _get_oldest_rewarded_user_id(db)
+    print(f"Oldest rewarded user ID: {oldest_rewarded_user_id}")
+    
+    oldest_user_videos = []
+    if oldest_rewarded_user_id:
+        oldest_user_query = (
+            select(
+                FocusVideoRecord.video_id,
+                FocusVideoRecord.video_score,
+                FocusVideoRecord.expected_reward_tao
+            )
+            .filter(
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
+                FocusVideoRecord.deleted_at.is_(None),
+                FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
+                FocusVideoRecord.user_id == oldest_rewarded_user_id
+            )
+            .order_by(FocusVideoRecord.updated_at.asc())
+            .limit(2)
+        )
+        result = await db.execute(oldest_user_query)
+        oldest_user_videos = result.all()
+    return oldest_user_videos
+
+
+async def _fetch_marketplace_tasks(db: AsyncSession, limit: int = 9, oldest_rewarded_user_id: Optional[int] = None) -> List[Dict[str, Any]]:
+    """
+    Fetch marketplace videos ordered by oldest first
+    But, always include videos from the user that has waited the longest for a reward
+    """
+    oldest_user_videos = await _get_oldest_rewarded_user_videos(db, limit)
+    
+    # Then, get the remaining marketplace videos (excluding the ones from the oldest user)
+    remaining_limit = limit - len(oldest_user_videos)
+    marketplace_videos = []
+    if remaining_limit > 0:
+        marketplace_videos_query = (
+            select(
+                FocusVideoRecord.video_id,
+                FocusVideoRecord.video_score,
+                FocusVideoRecord.expected_reward_tao
+            )
+            .filter(
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
+                FocusVideoRecord.deleted_at.is_(None),
+                FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
+            )
+        )
+        
+        # Exclude videos from the oldest user if we have any, to avoid duplicates
+        if oldest_user_videos:
+            oldest_user_video_ids = [video[0] for video in oldest_user_videos]
+            marketplace_videos_query = marketplace_videos_query.filter(
+                FocusVideoRecord.video_id.notin_(oldest_user_video_ids)
+            )
+        
+        marketplace_videos_query = marketplace_videos_query.order_by(FocusVideoRecord.updated_at.asc()).limit(remaining_limit)
+        result = await db.execute(marketplace_videos_query)
+        marketplace_videos = result.all()
+    
+    all_videos = oldest_user_videos + marketplace_videos
+    return all_videos
+
+async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> List[Dict[str, Any]]:
+    user_and_boosted_videos_query = (
+        select(
+            FocusVideoRecord.video_id,
+            FocusVideoRecord.video_score,
+            FocusVideoRecord.expected_reward_tao
+        )
+        .filter(
+            FocusVideoRecord.processing_state
+            == FocusVideoStateInternal.SUBMITTED.value,
+            FocusVideoRecord.deleted_at.is_(None),
+            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            FocusVideoRecord.task_type != TaskType.MARKETPLACE.value,
+        )
+        .order_by(FocusVideoRecord.updated_at.asc())
+        .limit(limit)
+    )
+
+    result = await db.execute(user_and_boosted_videos_query)
+    return result.all()
+
 async def _fetch_available_focus() -> List[Dict[str, Any]]:
     """
     Fetch available focus videos for purchase
@@ -80,56 +220,17 @@ async def _fetch_available_focus() -> List[Dict[str, Any]]:
         - Return up to 10 other videos (ordered by oldest updated_at)
     """
     async with get_db_context() as db:
-        # First, get marketplace videos ordered by oldest first
-        marketplace_query = (
-            select(
-                FocusVideoRecord.video_id,
-                FocusVideoRecord.video_score,
-                FocusVideoRecord.expected_reward_tao
-            )
-            .filter(
-                FocusVideoRecord.processing_state
-                == FocusVideoStateInternal.SUBMITTED.value,
-                FocusVideoRecord.deleted_at.is_(None),
-                # FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-                FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
-            )
-            .order_by(FocusVideoRecord.updated_at.asc())
-            .limit(10)
-        )
+        marketplace_limit = 9
+        marketplace_items = await _fetch_marketplace_tasks(db, marketplace_limit)
 
-        result = await db.execute(marketplace_query)
-        marketplace_items = result.all()
-        print(f"Marketplace items: {len(marketplace_items)}")
+        # If there are marketplace videos, get 1 other video. otherwise, get up to 10 other videos
+        user_and_boosted_limit = 1 if marketplace_items else 10
 
-        # If we have marketplace videos, only get 1 other video
-        # If no marketplace videos, get up to 10 other videos
-        other_limit = 1 if marketplace_items else 10
-
-        other_query = (
-            select(
-                FocusVideoRecord.video_id,
-                FocusVideoRecord.video_score,
-                FocusVideoRecord.expected_reward_tao
-            )
-            .filter(
-                FocusVideoRecord.processing_state
-                == FocusVideoStateInternal.SUBMITTED.value,
-                FocusVideoRecord.deleted_at.is_(None),
-                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-                FocusVideoRecord.task_type != TaskType.MARKETPLACE.value,
-            )
-            .order_by(FocusVideoRecord.updated_at.asc())
-            .limit(other_limit)
-        )
-
-        result = await db.execute(other_query)
-        use_and_boosted_items = result.all()
-        all_items = marketplace_items + use_and_boosted_items
+        user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
+        all_items = marketplace_items + user_and_boosted_items
         
-        # Randomize the combined list
-        random.shuffle(all_items)
-        print(f"All items: {all_items}")
+        random.shuffle(all_items)  # Randomize the combined list
+        # print(f"All items: {all_items}")
         
         return [
             {
@@ -486,3 +587,4 @@ async def mark_video_submitted(
     video_record.updated_at = datetime.utcnow()
     db.add(video_record)
     await db.commit()
+
