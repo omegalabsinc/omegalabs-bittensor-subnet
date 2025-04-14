@@ -103,18 +103,37 @@ def initialize_subtensor():
 
 
 def list_videos():
-    videos_response = requests.get(
-        API_BASE + "/api/focus/get_list",
-        headers={"Content-Type": "application/json"},
-        timeout=30,
-    )
+    try:
+        print(f"{CYAN}Fetching videos from {API_BASE}/api/focus/get_list...{RESET}")
+        videos_response = requests.get(
+            API_BASE + "/api/focus/get_list",
+            headers={"Content-Type": "application/json"},
+            timeout=30,
+        )
 
-    if videos_response.status_code != 200:
-        print(f"{RED}Error fetching focus videos: {videos_response.status_code}{RESET}")
+        if videos_response.status_code != 200:
+            print(f"{RED}Error fetching focus videos: Status code {videos_response.status_code}{RESET}")
+            print(f"Response content: {videos_response.text}")
+            return None
+
+        videos_data = videos_response.json()
+        return videos_data
+    except requests.exceptions.Timeout:
+        print(f"{RED}Error: Request timed out while fetching videos. The server took too long to respond.{RESET}")
         return None
-
-    videos_data = videos_response.json()
-    return videos_data
+    except requests.exceptions.ConnectionError:
+        print(f"{RED}Error: Could not connect to {API_BASE}. Please check your internet connection and verify the API is accessible.{RESET}")
+        return None
+    except requests.exceptions.RequestException as e:
+        print(f"{RED}Error making request: {str(e)}{RESET}")
+        return None
+    except json.JSONDecodeError:
+        print(f"{RED}Error: Received invalid JSON response from server{RESET}")
+        print(f"Response content: {videos_response.text}")
+        return None
+    except Exception as e:
+        print(f"{RED}Unexpected error while fetching videos: {str(e)}{RESET}")
+        return None
 
 
 def display_videos(videos_data):
@@ -127,27 +146,29 @@ def display_videos(videos_data):
     # Prepare the data for tabulate
     table_data = []
     for idx, video in enumerate(videos_data, 1):
-        # Convert created_at to a more readable format
-        # created_at = datetime.fromisoformat(video["created_at"].replace("Z", "+00:00"))
-        # formatted_date = created_at.strftime("%Y-%m-%d %H:%M:%S")
-
         # Handle null video_score
         video_score = video.get('video_score')
         score_display = f"{video_score:.3f}" if video_score is not None else "N/A"
+
+        # Handle null expected_reward_tao
+        expected_reward = video.get('expected_reward_tao')
+        reward_display = f"{expected_reward:.5f}" if expected_reward is not None else "N/A"
+        
+        # Calculate cost only if expected_reward is not null
+        cost_display = f"{float(expected_reward) / 0.9:.5f}" if expected_reward is not None else "N/A"
 
         table_data.append(
             [
                 idx,
                 video["video_id"],
                 score_display,
-                f"{video['expected_reward_tao']:.5f}",
-                f"{float(video['expected_reward_tao']) / 0.9:.5f}",
-                # formatted_date
+                reward_display,
+                cost_display,
             ]
         )
 
     # Create the table
-    headers = ["#", "Video ID", "Score", "Cost (TAO)", "Expected Reward (TAO)"]
+    headers = ["#", "Video ID", "Score", "Expected Reward (TAO)", "Cost (TAO)"]
     table = tabulate(table_data, headers=headers, tablefmt="pretty")
 
     print(table)
@@ -595,46 +616,50 @@ def save_purchase_info(video_id, hotkey, block_hash, state, amount=None):
 
 async def main():
     while True:
-        print(f"\n{CYAN}Welcome to the OMEGA Focus Videos Purchase System{RESET}")
-        print("1. View + Purchase Focus Videos")
-        print("2. Manually Purchase Focus Video")
-        print("3. Verify Purchase")
-        print("4. Display Order History")
-        print("5. Exit")
+        try:
+            print(f"\n{CYAN}Welcome to the OMEGA Focus Videos Purchase System{RESET}")
+            print("1. View + Purchase Focus Videos")
+            print("2. Manually Purchase Focus Video")
+            print("3. Verify Purchase")
+            print("4. Display Order History")
+            print("5. Exit")
 
-        choice = input(f"{CYAN}Enter your choice (1-5): {RESET}")
+            choice = input(f"{CYAN}Enter your choice (1-5): {RESET}")
 
-        if choice == "1":
-            videos_data = list_videos()
-            if videos_data:
-                display_videos(videos_data)
-                purchase_option = input(
-                    f"\n{CYAN}Enter the number of the video you want to purchase or press 'n' to return to menu: {RESET}"
-                ).lower()
-                if purchase_option.isdigit():
-                    video_index = int(purchase_option) - 1
-                    if 0 <= video_index < len(videos_data):
-                        await purchase_video(videos_data[video_index]["video_id"])
-                    else:
-                        print(f"{RED}Invalid video number.{RESET}")
-                elif purchase_option != "n":
-                    print(f"{RED}Invalid input. Returning to main menu.{RESET}")
+            if choice == "1":
+                videos_data = list_videos()
+                if videos_data:
+                    display_videos(videos_data)
+                    purchase_option = input(
+                        f"\n{CYAN}Enter the number of the video you want to purchase or press 'n' to return to menu: {RESET}"
+                    ).lower()
+                    if purchase_option.isdigit():
+                        video_index = int(purchase_option) - 1
+                        if 0 <= video_index < len(videos_data):
+                            await purchase_video(videos_data[video_index]["video_id"])
+                        else:
+                            print(f"{RED}Invalid video number.{RESET}")
+                    elif purchase_option != "n":
+                        print(f"{RED}Invalid input. Returning to main menu.{RESET}")
+                # Add a pause here to let user read any error messages
+                input(f"\n{CYAN}Press Enter to continue...{RESET}")
+            elif choice == "2":
+                await purchase_video()
+            elif choice == "3":
+                await verify_purchase()
+            elif choice == "4":
+                purchases = display_saved_orders()
+                select_order_for_full_display(purchases)
+            elif choice == "5":
+                print(
+                    f"{GREEN}Thank you for using the OMEGA Focus Videos Purchase System. Goodbye!{RESET}"
+                )
+                break
             else:
-                print(f"\n{RED}No videos available for purchase at this time.{RESET}")
-        elif choice == "2":
-            await purchase_video()
-        elif choice == "3":
-            await verify_purchase()
-        elif choice == "4":
-            purchases = display_saved_orders()
-            select_order_for_full_display(purchases)
-        elif choice == "5":
-            print(
-                f"{GREEN}Thank you for using the OMEGA Focus Videos Purchase System. Goodbye!{RESET}"
-            )
-            break
-        else:
-            print(f"{RED}Invalid choice. Please try again.{RESET}")
+                print(f"{RED}Invalid choice. Please try again.{RESET}")
+        except Exception as e:
+            print(f"{RED}Unexpected error in main menu: {str(e)}{RESET}")
+            input(f"\n{CYAN}Press Enter to continue...{RESET}")
 
 
 if __name__ == "__main__":
