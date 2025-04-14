@@ -1,3 +1,28 @@
+"""
+This script is used to automatically purchase videos on the OMEGA Focus marketplace on a loop (about every 15 minutes).
+Ideally this script will be run-and-forget in the background.
+It will check for available videos and purchase them if the balance is sufficient.
+It will also verify the purchase and save the purchase information to a file.
+It will convert all staked dynamic TAO on subnet 24 and convert it to base TAO,
+since emission rewards are paid in dynamic TAO but the purchase is in base TAO.
+The unstaking loop occurs about every 1 hour; it doesn't need to happen more frequently
+since emissions are only paid once every 360 blocks (1.2 hours).
+
+IMPORTANT: if you want to run this script in the background, e.g. with pm2, you need to set up your miner wallet to be passwordless.
+`pm2 start auto_purchase_videos.py`
+Otherwise, the script will hang when waiting for the wallet to be unlocked.
+First test the script by running it directly with Python to verify it doesn't prompt for a password, before using pm2 or any other background process manager.
+You can generate a passwordless wallet with the following `btcli` commands:
+Generate coldkey: `btcli wallet new_coldkey --wallet.name <coldkey_name> --no-use-password`
+Generate hotkey: `btcli wallet new_hotkey --wallet.name <coldkey_name> --wallet.hotkey <hotkey_name> --no-use-password`
+Then, set the environment variables in the `validator_api/.env` file to the generated coldkey and hotkey.
+
+Then, make sure the wallet is registered on the subnet, and has enough TAO to purchase videos!!!
+`btcli subnet register --netuid 24 --wallet.name <coldkey_name> --wallet.hotkey <hotkey_name>`
+If the wallet is not registered, the script will exit. If you encounter SubstrateRequestException, keep retrying until it succeeds.
+"""
+
+
 import json
 import os
 import sys
@@ -14,9 +39,8 @@ load_dotenv()
 WALLET_NAME = os.getenv("WALLET_NAME")
 WALLET_HOTKEY = os.getenv("WALLET_HOTKEY")
 WALLET_PATH = os.getenv("WALLET_PATH")
-WALLET_PASSWORD = os.getenv("WALLET_PASSWORD")
 
-if not all([WALLET_NAME, WALLET_HOTKEY, WALLET_PATH, WALLET_PASSWORD]):
+if not all([WALLET_NAME, WALLET_HOTKEY, WALLET_PATH]):
     print("Error: Missing required environment variables. Please check your .env file.")
     sys.exit(1)
 
@@ -26,14 +50,15 @@ API_BASE = (
     if SUBTENSOR_NETWORK == "test"
     else "https://sn24-api.omegatron.ai"
 )
-CHECK_INTERVAL = 60  # 1 minute in seconds
+PURCHASE_ATTEMPT_INTERVAL = 15 * 60  # 15 minutes in seconds
+UNSTAKE_INTERVAL = 60 * 60  # 1 hour in seconds
 
 wallet = btcli_wallet(
     name=WALLET_NAME,
     hotkey=WALLET_HOTKEY,
     path=WALLET_PATH,
 )
-coldkey = wallet.get_coldkey(password=WALLET_PASSWORD).ss58_address
+coldkey = wallet.get_coldkey().ss58_address
 print(f"Coldkey: {coldkey}")
 unlock_status = unlock_key(wallet, unlock_type="coldkey")
 if not unlock_status.success:
@@ -86,6 +111,14 @@ async def transfer_operation(
     except Exception as e:
         print(f"Transfer error: {str(e)}")
         return False, None, str(e)
+
+
+async def is_miner_registered(wallet) -> bool:
+    hotkey = wallet.get_hotkey()
+    miner_hotkey = hotkey.ss58_address
+    sub = bt.subtensor(network=SUBTENSOR_NETWORK)
+    mg = sub.metagraph(netuid=24)
+    return miner_hotkey in mg.hotkeys
 
 
 async def purchase_video(video_id, wallet):
@@ -201,12 +234,16 @@ def save_purchase_info(video_id, hotkey, block_hash, state, amount=None):
 async def check_and_purchase_videos():
     while True:
         try:
+            if not await is_miner_registered(wallet):
+                print("Miner not registered on subnet 24. Exiting.")
+                sys.exit(1)
+
             print(f"\n[{datetime.now()}] Checking for available videos...")
 
             videos = list_videos()
             if not videos:
                 print("No videos available or error fetching videos")
-                await asyncio.sleep(CHECK_INTERVAL)
+                await asyncio.sleep(PURCHASE_ATTEMPT_INTERVAL)
                 continue
 
             # Check each video
@@ -227,12 +264,11 @@ async def check_and_purchase_videos():
                     print(
                         f"Insufficient balance for video {video['video_id']} (cost: {video_cost} TAO)"
                     )
-            break
-            print(f"Waiting {CHECK_INTERVAL} seconds before next check...")
-            await asyncio.sleep(CHECK_INTERVAL)
+            print(f"Waiting {PURCHASE_ATTEMPT_INTERVAL} seconds before next check...")
+            await asyncio.sleep(PURCHASE_ATTEMPT_INTERVAL)
         except Exception as e:
             print(f"Error in main loop: {str(e)}")
-            await asyncio.sleep(CHECK_INTERVAL)
+            await asyncio.sleep(PURCHASE_ATTEMPT_INTERVAL)
 
 
 if __name__ == "__main__":
