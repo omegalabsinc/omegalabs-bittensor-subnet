@@ -61,7 +61,8 @@ class CachedValue:
                     )
             except Exception as e:
                 # Log error or handle as needed; do not crash the loop
-                print(f"Background cache update failed: {e}\n{traceback.format_exc()}")
+                print(
+                    f"Background cache update failed: {e}\n{traceback.format_exc()}")
             await asyncio.sleep(self._update_interval)
 
     def get(self):
@@ -84,7 +85,8 @@ async def _get_oldest_rewarded_user_id(db: AsyncSession) -> None:
             UserRecord.id,
             UserRecord.email,
             UserRecord.latest_mkt_rewarded_at,
-            func.count(FocusVideoRecord.video_id).label('submitted_video_count')
+            func.count(FocusVideoRecord.video_id).label(
+                'submitted_video_count')
         )
         .join(
             UserRoleRecordPG,
@@ -115,10 +117,10 @@ async def _get_oldest_rewarded_user_id(db: AsyncSession) -> None:
             UserRecord.latest_mkt_rewarded_at.asc().nulls_first()
         )
     )
-    
+
     result = await db.execute(query)
     users = result.all()
-        
+
     return users[0].id if users else None
 
 
@@ -128,7 +130,7 @@ async def _get_oldest_rewarded_user_videos(db: AsyncSession, limit: int = 2) -> 
     """
     oldest_rewarded_user_id = await _get_oldest_rewarded_user_id(db)
     print(f"Oldest rewarded user ID: {oldest_rewarded_user_id}")
-    
+
     oldest_user_videos = []
     if oldest_rewarded_user_id:
         oldest_user_query = (
@@ -157,7 +159,7 @@ async def _fetch_marketplace_tasks(db: AsyncSession, limit: int = 9, oldest_rewa
     But, always include videos from the user that has waited the longest for a reward
     """
     oldest_user_videos = await _get_oldest_rewarded_user_videos(db, limit)
-    
+
     # Then, get the remaining marketplace videos (excluding the ones from the oldest user)
     remaining_limit = limit - len(oldest_user_videos)
     marketplace_videos = []
@@ -174,20 +176,22 @@ async def _fetch_marketplace_tasks(db: AsyncSession, limit: int = 9, oldest_rewa
                 FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
             )
         )
-        
+
         # Exclude videos from the oldest user if we have any, to avoid duplicates
         if oldest_user_videos:
             oldest_user_video_ids = [video[0] for video in oldest_user_videos]
             marketplace_videos_query = marketplace_videos_query.filter(
                 FocusVideoRecord.video_id.notin_(oldest_user_video_ids)
             )
-        
-        marketplace_videos_query = marketplace_videos_query.order_by(FocusVideoRecord.updated_at.asc()).limit(remaining_limit)
+
+        marketplace_videos_query = marketplace_videos_query.order_by(
+            FocusVideoRecord.updated_at.asc()).limit(remaining_limit)
         result = await db.execute(marketplace_videos_query)
         marketplace_videos = result.all()
-    
+
     all_videos = oldest_user_videos + marketplace_videos
     return all_videos
+
 
 async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> List[Dict[str, Any]]:
     user_and_boosted_videos_query = (
@@ -210,9 +214,31 @@ async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> Li
     result = await db.execute(user_and_boosted_videos_query)
     return result.all()
 
-async def _fetch_available_focus() -> List[Dict[str, Any]]:
+
+async def _can_purchase_user_videos(db: AsyncSession, mkt_videos_exist: bool) -> bool:
     """
-    Fetch available focus videos for purchase
+    If there are no marketplace videos, or no user videos have been purchased in the last 4 videos,
+    then we can purchase user videos
+    """
+    if not mkt_videos_exist:
+        return True
+    
+    query = select(FocusVideoRecord).filter(
+        FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASED.value,
+        FocusVideoRecord.deleted_at.is_(None)
+    ).order_by(FocusVideoRecord.updated_at.desc()).limit(4)
+    result = await db.execute(query)
+    last_4_videos = result.scalars().all()
+    for video in last_4_videos:
+        if video.task_type != TaskType.MARKETPLACE.value:
+            return False
+    
+    return True
+
+
+async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
+    """
+    Fetch purchaseable videos
     If marketplace videos exist:
         - Return all marketplace videos (ordered by oldest updated_at)
         - Plus at most 1 other video type (ordered by oldest updated_at)
@@ -222,16 +248,16 @@ async def _fetch_available_focus() -> List[Dict[str, Any]]:
     async with get_db_context() as db:
         marketplace_limit = 9
         marketplace_items = await _fetch_marketplace_tasks(db, marketplace_limit)
-
-        # If there are marketplace videos, get 1 other video. otherwise, get up to 10 other videos
-        user_and_boosted_limit = 1 if marketplace_items else 10
-
-        user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
-        all_items = marketplace_items + user_and_boosted_items
+        all_items = marketplace_items
         
-        random.shuffle(all_items)  # Randomize the combined list
-        # print(f"All items: {all_items}")
-        
+        if await _can_purchase_user_videos(db, len(marketplace_items) > 0):
+            user_and_boosted_limit = 1 if marketplace_items else 10
+            user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
+            all_items += user_and_boosted_items
+
+        random.shuffle(all_items)
+        print(f"All items: {all_items}")
+
         return [
             {
                 "video_id": item[0],
@@ -313,7 +339,7 @@ async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
 class FocusVideoCache:
     def __init__(self):
         self._available_focus_cache = CachedValue(
-            fetch_func=_fetch_available_focus, update_interval=180
+            fetch_func=_get_purchaseable_videos, update_interval=180
         )
         self._alpha_to_tao_cache = CachedValue(fetch_func=_alpha_to_tao_rate)
         self._already_purchased_cache = CachedValue(
@@ -342,7 +368,8 @@ class FocusVideoCache:
 async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:
     try:
         query = select(FocusVideoRecord).filter(
-            FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(None)
+            FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(
+                None)
         )
         result = await db.execute(query)
         video_record = result.scalar_one_or_none()
@@ -364,7 +391,8 @@ async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:
         return user_record.coldkey
     except Exception as e:
         print(f"Error in get_video_owner_coldkey: {str(e)}")
-        raise HTTPException(500, detail=f"Error retrieving video owner: {str(e)}")
+        raise HTTPException(
+            500, detail=f"Error retrieving video owner: {str(e)}")
 
 
 async def check_availability(
@@ -491,7 +519,8 @@ async def set_focus_video_score(
     embeddings: FocusVideoEmbeddings,
 ):
     query = select(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(None)
+        FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(
+            None)
     )
     result = await db.execute(query)
     video_record = result.scalar_one_or_none()
@@ -526,7 +555,8 @@ async def mark_video_rejected(
     exception_string: Optional[str] = None,
 ):
     query = select(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(None)
+        FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(
+            None)
     )
     result = await db.execute(query)
     video_record = result.scalar_one_or_none()
@@ -569,7 +599,8 @@ async def mark_video_submitted(
         == FocusVideoStateInternal.PURCHASE_PENDING.value,
         FocusVideoRecord.deleted_at.is_(None),
         FocusVideoRecord.miner_hotkey
-        == miner_hotkey,  # make sure the miner requesting the cancellation is the one who was trying to buy it!
+        # make sure the miner requesting the cancellation is the one who was trying to buy it!
+        == miner_hotkey,
     )
     if with_lock:
         query = query.with_for_update()
@@ -587,4 +618,3 @@ async def mark_video_submitted(
     video_record.updated_at = datetime.utcnow()
     db.add(video_record)
     await db.commit()
-
