@@ -9,7 +9,6 @@ The unstaking loop occurs about every 1 hour; it doesn't need to happen more fre
 since emissions are only paid once every 360 blocks (1.2 hours).
 
 IMPORTANT: if you want to run this script in the background, e.g. with pm2, you need to set up your miner wallet to be passwordless.
-`pm2 start auto_purchase_videos.py`
 Otherwise, the script will hang when waiting for the wallet to be unlocked.
 First test the script by running it directly with Python to verify it doesn't prompt for a password, before using pm2 or any other background process manager.
 You can generate a passwordless wallet with the following `btcli` commands:
@@ -20,6 +19,10 @@ Then, set the environment variables in the `validator_api/.env` file to the gene
 Then, make sure the wallet is registered on the subnet, and has enough TAO to purchase videos!!!
 `btcli subnet register --netuid 24 --wallet.name <coldkey_name> --wallet.hotkey <hotkey_name>`
 If the wallet is not registered, the script will exit. If you encounter SubstrateRequestException, keep retrying until it succeeds.
+
+setup:
+the ecosystem.config.js file is configured to kill the process if it detects that the miner is not registered on subnet 24.
+`pm2 start ecosystem.config.js`
 """
 
 
@@ -61,7 +64,7 @@ API_BASE = (
     if SUBTENSOR_NETWORK == "test"
     else "https://sn24-api.omegatron.ai"
 )
-PURCHASE_ATTEMPT_INTERVAL = 15 * 60  # 15 minutes in seconds
+PURCHASE_ATTEMPT_INTERVAL = 20 * 60  # 20 minutes in seconds
 UNSTAKE_INTERVAL = 60 * 60  # 1 hour in seconds
 
 wallet = btcli_wallet(
@@ -312,12 +315,14 @@ async def check_and_purchase_videos():
                 # this prevents purchase attempts if the miner is not registered
                 # if a miner is not registered, they won't receive emissions!
                 # that would be very bad, so we exit
-                logger.error("Miner not registered on subnet 24. Exiting.")
-                sys.exit(1)
+                logger.error("Miner not registered on subnet 24. Process will terminate and not restart.")
+                with open("/tmp/miner_not_registered", "w") as f:
+                    f.write("1")
+                sys.exit(99)
             
             attempt_unstake(wallet)
 
-            logger.info(f"Checking for available videos...")
+            logger.info("Checking for available videos...")
 
             videos = list_videos()
             if not videos:
