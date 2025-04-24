@@ -180,7 +180,6 @@ flowchart TD
 
 A task completion video's final score is based on an evaluation by a reasoning model (OpenAI or DeepSeek) on a detailed text annotation of the submitted task video, comparing the work shown being done to the task description. The prompt can be found [here](https://github.com/omegalabsinc/omegalabs-bittensor-subnet/blob/60faf83be24b895c1745fc110e04b31b4c2f75ea/validator-api/validator_api/scoring/focus_scoring_prompts.py#L208)
 
-
 ### Why so Complicated?
 
 Anyone experienced with Bittensor is probably asking themselves right now: why is this video submission process so convoluted? Why not just have Ω Focus users be miners and be compensated directly via the Bittensor chain's emissions each epoch? There are a few reasons:
