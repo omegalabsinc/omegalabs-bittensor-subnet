@@ -285,7 +285,8 @@ async def _already_purchased_max_focus_tao() -> bool:
 
         result = await db.execute(query)
         total_earned_tao = result.scalar() or 0
-        effective_max_focus_alpha = await get_max_focus_alpha_per_day()
+        max_focus_alpha_per_day = await get_max_focus_alpha_per_day()
+        effective_max_focus_alpha = max_focus_alpha_per_day *   0.9
         effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
         print(f"Effective max focus tao: {effective_max_focus_tao}")
         return total_earned_tao >= effective_max_focus_tao
