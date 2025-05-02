@@ -21,6 +21,7 @@ from validator_api.validator_api.database.models.focus_video_record import (
 from validator_api.validator_api.database.models.user import UserRecord
 from validator_api.validator_api.database.models.user_roles import UserRoleRecordPG, UserRoleEnum
 from validator_api.validator_api.utils.marketplace import (
+    get_max_focus_alpha_per_day,
     get_variable_reward_pool_alpha,
 )
 from pydantic import BaseModel
@@ -284,10 +285,13 @@ async def _already_purchased_max_focus_tao() -> bool:
 
         result = await db.execute(query)
         total_earned_tao = result.scalar() or 0
-        effective_max_focus_alpha = await get_variable_reward_pool_alpha()
+        effective_max_focus_alpha = await get_max_focus_alpha_per_day()
         effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
-
+        print(f"Effective max focus tao: {effective_max_focus_tao}")
         return total_earned_tao >= effective_max_focus_tao
+
+
+
 
 
 class MinerPurchaseStats(BaseModel):
