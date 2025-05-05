@@ -40,6 +40,8 @@ async def get_tao_price() -> float:
 
 # Global cache for max focus alpha
 max_focus_alpha_per_day_cache = {"value": None, "timestamp": 0}
+# Global cache for max focus tao
+max_focus_tao_per_day_cache = {"value": None, "timestamp": 0}
 
 CACHE_DURATION = 30 * 60  # 30 minutes in seconds
 
@@ -62,11 +64,15 @@ async def get_max_focus_alpha_per_day() -> float:
 
     def _internal_sync():
         subnet = subtensor.subnet(netuid=NETUID)
+        
         alpha_emission_per_block = subnet.alpha_out_emission.tao
+        
         miner_alpha_emission_per_block = alpha_emission_per_block * 0.41
         miner_alpha_emission_per_tempo = miner_alpha_emission_per_block * 360
         miner_alpha_emission_per_day = miner_alpha_emission_per_tempo * 20
         max_focus_alpha_per_day = miner_alpha_emission_per_day * FOCUS_REWARDS_PERCENT
+
+        
         # if NETWORK == BT_TESTNET:
         #     max_focus_alpha_per_day = max(200, max_focus_alpha_per_day)
         #     # max_focus_alpha_per_day = max(1800, max_focus_alpha_per_day)  # 92 alpha per day cuz 3.12% emissions * 20% budget
@@ -82,6 +88,45 @@ async def get_max_focus_alpha_per_day() -> float:
     max_focus_alpha_per_day_cache["timestamp"] = current_time
 
     return max_focus_alpha_per_day
+
+
+async def get_max_focus_tao_per_day() -> float:
+    """
+    Calculate the maximum focus TAO per day based on subnet emissions
+    """
+    global max_focus_tao_per_day_cache
+    current_time = time.time()
+
+    if (
+        max_focus_tao_per_day_cache["value"] is not None
+        and current_time - max_focus_tao_per_day_cache["timestamp"] < CACHE_DURATION
+    ):
+        return max_focus_tao_per_day_cache["value"]
+
+    # If cache is invalid or empty, recalculate
+    subtensor = await get_subtensor()
+
+    def _internal_sync():
+        subnet = subtensor.subnet(netuid=NETUID)
+        
+        tao_emission_per_block = subnet.tao_in_emission.tao
+        miner_tao_emission_per_block = tao_emission_per_block * 0.41
+        miner_tao_emission_per_tempo = miner_tao_emission_per_block * 360
+        miner_tao_emission_per_day = miner_tao_emission_per_tempo * 20
+        max_focus_tao_per_day = miner_tao_emission_per_day * FOCUS_REWARDS_PERCENT
+
+        return max_focus_tao_per_day
+
+    async def _internal_async() -> float:
+        return await run_async(_internal_sync)
+
+    max_focus_tao_per_day = await run_with_retries(_internal_async)
+    
+    # Update cache
+    max_focus_tao_per_day_cache["value"] = max_focus_tao_per_day
+    max_focus_tao_per_day_cache["timestamp"] = current_time
+
+    return max_focus_tao_per_day
 
 
 async def get_fixed_reward_pool_alpha() -> float:
