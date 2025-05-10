@@ -95,7 +95,7 @@ from validator_api.validator_api.utils.marketplace import (
     get_fixed_reward_pool_alpha,
 )
 from validator_api.validator_api.database.models.miner_bans import miner_banned_until
-
+from validator_api.validator_api.database.crud.focusvideo import _already_purchased_max_focus_tao
 from omega.protocol import VideoMetadata
 from sqlalchemy import select, update
 
@@ -779,8 +779,10 @@ async def main():
                 status_code=status.HTTP_403_FORBIDDEN,
                 detail=f"Miner is banned from purchasing focus videos until {banned_until} due to too many failed purchases in a row. Contact a team member if you believe this is an error.",
             )
-
-        if focus_video_cache.already_purchased_max_focus_tao():
+        # print("purchase_video | checking max focus purchase")
+        check_max_focus_purchase = await _already_purchased_max_focus_tao()
+        # print(f"purchase_video | check_max_focus_purchase <{check_max_focus_purchase}>")
+        if check_max_focus_purchase:
             print(
                 "Purchases in the last 24 hours have reached the max focus tao limit."
             )

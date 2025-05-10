@@ -176,6 +176,7 @@ async def _fetch_marketplace_tasks(db: AsyncSession, limit: int = 9, oldest_rewa
                 FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
                 FocusVideoRecord.deleted_at.is_(None),
                 FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
+                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO
             )
         )
 
@@ -296,7 +297,8 @@ async def _already_purchased_max_focus_tao() -> bool:
         # Using 90% of the max focus tao per day as the effective max focus tao per day
         effective_max_focus_tao = max_focus_tao_per_day * 0.9
         # print(f"Max focus tao per day: {max_focus_tao_per_day}")
-        # print(f"Effective max focus tao: {effective_max_focus_tao}")
+        print(f"Effective max focus tao: {effective_max_focus_tao}")
+        print(f"Total earned tao: {total_earned_tao}")
         return total_earned_tao >= effective_max_focus_tao
 
 
