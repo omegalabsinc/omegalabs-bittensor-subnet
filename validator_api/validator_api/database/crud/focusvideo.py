@@ -223,7 +223,10 @@ async def _can_purchase_user_videos(db: AsyncSession, mkt_videos_exist: bool) ->
     If there are no marketplace videos, or no user videos have been purchased in the last 4 videos,
     then we can purchase user videos
     """
+    # print(f"DEBUG: _can_purchase_user_videos called with mkt_videos_exist={mkt_videos_exist}")
+    
     if not mkt_videos_exist:
+        # print("DEBUG: No marketplace videos exist, allowing user videos")
         return True
     
     query = select(FocusVideoRecord).filter(
@@ -232,10 +235,17 @@ async def _can_purchase_user_videos(db: AsyncSession, mkt_videos_exist: bool) ->
     ).order_by(FocusVideoRecord.updated_at.desc()).limit(4)
     result = await db.execute(query)
     last_4_videos = result.scalars().all()
+    
+    # print(f"DEBUG: Found {len(last_4_videos)} recent purchased videos")
+    # for i, video in enumerate(last_4_videos):
+    #     print(f"DEBUG:   {i+1}. Video ID: {video.video_id}, Task Type: {video.task_type}")
+    
     for video in last_4_videos:
         if video.task_type != TaskType.MARKETPLACE.value:
+            # print(f"DEBUG: Found non-marketplace video {video.video_id} with type {video.task_type}, blocking user videos")
             return False
     
+    print("DEBUG: All recent videos are marketplace type, allowing user videos")
     return True
 
 
@@ -252,14 +262,26 @@ async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
         marketplace_limit = 9
         marketplace_items = await _fetch_marketplace_tasks(db, marketplace_limit)
         all_items = marketplace_items
+        # print(f"DEBUG: Got {len(marketplace_items)} marketplace items")
         
-        if await _can_purchase_user_videos(db, len(marketplace_items) > 0):
-            user_and_boosted_limit = 1 if marketplace_items else 10
+        # Check if we can purchase user videos
+        can_purchase_user = await _can_purchase_user_videos(db, len(marketplace_items) > 2)
+        # print(f"DEBUG: len(marketplace_items) > 2: {len(marketplace_items) > 2}")
+        # print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
+        
+        if can_purchase_user:
+            no_marketplace_items = len(marketplace_items)
+            allow_more_user_videos = no_marketplace_items < 3
+            user_and_boosted_limit = 7 if allow_more_user_videos else 1
+            # print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
             user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
+            # print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
             all_items += user_and_boosted_items
+        else:
+            print("DEBUG: Not adding user videos due to policy")
 
         random.shuffle(all_items)
-        print(f"All items: {all_items}")
+        # print(f"All items: {all_items}")
 
         return [
             {
