@@ -41,10 +41,10 @@ async def query_llm(
         Exception: If both DeepSeek and OpenAI attempts fail after all retries
     """
     try:
-        return await query_deepseek(messages, output_model, retries)
+        return await query_openai(messages, output_model, retries)
     except Exception as e:
         print(f"Chutes API DeepSeek call failed, falling back to OpenAI: {str(e)}")
-        return await query_openai(messages, output_model, retries)
+        return await query_deepseek(messages, output_model, retries)
 
 
 async def query_openai(
@@ -72,7 +72,7 @@ async def query_openai(
     for attempt in range(retries):
         try:
             response = await openai_client.beta.chat.completions.parse(
-                model="o1-2024-12-17",
+                model="o4-mini-2025-04-16",
                 messages=messages,
                 response_format=output_model,
             )
