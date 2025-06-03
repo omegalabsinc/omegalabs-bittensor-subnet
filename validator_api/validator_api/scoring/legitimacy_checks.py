@@ -6,6 +6,7 @@ from validator_api.validator_api.database import get_db_context
 from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
 )
+from validator_api.validator_api.scoring import focus_scoring_prompts
 from validator_api.validator_api.scoring.scoring_service import DetailedVideoDescription
 from validator_api.validator_api.scoring.deepseek_chat import query_llm
 
@@ -53,11 +54,20 @@ class ChatOnlyCheck(LegitimacyCheck):
 Your current task is to determine if the user is cheating by talking about completing a task, but not actually completing it.
 Verify that the video shows actual evidence of task completion, not just chat interactions claiming completion.
 
+
 Key verification points:
 - Visual evidence matching the task requirements (e.g., code execution, file manipulation, system interactions)
 - Presence of relevant tools and interfaces required for the task
 - Active interaction with necessary applications or systems
 - Actual task outputs visible in the recording
+- user opens pdfs and not taking notes, stays on same page for more than 5 mins, etc.
+- practice coding and not testing it.
+- watches youtube videos /movies/ tv shows and not taking notes or not doing anything else.
+- Check for omega focus app, if it is not open, then it is not legitimate.
+- Check the exploited examples very carefully, there are users who just do that and not actually completing the task.
+- If the task belongs to the below list of exploited examples where user just tries to complete the task but does not actually complete it,
+    give legitimacy false even if it is similar to the steps done in the annotated transcript:
+{EXPLOITED_TASK_CASES}
 
 Red flags for chat-only submissions:
 - Video shows only chat interface interactions
@@ -69,10 +79,10 @@ Red flags for chat-only submissions:
 Limit your critique to the existence of chat-only submissions; the full video scoring and rating will be done in another step.
 
 OUTPUT JSON FORMAT:
-{
+{{
     "rationale": "Detailed explanation of the analysis",
     "legitimate": true/false; False if the user is cheating by talking about completing a task, but not actually completing it, True otherwise
-}
+}}
 """
         # important: above, we need to provide an example of the output JSON format
 
@@ -104,7 +114,7 @@ OUTPUT JSON FORMAT:
                     )
 
         messages = [
-            {"role": "system", "content": chat_only_check_prompt},
+            {"role": "system", "content": chat_only_check_prompt.format(EXPLOITED_TASK_CASES=focus_scoring_prompts.EXPLOITED_TASK_CASES)},
             {
                 "role": "user",
                 "content": f"Please analyze the following annotated transcript and determine if the user is cheating by talking about completing a task, but not actually completing it: {detailed_video_description}",
