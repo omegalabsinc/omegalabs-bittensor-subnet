@@ -145,7 +145,8 @@ async def _get_oldest_rewarded_user_videos(db: AsyncSession, limit: int = 2) -> 
                 FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
                 FocusVideoRecord.deleted_at.is_(None),
                 FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
-                FocusVideoRecord.user_id == oldest_rewarded_user_id
+                FocusVideoRecord.user_id == oldest_rewarded_user_id,
+                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO
             )
             .order_by(FocusVideoRecord.updated_at.asc())
             .limit(2)
@@ -193,6 +194,7 @@ async def _fetch_marketplace_tasks(db: AsyncSession, limit: int = 9, oldest_rewa
         marketplace_videos = result.all()
 
     all_videos = oldest_user_videos + marketplace_videos
+    print(f"All videos: {all_videos}")
     return all_videos
 
 
@@ -207,7 +209,6 @@ async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> Li
             FocusVideoRecord.processing_state
             == FocusVideoStateInternal.SUBMITTED.value,
             FocusVideoRecord.deleted_at.is_(None),
-            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
             FocusVideoRecord.task_type != TaskType.MARKETPLACE.value,
         )
         .order_by(FocusVideoRecord.updated_at.asc())
