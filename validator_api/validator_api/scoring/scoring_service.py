@@ -288,7 +288,9 @@ async def get_detailed_video_description(
 async def _get_completion_score_breakdown(
     task_overview: str,
     detailed_video_description: Optional[DetailedVideoDescription] = None,
-    system_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT,
+    system_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT.format(
+        EXPLOITED_TASK_CASES=focus_scoring_prompts.EXPLOITED_TASK_CASES
+    ),
     user_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_USER_PROMPT,
 ) -> CompletionScore:
     """

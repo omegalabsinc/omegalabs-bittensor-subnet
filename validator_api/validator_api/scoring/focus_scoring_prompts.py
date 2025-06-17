@@ -219,6 +219,11 @@ Provide meaningful feedback including:
 - Specific strengths and areas for improvement
 - Ignore OMEGA Focus notifications in top right
 
+Important:
+Even if the user completes the steps in the description, but if description is in the below list of exploited examples 
+where user just tries to complete the task but does not actually complete it , give penalty score of 0.0 and skip rubrics if this is the case:
+{EXPLOITED_TASK_CASES}
+
 Scoring rubric:
 - 0.0-0.2: Poor task completion, largely irrelevant or counterproductive
 - 0.2-0.4: Weak task completion, minimal completion towards the goal
@@ -227,10 +232,10 @@ Scoring rubric:
 - 0.8-1.0: Excellent task completion, the task was completed with high quality and efficiency
 
 OUTPUT JSON FORMAT:
-{
+{{
     "rationale": "Detailed explanation of how well the user completed the task, including specific strengths and areas for improvement",
     "completion_score": float between 0.0 and 1.0
-}
+}}
 """
 
 DESC_ONLY_TASK_COMPLETION_USER_PROMPT = """Based on the provided annotated transcript, please provide a completion score breakdown.
@@ -253,3 +258,13 @@ This is the detailed description of the user's actions in the video:
 </annotated_transcript>
 
 If the user accomplishes the spirit of the task according to the task title, but does not complete it exactly as described according to the task description, you should still award some score (not 0.0)."""
+
+
+EXPLOITED_TASK_CASES = """
+- Users listening to the music.
+- Youtube videos.
+- Writing code and not testing it
+- Reading PDF without taking notes.
+- Reading a book.
+- Watching a movie / TV show / YouTube video.
+"""
