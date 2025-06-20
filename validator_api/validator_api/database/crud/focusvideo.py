@@ -442,7 +442,7 @@ async def check_availability(
             FocusVideoRecord.deleted_at.is_(None),
             FocusVideoRecord.processing_state
             == FocusVideoStateInternal.SUBMITTED.value,  # is available for purchase
-            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
+            # FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
             # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
         )
 
@@ -451,7 +451,7 @@ async def check_availability(
 
         result = await db.execute(query)
         video_record = result.scalar_one_or_none()
-
+        # print(f"video_record: {video_record}")
         if video_record is None:
             return {
                 "status": "error",
@@ -491,6 +491,7 @@ async def check_availability(
 
     except Exception as e:
         print(f"Error in check_availability: {str(e)}")
+        traceback.print_exc()
         # Make sure to rollback the transaction in case of error
         await db.rollback()
         raise HTTPException(500, detail="Internal error")
