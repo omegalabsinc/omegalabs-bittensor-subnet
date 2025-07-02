@@ -33,7 +33,7 @@ from validator_api.validator_api.scoring.scoring_service import (
 
 
 MIN_REWARD_TAO = 0.001
-MIN_REWARD_ALPHA = 0.5
+MIN_REWARD_ALPHA = 1
 
 
 class CachedValue:
@@ -146,13 +146,14 @@ async def _get_oldest_rewarded_user_videos(db: AsyncSession, limit: int = 2) -> 
                 FocusVideoRecord.deleted_at.is_(None),
                 FocusVideoRecord.task_type == TaskType.MARKETPLACE.value,
                 FocusVideoRecord.user_id == oldest_rewarded_user_id,
-                FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO
+                FocusVideoRecord.earned_reward_alpha > MIN_REWARD_ALPHA
             )
             .order_by(FocusVideoRecord.updated_at.asc())
             .limit(2)
         )
         result = await db.execute(oldest_user_query)
         oldest_user_videos = result.all()
+        print(f"Oldest user videos: {oldest_user_videos}")
     return oldest_user_videos
 
 
@@ -210,6 +211,7 @@ async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> Li
             == FocusVideoStateInternal.SUBMITTED.value,
             FocusVideoRecord.deleted_at.is_(None),
             FocusVideoRecord.task_type != TaskType.MARKETPLACE.value,
+            FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO
         )
         .order_by(FocusVideoRecord.updated_at.asc())
         .limit(limit)
@@ -267,16 +269,16 @@ async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
         
         # Check if we can purchase user videos
         can_purchase_user = await _can_purchase_user_videos(db, len(marketplace_items) > 2)
-        # print(f"DEBUG: len(marketplace_items) > 2: {len(marketplace_items) > 2}")
-        # print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
+        print(f"DEBUG: len(marketplace_items) > 2: {len(marketplace_items) > 2}")
+        print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
         
         if can_purchase_user:
             no_marketplace_items = len(marketplace_items)
             allow_more_user_videos = no_marketplace_items < 3
             user_and_boosted_limit = 7 if allow_more_user_videos else 1
-            # print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
+            print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
             user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
-            # print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
+            print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
             all_items += user_and_boosted_items
         else:
             print("DEBUG: Not adding user videos due to policy")

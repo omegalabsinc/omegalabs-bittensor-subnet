@@ -30,16 +30,32 @@ DESCRIPTION_TYPE = "description"
 
 
 async def query_pinecone(vector: List[float]) -> float:
-    response = await run_async(
-        PINECONE_INDEX.query,
-        vector=vector,
-        top_k=1,
-    )
-    if len(response["matches"]) > 0:
-        return 1 - response["matches"][0]["score"]
-    else:
-        print("No pinecone matches, returning 0")
-        return 0
+    try:
+        print(f"DEBUG: Querying main Pinecone index with vector length: {len(vector)}")
+        response = await run_async(
+            PINECONE_INDEX.query,
+            vector=vector,
+            top_k=1,
+        )
+        print(f"DEBUG: Main Pinecone query successful, response type: {type(response)}")
+        
+        if len(response["matches"]) > 0:
+            score = 1 - response["matches"][0]["score"]
+            print(f"DEBUG: Pinecone match found: {response['matches'][0]['score']}, returning novelty score: {score}")
+            return score
+        else:
+            print("DEBUG: No pinecone matches, returning 0")
+            return 0
+    except Exception as e:
+        print(f"DEBUG: Main Pinecone query failed with error: {str(e)}")
+        print(f"DEBUG: Error type: {type(e)}")
+        # Check if this is the specific type validation error
+        if "Invalid type for variable 'read_units'" in str(e):
+            print("DEBUG: Detected Pinecone client type validation error for read_units in main index")
+            # Return a default novelty score to allow processing to continue
+            print("DEBUG: Returning default novelty score of 0.5 due to Pinecone client bug")
+            return 0.5
+        raise
 
 
 async def get_pinecone_novelty(metadata: List[VideoMetadata]) -> List[float]:
