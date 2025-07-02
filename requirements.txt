@@ -5,7 +5,7 @@ torch==2.5.1
 torchaudio==2.5.1
 torchvision==0.20.1
 datasets==2.17.1
-pinecone-client==3.1.0
+pinecone==7.3.0
 huggingface-hub==0.20.3
 ulid-py==1.1.0
 yt-dlp==2024.11.18
