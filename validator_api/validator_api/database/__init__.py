@@ -21,7 +21,7 @@ engine = create_async_engine(
     DATABASE_URL,
     pool_size=DB_POOL_SIZE,
     max_overflow=DB_MAX_OVERFLOW,
-    pool_timeout=15,  # bumped down from default of 30
+    pool_timeout=30,  # Increased from 15 to handle heavy load
     pool_pre_ping=True,  # Good practice for most scenarios
     pool_recycle=300,  # Recycle connections after 5 minutes
 )
