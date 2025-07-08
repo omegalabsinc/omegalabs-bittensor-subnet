@@ -327,6 +327,8 @@ async def run_focus_scoring(
         async with get_db_context() as db:
             if task_type_value == TaskType.MARKETPLACE.value:
                 # Marketplace video: set score and update to pending human review
+                # if the video is a marketplace video, we need the AI feedback to set the score
+                # and then we need to update the video record to pending human review
                 await set_focus_video_score(db, video_id, score_details, embeddings)
                 update_stmt = (
                     update(FocusVideoRecord)
