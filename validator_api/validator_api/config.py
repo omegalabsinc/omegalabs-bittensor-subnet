@@ -2,29 +2,35 @@ import os
 from dotenv import load_dotenv
 import json
 from typing import List
-import boto3
+import base64
+import tempfile
 from omega import constants
 
 load_dotenv(override=True)
 
 
-def get_secret(secret_name, region_name):
-    # Create a Secrets Manager client
-    session = boto3.session.Session()
-    client = session.client(
-        service_name="secretsmanager",
-        region_name=region_name,
-    )
+def get_bool_env(key, default: bool=False):
+    return os.getenv(key, str(default)).lower() == "true"
 
-    get_secret_value_response = client.get_secret_value(SecretId=secret_name)
 
-    # For a list of exceptions thrown, see
-    # https://docs.aws.amazon.com/secretsmanager/latest/apireference/API_GetSecretValue.html
-
-    # Decrypts secret using the associated KMS key.
-    secret = get_secret_value_response["SecretString"]
-
-    return secret
+def setup_gcp_credentials():
+    """Setup GCP credentials from base64 encoded environment variable"""
+    gcp_creds_base64 = os.getenv('GCP_CREDS_BASE64')
+    if not gcp_creds_base64:
+        raise ValueError("GCP_CREDS_BASE64 environment variable is required")
+    
+    # Decode base64 credentials
+    gcp_creds_json = base64.b64decode(gcp_creds_base64).decode('utf-8')
+    
+    # Create temporary file for credentials
+    temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)
+    temp_file.write(gcp_creds_json)
+    temp_file.close()
+    
+    # Set the credentials file path for Google Cloud libraries
+    os.environ['GOOGLE_APPLICATION_CREDENTIALS'] = temp_file.name
+    
+    return temp_file.name
 
 
 def parse_proxies(proxy_list: List[str]) -> List[str]:
@@ -41,7 +47,7 @@ def robust_json_loads(json_str: str) -> List[str]:
     return json.loads(json_str.replace('\\"', '"'))
 
 
-PORT = int(os.environ.get("PORT", 8002))
+PORT = int(os.environ.get("PORT", 8001))
 NETWORK = os.environ["NETWORK"]
 print(f"Running with NETWORK={NETWORK}")
 NETUID = int(os.environ["NETUID"])
@@ -103,10 +109,6 @@ FOCUS_API_KEYS = robust_json_loads(os.environ["FOCUS_API_KEYS"])
 FOCUS_API_URL = os.environ["FOCUS_API_URL"]
 GOOGLE_AI_API_KEY = os.environ["GOOGLE_AI_API_KEY"]
 OPENAI_API_KEY = os.environ["OPENAI_API_KEY"]
-AWS_ACCESS_KEY_ID = os.environ["AWS_ACCESS_KEY_ID"]
-AWS_SECRET_ACCESS_KEY = os.environ["AWS_SECRET_ACCESS_KEY"]
-AWS_S3_REGION = os.environ["AWS_S3_REGION"]
-AWS_S3_BUCKET_NAME = os.environ["AWS_S3_BUCKET_NAME"]
 
 MAX_FOCUS_POINTS_PER_HOUR = int(
     os.getenv("MAX_FOCUS_POINTS_PER_HOUR", 80)
@@ -121,11 +123,10 @@ BOOSTED_TASKS_PERCENTAGE = float(os.getenv("BOOSTED_TASKS_PERCENTAGE", 0.7))
 
 GOOGLE_PROJECT_ID = os.getenv("GOOGLE_PROJECT_ID")
 GOOGLE_LOCATION = os.getenv("GOOGLE_LOCATION", "us-central1")
-GOOGLE_APPLICATION_CREDENTIALS = os.getenv("GOOGLE_APPLICATION_CREDENTIALS")
 GOOGLE_CLOUD_BUCKET_NAME = os.getenv("GOOGLE_CLOUD_BUCKET_NAME")
 
-with open(GOOGLE_APPLICATION_CREDENTIALS, "w") as f:
-    f.write(get_secret("prod/gcp_service_user", region_name=AWS_S3_REGION))
+# Setup GCP credentials from base64 environment variable
+GOOGLE_APPLICATION_CREDENTIALS = setup_gcp_credentials()
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 IMPORT_SCORE = os.getenv("IMPORT_SCORE", "true").lower() == "true"
