@@ -10,7 +10,7 @@ import bittensor
 from sqlalchemy.sql import select
 import random
 
-from validator_api.validator_api.config import NETWORK, NETUID
+from validator_api.validator_api.config import FOCUS_API_URL, NETWORK, NETUID
 from validator_api.validator_api.database import get_db_context
 from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
@@ -216,6 +216,7 @@ async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> Li
     )
 
     result = await db.execute(user_and_boosted_videos_query)
+    print(f"User and boosted videos: {result.all()}")
     return result.all()
 
 
@@ -268,21 +269,21 @@ async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
         # Check if we can purchase user videos
         can_purchase_user = await _can_purchase_user_videos(db, len(marketplace_items) > 2)
         # print(f"DEBUG: len(marketplace_items) > 2: {len(marketplace_items) > 2}")
-        # print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
+        print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
         
         if can_purchase_user:
             no_marketplace_items = len(marketplace_items)
             allow_more_user_videos = no_marketplace_items < 3
             user_and_boosted_limit = 7 if allow_more_user_videos else 1
-            # print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
+            print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
             user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
-            # print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
+            print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
             all_items += user_and_boosted_items
         else:
             print("DEBUG: Not adding user videos due to policy")
 
         random.shuffle(all_items)
-        # print(f"All items: {all_items}")
+        print(f"All items: {all_items}")
 
         return [
             {
@@ -656,3 +657,26 @@ async def mark_video_submitted(
     video_record.updated_at = datetime.utcnow()
     db.add(video_record)
     await db.commit()
+
+async def generate_task_feedback(
+    video_id: str,
+) -> bool:
+    import aiohttp
+    from validator_api.validator_api.config import FOCUS_API_KEYS, FOCUS_API_URL
+    url = f"{FOCUS_API_URL}/focus_videos/task_feedback/{video_id}"
+    headers = {
+        "X-SN24-API-Key": FOCUS_API_KEYS[0]
+    }
+    
+    for attempt in range(3):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.get(url, headers=headers) as response:
+                    if response.status == 200:
+                        return True
+                    else:
+                        print(f"Task feedback request failed with status {response.status}, attempt {attempt + 1}/3")
+        except Exception as e:
+            print(f"Task feedback request error: {e}, attempt {attempt + 1}/3")
+    
+    return False

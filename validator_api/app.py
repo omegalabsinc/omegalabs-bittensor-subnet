@@ -68,6 +68,7 @@ from validator_api.validator_api.database.crud.focusvideo import (
     TaskType,
     FocusVideoCache,
     check_availability,
+    generate_task_feedback,
     get_video_owner_coldkey,
     mark_video_rejected,
     set_focus_video_score,
@@ -321,6 +322,9 @@ async def run_focus_scoring(
         print(
             f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>"
         )
+        # print(f"checking if task feedback works--------------------------------")
+        result = await generate_task_feedback(video_id)
+        # print(f"let's see if it worked--------------------------------")
         
         # Step 3: Update database with results quickly
         MIN_FINAL_SCORE = 0.1
@@ -352,9 +356,11 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
                     score_details=score_details,
                     embeddings=embeddings,
                 )
+                
             else:
                 await set_focus_video_score(db, video_id, score_details, embeddings)
-            
+                ## SEND REQUEST HERE TO GENERATE AI FEEDBACK (TASK FEEDBACK)
+        
         print(f"run_focus_scoring updated video row in db | video_id <{video_id}>")
         return {"success": True}
 
