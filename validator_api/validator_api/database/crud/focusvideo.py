@@ -216,7 +216,7 @@ async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> Li
     )
 
     result = await db.execute(user_and_boosted_videos_query)
-    print(f"User and boosted videos: {result.all()}")
+    # print(f"User and boosted videos: {result.all()}")
     return result.all()
 
 
