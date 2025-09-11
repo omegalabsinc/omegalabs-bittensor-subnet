@@ -78,12 +78,12 @@ args = parser.parse_args()
 
 SUBTENSOR_NETWORK = None  # "test" or None
 
-API_BASE = (
-    "https://dev-sn24-api.omegatron.ai"
-    if SUBTENSOR_NETWORK == "test"
-    else "https://sn24-api.omegatron.ai"
-)
-# API_BASE = "http://localhost:8000"
+# API_BASE = (
+#     "https://dev-sn24-api.omegatron.ai"
+#     if SUBTENSOR_NETWORK == "test"
+#     else "https://sn24-api.omegatron.ai"
+# )
+API_BASE = "http://localhost:8001"
 
 CYAN = "\033[96m"
 GREEN = "\033[92m"

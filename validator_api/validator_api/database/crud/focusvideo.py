@@ -216,8 +216,9 @@ async def _fetch_user_and_boosted_tasks(db: AsyncSession, limit: int = 10) -> Li
     )
 
     result = await db.execute(user_and_boosted_videos_query)
-    # print(f"User and boosted videos: {result.all()}")
-    return result.all()
+    videos=result.all()
+    print(f"User and boosted videos: {videos}")
+    return videos
 
 
 async def _can_purchase_user_videos(db: AsyncSession, mkt_videos_exist: bool) -> bool:

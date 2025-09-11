@@ -322,9 +322,10 @@ async def run_focus_scoring(
         print(
             f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>"
         )
-        # print(f"checking if task feedback works--------------------------------")
+        print(f"--------------------------------")
+        print(f"checking if task feedback works--------------------------------")
         result = await generate_task_feedback(video_id)
-        # print(f"let's see if it worked--------------------------------")
+        print(f"let's see if it worked--------------------------------")
         
         # Step 3: Update database with results quickly
         MIN_FINAL_SCORE = 0.1
