@@ -1,6 +1,6 @@
-bittensor[torch]==9.2.0
-bittensor-cli==9.2.0
-bittensor-wallet==3.0.4
+bittensor[torch]==9.10.1
+bittensor-cli==9.11.0
+bittensor-wallet==4.0.0
 torch==2.5.1
 torchaudio==2.5.1
 torchvision==0.20.1
