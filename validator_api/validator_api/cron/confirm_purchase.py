@@ -17,6 +17,7 @@ from validator_api.validator_api.database.models.miner_bans import (
 from validator_api.validator_api.utils.wallet import get_transaction_from_block_hash
 from validator_api.validator_api.database.models.user import UserRecord
 from validator_api.validator_api.database.models.focus_video_record import TaskType
+from validator_api.validator_api.database.crud.focusvideo import release_video_lock
 
 
 async def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bool:
@@ -199,6 +200,7 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
 
                     if not video:
                         print(f"Video <{video_id}> not found")
+                        await release_video_lock(video_id)
                         return False
 
                     if (
@@ -210,6 +212,7 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
                             f"Video <{video_id}> has been marked as PURCHASED. Stopping background task."
                         )
                         await reset_failed_purchases(db, video.miner_hotkey)
+                        await release_video_lock(video_id)
                         return True
                     elif (
                         video is not None
@@ -219,6 +222,7 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
                         print(
                             f"Video <{video_id}> has been marked as SUBMITTED. Stopping background task."
                         )
+                        await release_video_lock(video_id)
                         return True
 
                     print(
@@ -241,9 +245,12 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
         db.add(video)
         await db.commit()
         await db.close()
+        await release_video_lock(video_id)
         return False
 
     except Exception as e:
         print(f"Error in confirm_video_purchased: {e}")
+        await release_video_lock(video_id)
 
+    await release_video_lock(video_id)
     return False

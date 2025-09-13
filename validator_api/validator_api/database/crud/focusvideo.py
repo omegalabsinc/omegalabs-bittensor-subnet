@@ -10,6 +10,7 @@ import bittensor
 from sqlalchemy.sql import select
 import random
 import uuid
+from typing import Set
 
 from validator_api.validator_api.config import (
     FOCUS_API_URL, 
@@ -42,6 +43,89 @@ from validator_api.validator_api.scoring.scoring_service import (
 
 MIN_REWARD_TAO = 0.001
 MIN_REWARD_ALPHA = 0.5
+
+# Database-based video locking for GCP clusters
+PURCHASE_LOCK_TIMEOUT_MINUTES = 5  # Lock expires after 5 minutes
+
+
+async def acquire_video_lock(video_id: str, miner_hotkey: str) -> bool:
+    """
+    Try to acquire a database lock for a video purchase.
+    Returns True if lock was acquired, False if already locked.
+    """
+    async with get_db_context() as db:
+        try:
+            # Check if video is available and not locked
+            query = select(FocusVideoRecord).filter(
+                FocusVideoRecord.video_id == video_id,
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
+                FocusVideoRecord.deleted_at.is_(None),
+            ).with_for_update(skip_locked=True)  # Skip if already locked by another transaction
+            
+            result = await db.execute(query)
+            video_record = result.scalar_one_or_none()
+            
+            if video_record is None:
+                # Video not available or already locked
+                return False
+            
+            # Update the video to PURCHASE_PENDING to lock it
+            video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING.value
+            video_record.miner_hotkey = miner_hotkey
+            video_record.updated_at = datetime.utcnow()
+            
+            db.add(video_record)
+            await db.commit()
+            return True
+            
+        except Exception as e:
+            print(f"Error acquiring video lock for {video_id}: {e}")
+            await db.rollback()
+            return False
+
+
+async def release_video_lock(video_id: str):
+    """Release a video purchase lock by reverting to SUBMITTED state."""
+    async with get_db_context() as db:
+        try:
+            query = select(FocusVideoRecord).filter(
+                FocusVideoRecord.video_id == video_id,
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
+                FocusVideoRecord.deleted_at.is_(None),
+            )
+            
+            result = await db.execute(query)
+            video_record = result.scalar_one_or_none()
+            
+            if video_record:
+                video_record.processing_state = FocusVideoStateInternal.SUBMITTED.value
+                video_record.updated_at = datetime.utcnow()
+                db.add(video_record)
+                await db.commit()
+                print(f"Released video lock for {video_id}")
+                
+        except Exception as e:
+            print(f"Error releasing video lock for {video_id}: {e}")
+            await db.rollback()
+
+
+async def is_video_locked(video_id: str) -> bool:
+    """Check if a video is currently locked (in PURCHASE_PENDING state)."""
+    async with get_db_context() as db:
+        try:
+            query = select(FocusVideoRecord).filter(
+                FocusVideoRecord.video_id == video_id,
+                FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
+                FocusVideoRecord.deleted_at.is_(None),
+            )
+            
+            result = await db.execute(query)
+            video_record = result.scalar_one_or_none()
+            return video_record is not None
+            
+        except Exception as e:
+            print(f"Error checking video lock for {video_id}: {e}")
+            return False
 
 
 class CachedValue:
@@ -81,17 +165,6 @@ class CachedValue:
             raise Exception("Cache is not initialized yet")
         return self._value
 
-    async def force_refresh(self):
-        """Force an immediate cache refresh"""
-        try:
-            new_value = await self._fetch_func()
-            self._value = new_value
-            if not self.is_initialized:
-                self.is_initialized = True
-            print(f"Cache {self._fetch_func.__name__} force refreshed at {datetime.utcnow()}")
-        except Exception as e:
-            print(f"Force cache refresh failed: {e}\n{traceback.format_exc()}")
-            raise
 
 
 async def _get_oldest_rewarded_user_id(db: AsyncSession) -> None:
@@ -327,32 +400,40 @@ async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
         # print(f"DEBUG: len(marketplace_items) > 2: {len(marketplace_items) > 2}")
         print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
         
-        if can_purchase_user:
-            no_marketplace_items = len(marketplace_items)
-            allow_more_user_videos = no_marketplace_items < 3
-            user_and_boosted_limit = 7 if allow_more_user_videos else 1
-            print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
-            user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
-            print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
-            all_items += user_and_boosted_items
-        else:
-            print("DEBUG: Not adding user videos due to policy")
+        # if can_purchase_user:
+        #     no_marketplace_items = len(marketplace_items)
+        #     allow_more_user_videos = no_marketplace_items < 3
+        #     user_and_boosted_limit = 7 if allow_more_user_videos else 1
+        #     print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
+        #     user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
+        #     print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
+        #     all_items += user_and_boosted_items
+        # else:
+        #     print("DEBUG: Not adding user videos due to policy")
 
         # If no videos are available from marketplace or user pools, generate subnet videos
-        if not all_items:
+        if all_items:
             print("DEBUG: No marketplace or user videos available, generating subnet videos")
             subnet_videos = await _generate_subnet_videos()
             all_items = [(item["video_id"], item["video_score"], item["expected_reward_tao"]) for item in subnet_videos]
 
         random.shuffle(all_items)
-        print(f"All items: {all_items}")
+        
+        # Filter out videos that are currently locked for purchase
+        filtered_items = []
+        for item in all_items:
+            video_id = item[0]
+            if not await is_video_locked(video_id):
+                filtered_items.append(item)
+        
+        print(f"All items: {len(all_items)}, Available after lock filter: {len(filtered_items)}")
 
         return [
             {
                 "video_id": item[0],
                 "video_score": item[1],
                 "expected_reward_tao": item[2]
-            } for item in all_items
+            } for item in filtered_items
         ]
 
 
@@ -464,9 +545,6 @@ class FocusVideoCache:
     def miner_purchase_stats(self) -> Dict[str, MinerPurchaseStats]:
         return self._miner_purchase_stats_cache.get()
 
-    async def force_refresh_max_tao_cache(self):
-        """Force refresh the max TAO purchase limit cache"""
-        await self._already_purchased_cache.force_refresh()
 
 
 def is_subnet_video(video_id: str) -> bool:
@@ -515,7 +593,7 @@ async def check_availability(
     db: AsyncSession, video_id: str, miner_hotkey: str, with_lock: bool = False
 ):
     try:
-        # Handle subnet videos specially
+        # Handle subnet videos specially (no database locking needed)
         if is_subnet_video(video_id):
             if not SUBNET_VIDEOS_WALLET_COLDKEY:
                 return {
@@ -529,53 +607,42 @@ async def check_availability(
                 "price_alpha": None,  # Subnet videos don't use alpha rewards
                 "is_subnet_video": True
             }
+
+        # Try to acquire database lock for this video
+        if not await acquire_video_lock(video_id, miner_hotkey):
+            return {
+                "status": "error",
+                "message": f"Video {video_id} is not available or currently being purchased by another miner",
+            }
         
-        # Use explicit loading strategy to avoid lazy loading issues
+        # Video is now locked, get the current video details
         query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.deleted_at.is_(None),
-            FocusVideoRecord.processing_state
-            == FocusVideoStateInternal.SUBMITTED.value,  # is available for purchase
-            # FocusVideoRecord.expected_reward_tao > MIN_REWARD_TAO,
-            # FocusVideoRecord.expected_reward_alpha > MIN_REWARD_ALPHA,
+            FocusVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
+            FocusVideoRecord.miner_hotkey == miner_hotkey,  # Ensure this miner locked it
         )
-
-        if with_lock:
-            query = query.with_for_update()
 
         result = await db.execute(query)
         video_record = result.scalar_one_or_none()
-        # print(f"video_record: {video_record}")
+        
         if video_record is None:
+            await release_video_lock(video_id)
             return {
                 "status": "error",
-                "message": f"video {video_id} not found or not available for purchase",
+                "message": f"Video {video_id} lock was lost or invalid",
             }
 
         if video_record.expected_reward_tao is None:
+            await release_video_lock(video_id)
             raise HTTPException(
                 500,
                 detail="The video record is missing the expected reward tao, investigate this bug",
             )
 
-        # TODO: This is commented out because expected_reward_alpha is not filled in for all videos yet, need to migrate
-        # if video_record.expected_reward_alpha is None:
-        #     raise HTTPException(500, detail="The video record is missing the expected reward alpha, investigate this bug")
-
         # Create a copy of the values we need to avoid lazy loading issues
         expected_reward_tao = video_record.expected_reward_tao
         expected_reward_alpha = video_record.expected_reward_alpha
-
-        # mark the purchase as pending i.e. a miner has claimed the video for purchase and now just needs to pay
-        video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING.value
-        video_record.miner_hotkey = miner_hotkey
-        video_record.updated_at = datetime.utcnow()
-
-        # NOTE: we don't set the video_record.earned_reward_tao here, because we don't know if the
-        # miner will successfully purchase the video or not. We set it later in cron/confirm_purchase.py
-
-        db.add(video_record)
-        await db.commit()
 
         return {
             "status": "success",
@@ -589,6 +656,8 @@ async def check_availability(
         traceback.print_exc()
         # Make sure to rollback the transaction in case of error
         await db.rollback()
+        # Release the lock in case of error
+        await release_video_lock(video_id)
         raise HTTPException(500, detail="Internal error")
 
 
