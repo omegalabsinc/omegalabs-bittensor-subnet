@@ -115,7 +115,6 @@ def list_videos():
             print(f"{RED}Error fetching focus videos: Status code {videos_response.status_code}{RESET}")
             print(f"Response content: {videos_response.text}")
             return None
-
         videos_data = videos_response.json()
         return videos_data
     except requests.exceptions.Timeout:

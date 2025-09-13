@@ -9,8 +9,16 @@ import asyncio
 import bittensor
 from sqlalchemy.sql import select
 import random
+import uuid
 
-from validator_api.validator_api.config import FOCUS_API_URL, NETWORK, NETUID
+from validator_api.validator_api.config import (
+    FOCUS_API_URL, 
+    NETWORK, 
+    NETUID,
+    SUBNET_VIDEOS_WALLET_COLDKEY,
+    SUBNET_VIDEOS_TAO_REWARD,
+    SUBNET_VIDEOS_COUNT,
+)
 from validator_api.validator_api.database import get_db_context
 from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
@@ -263,6 +271,42 @@ async def _can_purchase_user_videos(db: AsyncSession, mkt_videos_exist: bool) ->
     return True
 
 
+async def _generate_subnet_videos(count: int = None) -> List[Dict[str, Any]]:
+    """
+    Generate synthetic subnet videos when no marketplace or user videos are available.
+    These are fallback videos with fixed TAO rewards and a common wallet address.
+    
+    Args:
+        count: Number of videos to generate (defaults to SUBNET_VIDEOS_COUNT)
+    
+    Returns:
+        List of synthetic video records with video_id, video_score, and expected_reward_tao
+    """
+    if count is None or count == 0:
+        count = SUBNET_VIDEOS_COUNT
+    
+    if not SUBNET_VIDEOS_WALLET_COLDKEY:
+        print("WARNING: SUBNET_VIDEOS_WALLET_COLDKEY not configured, skipping subnet videos")
+        return []
+    
+    subnet_videos = []
+    for _ in range(count):
+        # Generate a unique video ID using UUID
+        video_id = f"subnet_{uuid.uuid4().hex[:12]}"
+        
+        # Generate a random score between 0.5 and 1.0 for variety
+        video_score = round(random.uniform(0.5, 1.0), 3)
+        
+        subnet_videos.append({
+            "video_id": video_id,
+            "video_score": video_score,
+            "expected_reward_tao": SUBNET_VIDEOS_TAO_REWARD
+        })
+    
+    print(f"Generated {len(subnet_videos)} subnet videos with {SUBNET_VIDEOS_TAO_REWARD} TAO reward each")
+    return subnet_videos
+
+
 async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
     """
     Fetch purchaseable videos
@@ -293,6 +337,12 @@ async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
             all_items += user_and_boosted_items
         else:
             print("DEBUG: Not adding user videos due to policy")
+
+        # If no videos are available from marketplace or user pools, generate subnet videos
+        if not all_items:
+            print("DEBUG: No marketplace or user videos available, generating subnet videos")
+            subnet_videos = await _generate_subnet_videos()
+            all_items = [(item["video_id"], item["video_score"], item["expected_reward_tao"]) for item in subnet_videos]
 
         random.shuffle(all_items)
         print(f"All items: {all_items}")
@@ -419,8 +469,20 @@ class FocusVideoCache:
         await self._already_purchased_cache.force_refresh()
 
 
+def is_subnet_video(video_id: str) -> bool:
+    """Check if a video ID is a generated subnet video"""
+    return video_id.startswith("subnet_")
+
+
 async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:
     try:
+        # Check if this is a subnet video
+        if is_subnet_video(video_id):
+            if not SUBNET_VIDEOS_WALLET_COLDKEY:
+                raise HTTPException(500, detail="Subnet videos wallet coldkey not configured")
+            return SUBNET_VIDEOS_WALLET_COLDKEY
+        
+        # Regular database lookup for actual focus videos
         query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id, FocusVideoRecord.deleted_at.is_(
                 None)
@@ -453,6 +515,21 @@ async def check_availability(
     db: AsyncSession, video_id: str, miner_hotkey: str, with_lock: bool = False
 ):
     try:
+        # Handle subnet videos specially
+        if is_subnet_video(video_id):
+            if not SUBNET_VIDEOS_WALLET_COLDKEY:
+                return {
+                    "status": "error",
+                    "message": "Subnet videos wallet coldkey not configured",
+                }
+            
+            return {
+                "status": "success", 
+                "price": SUBNET_VIDEOS_TAO_REWARD,
+                "price_alpha": None,  # Subnet videos don't use alpha rewards
+                "is_subnet_video": True
+            }
+        
         # Use explicit loading strategy to avoid lazy loading issues
         query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
@@ -504,6 +581,7 @@ async def check_availability(
             "status": "success",
             "price": expected_reward_tao,
             "price_alpha": expected_reward_alpha,
+            "is_subnet_video": False
         }
 
     except Exception as e:
@@ -518,6 +596,15 @@ async def check_video_metadata(
     db: AsyncSession, video_id: str, user_email: str, miner_hotkey: str
 ):
     try:
+        # Handle subnet videos specially
+        if is_subnet_video(video_id):
+            # For subnet videos, we assume they're always "purchased" and return a fixed score
+            return {
+                "success": True, 
+                "score": 0.8,  # Fixed score for subnet videos
+                "is_subnet_video": True
+            }
+        
         query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
             FocusVideoRecord.user_email == user_email,
@@ -558,7 +645,7 @@ async def check_video_metadata(
             # print(f"Video score: {video_score}")
             video_score = video_info.video_score
 
-            return {"success": True, "score": video_score}
+            return {"success": True, "score": video_score, "is_subnet_video": False}
 
         return {"success": False, "message": "No video found."}
 
