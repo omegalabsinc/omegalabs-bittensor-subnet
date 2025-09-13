@@ -400,19 +400,19 @@ async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
         # print(f"DEBUG: len(marketplace_items) > 2: {len(marketplace_items) > 2}")
         print(f"DEBUG: Can purchase user videos: {can_purchase_user}")
         
-        # if can_purchase_user:
-        #     no_marketplace_items = len(marketplace_items)
-        #     allow_more_user_videos = no_marketplace_items < 3
-        #     user_and_boosted_limit = 7 if allow_more_user_videos else 1
-        #     print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
-        #     user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
-        #     print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
-        #     all_items += user_and_boosted_items
-        # else:
-        #     print("DEBUG: Not adding user videos due to policy")
+        if can_purchase_user:
+            no_marketplace_items = len(marketplace_items)
+            allow_more_user_videos = no_marketplace_items < 3
+            user_and_boosted_limit = 7 if allow_more_user_videos else 1
+            print(f"DEBUG: Fetching user videos with limit: {user_and_boosted_limit}")
+            user_and_boosted_items = await _fetch_user_and_boosted_tasks(db, user_and_boosted_limit)
+            print(f"DEBUG: Got {len(user_and_boosted_items)} user/boosted items")
+            all_items += user_and_boosted_items
+        else:
+            print("DEBUG: Not adding user videos due to policy")
 
         # If no videos are available from marketplace or user pools, generate subnet videos
-        if all_items:
+        if not all_items:
             print("DEBUG: No marketplace or user videos available, generating subnet videos")
             subnet_videos = await _generate_subnet_videos()
             all_items = [(item["video_id"], item["video_score"], item["expected_reward_tao"]) for item in subnet_videos]
