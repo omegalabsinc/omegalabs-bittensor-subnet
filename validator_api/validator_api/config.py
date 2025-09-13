@@ -130,3 +130,8 @@ GOOGLE_APPLICATION_CREDENTIALS = setup_gcp_credentials()
 
 SENTRY_DSN = os.getenv("SENTRY_DSN")
 IMPORT_SCORE = os.getenv("IMPORT_SCORE", "true").lower() == "true"
+
+# Subnet Videos Configuration
+SUBNET_VIDEOS_WALLET_COLDKEY = os.getenv("SUBNET_VIDEOS_WALLET_COLDKEY")
+SUBNET_VIDEOS_TAO_REWARD = float(os.getenv("SUBNET_VIDEOS_TAO_REWARD", "0.1"))
+SUBNET_VIDEOS_COUNT = int(os.getenv("SUBNET_VIDEOS_COUNT", "5"))
