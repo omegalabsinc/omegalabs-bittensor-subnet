@@ -73,6 +73,18 @@ class CachedValue:
             raise Exception("Cache is not initialized yet")
         return self._value
 
+    async def force_refresh(self):
+        """Force an immediate cache refresh"""
+        try:
+            new_value = await self._fetch_func()
+            self._value = new_value
+            if not self.is_initialized:
+                self.is_initialized = True
+            print(f"Cache {self._fetch_func.__name__} force refreshed at {datetime.utcnow()}")
+        except Exception as e:
+            print(f"Force cache refresh failed: {e}\n{traceback.format_exc()}")
+            raise
+
 
 async def _get_oldest_rewarded_user_id(db: AsyncSession) -> None:
     """
@@ -401,6 +413,10 @@ class FocusVideoCache:
 
     def miner_purchase_stats(self) -> Dict[str, MinerPurchaseStats]:
         return self._miner_purchase_stats_cache.get()
+
+    async def force_refresh_max_tao_cache(self):
+        """Force refresh the max TAO purchase limit cache"""
+        await self._already_purchased_cache.force_refresh()
 
 
 async def get_video_owner_coldkey(db: AsyncSession, video_id: str) -> str:

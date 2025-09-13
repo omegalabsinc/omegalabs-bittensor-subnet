@@ -789,6 +789,12 @@ async def main():
         """
         Return available focus videos for purchase
         """
+        # Force refresh the max TAO cache to ensure accurate purchase limits
+        try:
+            await focus_video_cache.force_refresh_max_tao_cache()
+        except Exception as e:
+            print(f"Warning: Failed to refresh max TAO cache: {e}")
+        
         return focus_video_cache.get_all_available_focus()
 
     @app.post("/api/focus/purchase")
@@ -826,6 +832,17 @@ async def main():
             video_owner_coldkey = await get_video_owner_coldkey(
                 db, video_id
             )  # run with_lock True
+
+            # Refresh the available videos cache immediately to remove this video from the list
+            # This prevents other miners from seeing this video while the current miner is transferring
+            async def refresh_available_videos_cache():
+                try:
+                    await focus_video_cache._available_focus_cache.force_refresh()
+                    print(f"Refreshed available videos cache after video {video_id} marked as PURCHASE_PENDING")
+                except Exception as e:
+                    print(f"Warning: Failed to refresh available videos cache: {e}")
+
+            background_tasks.add_task(refresh_available_videos_cache)
 
             # Create a standalone async function for the background task
             async def run_confirm_video_purchased(video_id: str):
