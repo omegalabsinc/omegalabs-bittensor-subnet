@@ -39,6 +39,8 @@ from validator_api.validator_api.scoring.scoring_service import (
     VideoScore,
     FocusVideoEmbeddings,
 )
+# Note: subnet_video_purchase model removed - using SubnetVideoRecord for all tracking
+from validator_api.validator_api.database.models.subnet_video import SubnetVideoRecord
 
 
 MIN_REWARD_TAO = 0.001
@@ -380,6 +382,179 @@ async def _generate_subnet_videos(count: int = None) -> List[Dict[str, Any]]:
     return subnet_videos
 
 
+# Note: Subnet video purchase tracking is now handled directly in SubnetVideoRecord
+# The purchase process updates the video record with purchase details
+
+
+async def create_subnet_video_records(count: int = None) -> List[Dict[str, Any]]:
+    """
+    Create subnet video records in database for tracking like focus videos
+    """
+    if count is None:
+        count = SUBNET_VIDEOS_COUNT
+    
+    if not SUBNET_VIDEOS_WALLET_COLDKEY:
+        print("WARNING: SUBNET_VIDEOS_WALLET_COLDKEY not configured, skipping subnet video creation")
+        return []
+    
+    async with get_db_context() as db:
+        try:
+            subnet_videos = []
+            for _ in range(count):
+                # Generate a unique video ID using UUID
+                video_id = f"subnet_{uuid.uuid4().hex[:12]}"
+                
+                # Generate a random score between 0.5 and 1.0 for variety
+                video_score = round(random.uniform(0.5, 1.0), 3)
+                
+                # Create database record
+                subnet_video = SubnetVideoRecord(
+                    video_id=video_id,
+                    video_score=video_score,
+                    expected_reward_tao=SUBNET_VIDEOS_TAO_REWARD,
+                    processing_state="SUBMITTED",
+                    created_at=datetime.utcnow(),
+                    updated_at=datetime.utcnow()
+                )
+                
+                db.add(subnet_video)
+                
+                subnet_videos.append({
+                    "video_id": video_id,
+                    "video_score": video_score,
+                    "expected_reward_tao": SUBNET_VIDEOS_TAO_REWARD
+                })
+            
+            await db.commit()
+            print(f"Created {len(subnet_videos)} subnet video records in database")
+            return subnet_videos
+            
+        except Exception as e:
+            print(f"Error creating subnet video records: {e}")
+            await db.rollback()
+            return []
+
+
+async def get_available_subnet_videos() -> List[Dict[str, Any]]:
+    """
+    Get available subnet videos from database (SUBMITTED state)
+    """
+    async with get_db_context() as db:
+        try:
+            query = select(
+                SubnetVideoRecord.video_id,
+                SubnetVideoRecord.video_score,
+                SubnetVideoRecord.expected_reward_tao
+            ).filter(
+                SubnetVideoRecord.processing_state == "SUBMITTED",
+                SubnetVideoRecord.deleted_at.is_(None)
+            ).order_by(SubnetVideoRecord.updated_at.asc())
+            
+            result = await db.execute(query)
+            return result.all()
+            
+        except Exception as e:
+            print(f"Error getting available subnet videos: {e}")
+            return []
+
+
+async def mark_subnet_video_purchase_pending(video_id: str, miner_hotkey: str) -> bool:
+    """
+    Mark a subnet video as PURCHASE_PENDING (equivalent to acquiring lock)
+    """
+    async with get_db_context() as db:
+        try:
+            query = select(SubnetVideoRecord).filter(
+                SubnetVideoRecord.video_id == video_id,
+                SubnetVideoRecord.processing_state == "SUBMITTED",
+                SubnetVideoRecord.deleted_at.is_(None)
+            ).with_for_update(skip_locked=True)
+            
+            result = await db.execute(query)
+            subnet_video = result.scalar_one_or_none()
+            
+            if subnet_video is None:
+                return False
+            
+            subnet_video.processing_state = "PURCHASE_PENDING"
+            subnet_video.miner_hotkey = miner_hotkey
+            subnet_video.updated_at = datetime.utcnow()
+            
+            db.add(subnet_video)
+            await db.commit()
+            return True
+            
+        except Exception as e:
+            print(f"Error marking subnet video purchase pending: {e}")
+            await db.rollback()
+            return False
+
+
+async def mark_subnet_video_purchased(video_id: str, block_hash: str = None) -> bool:
+    """
+    Mark a subnet video as PURCHASED and set earned rewards
+    """
+    async with get_db_context() as db:
+        try:
+            query = select(SubnetVideoRecord).filter(
+                SubnetVideoRecord.video_id == video_id,
+                SubnetVideoRecord.processing_state == "PURCHASE_PENDING",
+                SubnetVideoRecord.deleted_at.is_(None)
+            )
+            
+            result = await db.execute(query)
+            subnet_video = result.scalar_one_or_none()
+            
+            if subnet_video is None:
+                return False
+            
+            subnet_video.processing_state = "PURCHASED"
+            subnet_video.earned_reward_tao = subnet_video.expected_reward_tao
+            subnet_video.block_hash = block_hash
+            subnet_video.updated_at = datetime.utcnow()
+            
+            db.add(subnet_video)
+            await db.commit()
+            return True
+            
+        except Exception as e:
+            print(f"Error marking subnet video purchased: {e}")
+            await db.rollback()
+            return False
+
+
+async def revert_subnet_video_to_submitted(video_id: str) -> bool:
+    """
+    Revert a subnet video from PURCHASE_PENDING back to SUBMITTED (release lock)
+    """
+    async with get_db_context() as db:
+        try:
+            query = select(SubnetVideoRecord).filter(
+                SubnetVideoRecord.video_id == video_id,
+                SubnetVideoRecord.processing_state == "PURCHASE_PENDING",
+                SubnetVideoRecord.deleted_at.is_(None)
+            )
+            
+            result = await db.execute(query)
+            subnet_video = result.scalar_one_or_none()
+            
+            if subnet_video is None:
+                return False
+            
+            subnet_video.processing_state = "SUBMITTED"
+            subnet_video.miner_hotkey = None
+            subnet_video.updated_at = datetime.utcnow()
+            
+            db.add(subnet_video)
+            await db.commit()
+            return True
+            
+        except Exception as e:
+            print(f"Error reverting subnet video to submitted: {e}")
+            await db.rollback()
+            return False
+
+
 async def _get_purchaseable_videos() -> List[Dict[str, Any]]:
     """
     Fetch purchaseable videos
@@ -446,26 +621,37 @@ async def _alpha_to_tao_rate() -> float:
 
 async def _already_purchased_max_focus_tao() -> bool:
     async with get_db_context() as db:
-        query = select(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
+        # Get regular focus video purchases
+        focus_query = select(func.sum(FocusVideoRecord.earned_reward_tao)).filter(
             FocusVideoRecord.processing_state
             == FocusVideoStateInternal.PURCHASED.value,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24),
         )
-
-        result = await db.execute(query)
-        total_earned_tao = result.scalar() or 0
-        # max_focus_alpha_per_day = await get_max_focus_alpha_per_day()
-        # effective_max_focus_alpha = max_focus_alpha_per_day *   0.9
-        # effective_max_focus_tao = effective_max_focus_alpha * await _alpha_to_tao_rate()
-        # print(f"Effective max focus tao: {effective_max_focus_tao}")
-        # return total_earned_tao >= effective_max_focus_tao
+        
+        focus_result = await db.execute(focus_query)
+        focus_earned_tao = focus_result.scalar() or 0
+        
+        # Get subnet video purchases
+        subnet_query = select(func.sum(SubnetVideoRecord.earned_reward_tao)).filter(
+            SubnetVideoRecord.processing_state == "PURCHASED",
+            SubnetVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24),
+        )
+        
+        subnet_result = await db.execute(subnet_query)
+        subnet_earned_tao = subnet_result.scalar() or 0
+        
+        # Total TAO spent in last 24 hours
+        total_earned_tao = focus_earned_tao + subnet_earned_tao
 
         max_focus_tao_per_day = await get_max_focus_tao_per_day()
         # Using 90% of the max focus tao per day as the effective max focus tao per day
         effective_max_focus_tao = max_focus_tao_per_day * 0.9
-        # print(f"Max focus tao per day: {max_focus_tao_per_day}")
+        
         print(f"Effective max focus tao: {effective_max_focus_tao}")
+        print(f"Focus videos earned tao: {focus_earned_tao}")
+        print(f"Subnet videos earned tao: {subnet_earned_tao}")
         print(f"Total earned tao: {total_earned_tao}")
+        
         return total_earned_tao >= effective_max_focus_tao
 
 
@@ -479,37 +665,70 @@ class MinerPurchaseStats(BaseModel):
 
 async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
     async with get_db_context() as db:
-        query = select(FocusVideoRecord).filter(
+        # Get regular focus video purchases
+        focus_query = select(FocusVideoRecord).filter(
             FocusVideoRecord.processing_state
             == FocusVideoStateInternal.PURCHASED.value,
             FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24),
         )
-        result = await db.execute(query)
-        purchased_videos_records = result.scalars().all()
+        focus_result = await db.execute(focus_query)
+        purchased_videos_records = focus_result.scalars().all()
 
-    # Calculate total earned tao
-    total_earned_tao = sum(
+        # Get subnet video purchases
+        subnet_query = select(SubnetVideoRecord).filter(
+            SubnetVideoRecord.processing_state == "PURCHASED",
+            SubnetVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24),
+        )
+        subnet_result = await db.execute(subnet_query)
+        subnet_purchase_records = subnet_result.scalars().all()
+
+    # Calculate total earned tao from both sources
+    focus_earned_tao = sum(
         record.earned_reward_tao or 0 for record in purchased_videos_records
     )
+    subnet_earned_tao = sum(
+        record.earned_reward_tao or 0 for record in subnet_purchase_records
+    )
+    total_earned_tao = focus_earned_tao + subnet_earned_tao
 
-    # Group records by miner hotkey
+    # Group focus video records by miner hotkey
     videos_by_miner = {}
     for record in purchased_videos_records:
         if record.miner_hotkey not in videos_by_miner:
             videos_by_miner[record.miner_hotkey] = []
         videos_by_miner[record.miner_hotkey].append(record)
 
+    # Group subnet video records by miner hotkey
+    subnet_by_miner = {}
+    for record in subnet_purchase_records:
+        if record.miner_hotkey not in subnet_by_miner:
+            subnet_by_miner[record.miner_hotkey] = []
+        subnet_by_miner[record.miner_hotkey].append(record)
+
     # Process stats for each miner
     stats = {}
-    for miner_hotkey, miner_videos in videos_by_miner.items():
-        miner_earned_tao = sum(
-            video_record.earned_reward_tao for video_record in miner_videos
+    all_miners = set(videos_by_miner.keys()) | set(subnet_by_miner.keys())
+    
+    for miner_hotkey in all_miners:
+        # Calculate TAO from focus videos
+        miner_focus_tao = sum(
+            video_record.earned_reward_tao or 0 
+            for video_record in videos_by_miner.get(miner_hotkey, [])
         )
+        
+        # Calculate TAO from subnet videos
+        miner_subnet_tao = sum(
+            subnet_record.earned_reward_tao or 0 
+            for subnet_record in subnet_by_miner.get(miner_hotkey, [])
+        )
+        
+        miner_total_tao = miner_focus_tao + miner_subnet_tao
         tao_percentage = (
-            miner_earned_tao / total_earned_tao if total_earned_tao > 0 else 0
+            miner_total_tao / total_earned_tao if total_earned_tao > 0 else 0
         )
+        
         stats[miner_hotkey] = MinerPurchaseStats(
-            total_focus_points=miner_earned_tao,
+            total_focus_points=miner_total_tao,
             max_focus_points=total_earned_tao,
             focus_points_percentage=tao_percentage,
         )
@@ -600,6 +819,8 @@ async def check_availability(
                     "status": "error",
                     "message": "Subnet videos wallet coldkey not configured",
                 }
+            
+            # Subnet video purchase is tracked when marked as purchased in the database
             
             return {
                 "status": "success", 
