@@ -5,7 +5,6 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT) 
 
 ---
-
 ## Be, and it becomes ... <!-- omit in toc -->
 
 </div>
