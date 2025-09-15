@@ -877,7 +877,9 @@ async def main():
             db, video_owner_coldkey, video_id, miner_hotkey, block_hash
         )
         if result:
-            background_tasks.add_task(run_stake, video_id)
+            # For subnet videos, skip the staking background task
+            if not video_id.startswith("subnet_"):
+                background_tasks.add_task(run_stake, video_id)
             return {
                 "status": "success",
                 "message": "Video purchase verification was successful",

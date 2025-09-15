@@ -95,6 +95,7 @@ RESET = "\033[0m"
 def initialize_subtensor():
     try:
         subtensor = bt.subtensor(network=SUBTENSOR_NETWORK)
+        print(f" SUBTENSOR {subtensor}")
         # print(f"{GREEN}Subtensor initialized successfully.{RESET}")
         return subtensor
     except Exception as e:
@@ -205,10 +206,33 @@ async def transfer_operation(
             wallet,
             transfer_address_to,
             transfer_balance,
-            wait_for_finalization=True,
+            wait_for_finalization=False,  # Changed to False to get the actual inclusion block
             wait_for_inclusion=True,
         )
-
+        
+        # Log detailed block information
+        print(f"\n{CYAN}=== TRANSFER RESULT ==={RESET}")
+        print(f"Success: {success}")
+        print(f"Block Hash Returned: {block_hash}")
+        print(f"Error Message: {err_msg}")
+        
+        if success and block_hash:
+            try:
+                # Get the actual block number for this hash
+                block = subtensor.substrate.get_block(block_hash)
+                if block:
+                    block_num = block["header"]["number"]
+                    print(f"Block Number: {block_num}")
+                    print(f"Block contains {len(block.get('extrinsics', []))} extrinsics")
+                    
+                    # Also get the latest block for comparison
+                    latest_block = subtensor.substrate.get_block()
+                    latest_num = latest_block["header"]["number"]
+                    print(f"Latest Block Number: {latest_num}")
+                    print(f"Blocks behind latest: {latest_num - block_num}")
+            except Exception as e:
+                print(f"{RED}Could not fetch block details: {e}{RESET}")
+        print(f"{CYAN}======================={RESET}")
         if not success:
             print(f"{RED}Transfer failed with error: {err_msg}{RESET}")
             if "Inability to pay some fees" in str(err_msg):

@@ -10,6 +10,7 @@ from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoRecord,
     FocusVideoStateInternal,
 )
+from validator_api.validator_api.database.models.subnet_video import SubnetVideoRecord
 from validator_api.validator_api.database.models.miner_bans import (
     increment_failed_purchases,
     reset_failed_purchases,
@@ -25,6 +26,14 @@ async def extrinsic_already_confirmed(db: AsyncSession, extrinsic_id: str) -> bo
         FocusVideoRecord.extrinsic_id == extrinsic_id
     )
     result = await db.execute(query)
+    if result.scalar_one_or_none() is not None:
+        return True
+    
+    # Also check subnet videos
+    query = select(SubnetVideoRecord).filter(
+        SubnetVideoRecord.extrinsic_id == extrinsic_id
+    )
+    result = await db.execute(query)
     return result.scalar_one_or_none() is not None
 
 
@@ -37,29 +46,53 @@ async def check_payment(
 ):
     try:
         print(
-            f"Checking payment of {amount} from {sender_address} to {recipient_address}"
+            f"\n=== CHECK PAYMENT ==="
         )
+        print(
+            f"Looking for payment: {amount} TAO"
+        )
+        print(f"From (sender): {sender_address}")
+        print(f"To (recipient): {recipient_address}")
+        print(f"In block hash: {block_hash}")
 
         # Get all transfers associated with the recipient address
         transfers = await get_transaction_from_block_hash(recipient_address, block_hash)
+        
+        print(f"\nFound {len(transfers)} transfers from block")
 
         # Filter transfers to find the specific payment
-        for transfer in transfers:
-            if (
-                transfer["from"] == sender_address
-                and transfer["to"] == recipient_address
-                and round(float(transfer["amount"]), 5) == round(amount, 5)
-            ):
+        for i, transfer in enumerate(transfers):
+            print(f"\nChecking transfer #{i+1}:")
+            print(f"  From: {transfer['from']}")
+            print(f"  To: {transfer['to']}")
+            print(f"  Amount: {transfer['amount']} TAO")
+            print(f"  Expected amount: {amount} TAO")
+            
+            # Check if addresses match
+            from_match = transfer["from"] == sender_address
+            to_match = transfer["to"] == recipient_address
+            amount_match = round(float(transfer["amount"]), 5) == round(amount, 5)
+            
+            print(f"  From matches: {from_match}")
+            print(f"  To matches: {to_match}")
+            print(f"  Amount matches: {amount_match}")
+            
+            if from_match and to_match and amount_match:
                 if await extrinsic_already_confirmed(db, transfer["extrinsicId"]):
+                    print(f"  >>> Extrinsic already confirmed, skipping")
                     continue
                 print(
-                    f"Payment of {amount} found from {sender_address} to {recipient_address}"
+                    f"  >>> PAYMENT FOUND! Extrinsic ID: {transfer['extrinsicId']}"
                 )
                 return transfer["extrinsicId"]
+            else:
+                print(f"  >>> Not a match")
 
         print(
-            f"Payment of {amount} not found from {sender_address} to {recipient_address}"
+            f"\n=== PAYMENT NOT FOUND ==="
         )
+        print(f"Expected: {amount} TAO from {sender_address} to {recipient_address}")
+        print(f"Block hash searched: {block_hash}")
         return None
 
     except Exception as e:
@@ -83,13 +116,25 @@ async def confirm_transfer(
     with_lock: bool = False,
 ):
     subtensor = bt.subtensor(network=config.NETWORK)
-    query = select(FocusVideoRecord).filter(
-        FocusVideoRecord.video_id == video_id,
-        FocusVideoRecord.processing_state
-        == FocusVideoStateInternal.PURCHASE_PENDING.value,
-        FocusVideoRecord.miner_hotkey == miner_hotkey,
-        FocusVideoRecord.deleted_at.is_(None),
-    )
+    
+    # Check if this is a subnet video
+    if video_id.startswith("subnet_"):
+        query = select(SubnetVideoRecord).filter(
+            SubnetVideoRecord.video_id == video_id,
+            SubnetVideoRecord.processing_state
+            == FocusVideoStateInternal.PURCHASE_PENDING.value,
+            SubnetVideoRecord.miner_hotkey == miner_hotkey,
+            SubnetVideoRecord.deleted_at.is_(None),
+        )
+    else:
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.processing_state
+            == FocusVideoStateInternal.PURCHASE_PENDING.value,
+            FocusVideoRecord.miner_hotkey == miner_hotkey,
+            FocusVideoRecord.deleted_at.is_(None),
+        )
+    
     if with_lock:
         query = query.with_for_update()
 
@@ -130,7 +175,8 @@ async def confirm_transfer(
                 video.earned_reward_alpha = video.expected_reward_alpha
                 db.add(video)
                 
-                if video.task_type == TaskType.MARKETPLACE.value:
+                # Only focus videos have task_type and user_id
+                if not video_id.startswith("subnet_") and video.task_type == TaskType.MARKETPLACE.value:
                     user_query = select(UserRecord).filter(UserRecord.id == video.user_id)
                     user_result = await db.execute(user_query)
                     user = user_result.scalar_one_or_none()
@@ -188,10 +234,18 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
             await asyncio.sleep(DELAY_SECS)
             try:
                 async with get_db_context() as db:
-                    query = select(FocusVideoRecord).filter(
-                        FocusVideoRecord.video_id == video_id,
-                        FocusVideoRecord.deleted_at.is_(None),
-                    )
+                    # Check if this is a subnet video
+                    if video_id.startswith("subnet_"):
+                        query = select(SubnetVideoRecord).filter(
+                            SubnetVideoRecord.video_id == video_id,
+                            SubnetVideoRecord.deleted_at.is_(None),
+                        )
+                    else:
+                        query = select(FocusVideoRecord).filter(
+                            FocusVideoRecord.video_id == video_id,
+                            FocusVideoRecord.deleted_at.is_(None),
+                        )
+                    
                     if with_lock:
                         query = query.with_for_update()
 

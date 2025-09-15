@@ -102,7 +102,7 @@ def unstake_balance(wallet):
                     wallet=wallet,
                     amount=amount,
                     netuid=netuid,
-                    wait_for_finalization=True,
+                    wait_for_finalization=False,
                     wait_for_inclusion=True,
                 )
                 if stake_result:
@@ -182,7 +182,7 @@ async def transfer_operation(
             wallet,
             transfer_address_to,
             transfer_balance,
-            wait_for_finalization=True,
+            wait_for_finalization=False,
             wait_for_inclusion=True,
         )
         logger.info(

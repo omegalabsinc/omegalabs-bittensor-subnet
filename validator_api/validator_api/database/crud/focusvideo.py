@@ -349,7 +349,8 @@ async def _can_purchase_user_videos(db: AsyncSession, mkt_videos_exist: bool) ->
 async def _generate_subnet_videos(count: int = None) -> List[Dict[str, Any]]:
     """
     Generate synthetic subnet videos when no marketplace or user videos are available.
-    These are fallback videos with fixed TAO rewards and a common wallet address.
+    First checks if subnet videos exist in database, returns those if found.
+    Only creates new records if database table is empty.
     
     Args:
         count: Number of videos to generate (defaults to SUBNET_VIDEOS_COUNT)
@@ -364,21 +365,24 @@ async def _generate_subnet_videos(count: int = None) -> List[Dict[str, Any]]:
         print("WARNING: SUBNET_VIDEOS_WALLET_COLDKEY not configured, skipping subnet videos")
         return []
     
-    subnet_videos = []
-    for _ in range(count):
-        # Generate a unique video ID using UUID
-        video_id = f"subnet_{uuid.uuid4().hex[:12]}"
-        
-        # Generate a random score between 0.5 and 1.0 for variety
-        video_score = round(random.uniform(0.5, 1.0), 3)
-        
-        subnet_videos.append({
-            "video_id": video_id,
-            "video_score": video_score,
-            "expected_reward_tao": SUBNET_VIDEOS_TAO_REWARD
-        })
+    # First check if we have existing subnet videos in the database
+    existing_videos = await get_available_subnet_videos()
+    if existing_videos:
+        # Convert database result tuples to dictionary format
+        subnet_videos = []
+        for video_tuple in existing_videos:
+            subnet_videos.append({
+                "video_id": video_tuple[0],
+                "video_score": video_tuple[1], 
+                "expected_reward_tao": video_tuple[2]
+            })
+        print(f"Found {len(subnet_videos)} existing subnet videos in database")
+        return subnet_videos
     
-    print(f"Generated {len(subnet_videos)} subnet videos with {SUBNET_VIDEOS_TAO_REWARD} TAO reward each")
+    # No existing videos found, create new ones
+    print("No existing subnet videos found, generating new ones...")
+    subnet_videos = await create_subnet_video_records(count)
+    print(f"Generated and saved {len(subnet_videos)} new subnet videos to database")
     return subnet_videos
 
 
@@ -645,7 +649,10 @@ async def _already_purchased_max_focus_tao() -> bool:
 
         max_focus_tao_per_day = await get_max_focus_tao_per_day()
         # Using 90% of the max focus tao per day as the effective max focus tao per day
+        
         effective_max_focus_tao = max_focus_tao_per_day * 0.9
+
+        # effective_max_focus_tao = 5
         
         print(f"Effective max focus tao: {effective_max_focus_tao}")
         print(f"Focus videos earned tao: {focus_earned_tao}")
@@ -812,7 +819,7 @@ async def check_availability(
     db: AsyncSession, video_id: str, miner_hotkey: str, with_lock: bool = False
 ):
     try:
-        # Handle subnet videos specially (no database locking needed)
+        # Handle subnet videos specially
         if is_subnet_video(video_id):
             if not SUBNET_VIDEOS_WALLET_COLDKEY:
                 return {
@@ -820,12 +827,28 @@ async def check_availability(
                     "message": "Subnet videos wallet coldkey not configured",
                 }
             
-            # Subnet video purchase is tracked when marked as purchased in the database
-            
+            # Mark subnet video as PURCHASE_PENDING for verification process
+            success = await mark_subnet_video_purchase_pending(video_id, miner_hotkey)
+            if not success:
+                return {
+                    "status": "error",
+                    "message": f"Subnet video {video_id} is not available or currently being purchased",
+                }
+            query = select(SubnetVideoRecord).filter(
+            SubnetVideoRecord.video_id == video_id,
+            SubnetVideoRecord.deleted_at.is_(None),
+            SubnetVideoRecord.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value,
+            SubnetVideoRecord.miner_hotkey == miner_hotkey,  # Ensure this miner locked it
+            )
+
+            result = await db.execute(query)
+            video_record = result.scalar_one_or_none()
+            expected_reward_tao = video_record.expected_reward_tao
+            expected_reward_alpha = video_record.expected_reward_alpha
             return {
                 "status": "success", 
-                "price": SUBNET_VIDEOS_TAO_REWARD,
-                "price_alpha": None,  # Subnet videos don't use alpha rewards
+                "price": expected_reward_tao,
+                "price_alpha": expected_reward_alpha,  # Subnet videos don't use alpha rewards
                 "is_subnet_video": True
             }
 

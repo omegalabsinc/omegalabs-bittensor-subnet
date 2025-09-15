@@ -84,23 +84,46 @@ async def get_transaction_from_block_hash(
     """Get all transfers associated with the provided wallet address and block_hash."""
     transactions = []
     divisor = 1e9
-
+    print(f"\n=== BLOCK HASH LOOKUP ===")
+    print(f"Network: {NETWORK}")
+    print(f"Looking for wallet: {wallet_address}")
+    print(f"In block hash: {block_hash}")
+    
     async with bt.AsyncSubtensor(network=NETWORK) as subtensor:
+        print(f"Fetching block data...")
         block = await subtensor.substrate.get_block(block_hash)
-        block_num = block["header"]["number"]
 
-        for extrinsic in block["extrinsics"]:
+        block_num = block["header"]["number"]
+        print(f"Block number: {block_num}")
+        print(f"Total extrinsics in block: {len(block['extrinsics'])}")
+        
+        transfer_count = 0
+        for i, extrinsic in enumerate(block["extrinsics"]):
+            # print(f"Extrinsic #{i}: {extrinsic}")
             extrinsic = extrinsic.value
             if "call" in extrinsic and extrinsic["call"]["call_module"] == "Balances":
                 if extrinsic["call"]["call_function"] in [
                     "transfer",
                     "transfer_allow_death",
+                    "transfer_keep_alive"
                 ]:
                     sender = extrinsic.get("address", "Unknown")
                     recipient = extrinsic["call"]["call_args"][0]["value"]
                     amount = int(extrinsic["call"]["call_args"][1]["value"])
-
+                    
+                    transfer_count += 1
+                    print(f"\nTransfer #{transfer_count} found:")
+                    print(f"  From: {sender}")
+                    print(f"  To: {recipient}")
+                    print(f"  Amount: {amount / divisor} TAO")
+                    print(f"  Extrinsic Hash: {extrinsic.get('extrinsic_hash', 'N/A')}")
+                    
                     if sender == wallet_address or recipient == wallet_address:
+                        print(f"  >>> MATCHES WALLET ADDRESS! <<<")
+                        if sender == wallet_address:
+                            print(f"      (wallet is sender)")
+                        else:
+                            print(f"      (wallet is recipient)")
                         transactions.append(
                             {
                                 "id": extrinsic["extrinsic_hash"],
@@ -113,7 +136,12 @@ async def get_transaction_from_block_hash(
                                 "blockNumber": block_num,
                             }
                         )
-
+    
+    print(f"\n=== LOOKUP SUMMARY ===")
+    print(f"Total transfers found in block: {transfer_count}")
+    print(f"Transfers matching wallet: {len(transactions)}")
+    print(f"====================\n")
+    
     return transactions[::-1]
 
 
