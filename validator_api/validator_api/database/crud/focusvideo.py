@@ -1087,7 +1087,7 @@ async def generate_task_feedback(
     for attempt in range(3):
         try:
             async with aiohttp.ClientSession() as session:
-                async with session.get(url, headers=headers) as response:
+                async with session.post(url, headers=headers) as response:
                     if response.status == 200:
                         return True
                     else:
