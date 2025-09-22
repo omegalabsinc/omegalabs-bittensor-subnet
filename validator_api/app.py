@@ -870,6 +870,7 @@ async def main():
                 ) as response:
                     res = await response.json()
                     print(f"Got res={res} from {FOCUS_API_URL}/auth/stake")
+                    print(f"staking Video ID: {video_id}")
                     return res
 
         video_owner_coldkey = await get_video_owner_coldkey(db, video_id)
