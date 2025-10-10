@@ -242,155 +242,164 @@ class Validator(BaseValidatorNeuron):
             return
 
         """ START YOUTUBE AUDIO PROCESSING AND SCORING """
-        bt.logging.info("===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
-        # The dendrite client queries the network.
-        query = random.choice(self.all_topics) + " podcast"
-        bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        audio_input_synapse = Audios(query=query, num_audios=NUM_AUDIOS)
-        bt.logging.info(f"audio_input_synapse: {audio_input_synapse}")
-        # exit(0)
-        axons = [self.metagraph.axons[uid] for uid in miner_uids]
-        audio_responses = await self.dendrite(
-            # Send the query to selected miner axons in the network.
-            axons=axons,
-            synapse=audio_input_synapse,
-            deserialize=False,
-            timeout=CLIENT_TIMEOUT_SECONDS_AUDIO,
-        )
-        audio_working_miner_uids = []
-        audio_finished_responses = []
-
-        for response in audio_responses:
-            if (
-                response.audio_metadata is None
-                or not response.axon
-                or not response.axon.hotkey
-            ):
-                continue
-
-            uid = [
-                uid
-                for uid, axon in zip(miner_uids, axons)
-                if axon.hotkey == response.axon.hotkey
-            ][0]
-            audio_working_miner_uids.append(uid)
-            audio_finished_responses.append(response)
-
-        if len(audio_working_miner_uids) == 0:
-            bt.logging.info("No miner responses available for audio synapse")
-
-        # Log the results for monitoring purposes.
-        bt.logging.info(f"Received audio responses: {audio_responses}")
-        # Adjust the scores based on responses from miners.
-        try:
-            audio_rewards_list = await self.handle_checks_and_reward_audio(
-                input_synapse=audio_input_synapse, responses=audio_finished_responses
+        # Only process audio tasks if audio rewards are enabled
+        if self.AUDIO_REWARDS_PERCENT > 0:
+            bt.logging.info("===== YOUTUBE REQUESTS, AUDIO PROCESSING, AND SCORING =====")
+            # The dendrite client queries the network.
+            query = random.choice(self.all_topics) + " podcast"
+            bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
+            audio_input_synapse = Audios(query=query, num_audios=NUM_AUDIOS)
+            bt.logging.info(f"audio_input_synapse: {audio_input_synapse}")
+            # exit(0)
+            axons = [self.metagraph.axons[uid] for uid in miner_uids]
+            audio_responses = await self.dendrite(
+                # Send the query to selected miner axons in the network.
+                axons=axons,
+                synapse=audio_input_synapse,
+                deserialize=False,
+                timeout=CLIENT_TIMEOUT_SECONDS_AUDIO,
             )
-        except Exception as e:
-            bt.logging.error(f"Error in handle_checks_and_rewards_audio: {e}")
-            traceback.print_exc()
-            return
+            audio_working_miner_uids = []
+            audio_finished_responses = []
 
-        audio_rewards = []
-        audio_reward_uids = []
-        for r, r_uid in zip(audio_rewards_list, audio_working_miner_uids):
-            if r is not None:
-                audio_rewards.append(r)
-                audio_reward_uids.append(r_uid)
-        audio_rewards = torch.FloatTensor(audio_rewards).to(self.device)
-        self.update_audio_scores(audio_rewards, audio_reward_uids)
+            for response in audio_responses:
+                if (
+                    response.audio_metadata is None
+                    or not response.axon
+                    or not response.axon.hotkey
+                ):
+                    continue
 
-        # give min reward to miners who didn't respond
-        bad_miner_uids = [
-            uid for uid in miner_uids if uid not in audio_working_miner_uids
-        ]
-        penalty_tensor = torch.FloatTensor(
-            [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)
-        ).to(self.device)
-        self.update_audio_scores(penalty_tensor, bad_miner_uids)
+                uid = [
+                    uid
+                    for uid, axon in zip(miner_uids, axons)
+                    if axon.hotkey == response.axon.hotkey
+                ][0]
+                audio_working_miner_uids.append(uid)
+                audio_finished_responses.append(response)
 
-        for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
-            bt.logging.info(
-                f"Rewarding miner={miner_uid} with reward={reward} for audio dataset"
-            )
+            if len(audio_working_miner_uids) == 0:
+                bt.logging.info("No miner responses available for audio synapse")
 
-        for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
-            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+            # Log the results for monitoring purposes.
+            bt.logging.info(f"Received audio responses: {audio_responses}")
+            # Adjust the scores based on responses from miners.
+            try:
+                audio_rewards_list = await self.handle_checks_and_reward_audio(
+                    input_synapse=audio_input_synapse, responses=audio_finished_responses
+                )
+            except Exception as e:
+                bt.logging.error(f"Error in handle_checks_and_rewards_audio: {e}")
+                traceback.print_exc()
+                return
+
+            audio_rewards = []
+            audio_reward_uids = []
+            for r, r_uid in zip(audio_rewards_list, audio_working_miner_uids):
+                if r is not None:
+                    audio_rewards.append(r)
+                    audio_reward_uids.append(r_uid)
+            audio_rewards = torch.FloatTensor(audio_rewards).to(self.device)
+            self.update_audio_scores(audio_rewards, audio_reward_uids)
+
+            # give min reward to miners who didn't respond
+            bad_miner_uids = [
+                uid for uid in miner_uids if uid not in audio_working_miner_uids
+            ]
+            penalty_tensor = torch.FloatTensor(
+                [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)
+            ).to(self.device)
+            self.update_audio_scores(penalty_tensor, bad_miner_uids)
+
+            for reward, miner_uid in zip(audio_rewards, audio_reward_uids):
+                bt.logging.info(
+                    f"Rewarding miner={miner_uid} with reward={reward} for audio dataset"
+                )
+
+            for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
+                bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+        else:
+            bt.logging.info(f"Skipping audio tasks (AUDIO_REWARDS_PERCENT={self.AUDIO_REWARDS_PERCENT})")
 
         """ END YOUTUBE AUDIO PROCESSING AND SCORING """
 
         """ START YOUTUBE SYNAPSE REQUESTS, PROCESSING, AND SCORING """
-        bt.logging.info("===== YOUTUBE REQUESTS, PROCESSING, AND SCORING =====")
-        # The dendrite client queries the network.
-        query = random.choice(self.all_topics)
-        bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
-        input_synapse = Videos(query=query, num_videos=NUM_VIDEOS)
-        axons = [self.metagraph.axons[uid] for uid in miner_uids]
-        responses = await self.dendrite(
-            # Send the query to selected miner axons in the network.
-            axons=axons,
-            synapse=input_synapse,
-            deserialize=False,
-            timeout=CLIENT_TIMEOUT_SECONDS,
-        )
-
-        working_miner_uids = []
-        finished_responses = []
-
-        for response in responses:
-            if (
-                response.video_metadata is None
-                or not response.axon
-                or not response.axon.hotkey
-            ):
-                continue
-
-            uid = [
-                uid
-                for uid, axon in zip(miner_uids, axons)
-                if axon.hotkey == response.axon.hotkey
-            ][0]
-            working_miner_uids.append(uid)
-            finished_responses.append(response)
-
-        if len(working_miner_uids) == 0:
-            bt.logging.info("No miner responses available")
-
-        # Log the results for monitoring purposes.
-        bt.logging.info(f"Received video responses: {responses}")
-
-        # Adjust the scores based on responses from miners.
-        try:
-            rewards_list = await self.handle_checks_and_rewards_youtube(
-                input_synapse=input_synapse, responses=finished_responses
+        # Only process YouTube video tasks if YouTube rewards are enabled
+        if self.YOUTUBE_REWARDS_PERCENT > 0:
+            bt.logging.info("===== YOUTUBE REQUESTS, PROCESSING, AND SCORING =====")
+            # The dendrite client queries the network.
+            query = random.choice(self.all_topics)
+            bt.logging.info(f"Sending query '{query}' to miners {miner_uids}")
+            input_synapse = Videos(query=query, num_videos=NUM_VIDEOS)
+            axons = [self.metagraph.axons[uid] for uid in miner_uids]
+            responses = await self.dendrite(
+                # Send the query to selected miner axons in the network.
+                axons=axons,
+                synapse=input_synapse,
+                deserialize=False,
+                timeout=CLIENT_TIMEOUT_SECONDS,
             )
-        except Exception as e:
-            bt.logging.error(f"Error in handle_checks_and_rewards_youtube: {e}")
-            traceback.print_exc()
-            return
 
-        # give reward to all miners who responded and had a non-null reward
-        rewards = []
-        reward_uids = []
-        for r, r_uid in zip(rewards_list, working_miner_uids):
-            if r is not None:
-                rewards.append(r)
-                reward_uids.append(r_uid)
-        rewards = torch.FloatTensor(rewards).to(self.device)
-        self.update_scores(rewards, reward_uids)
+            working_miner_uids = []
+            finished_responses = []
 
-        # give min reward to miners who didn't respond
-        bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
-        penalty_tensor = torch.FloatTensor(
-            [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)
-        ).to(self.device)
-        self.update_scores(penalty_tensor, bad_miner_uids)
+            for response in responses:
+                if (
+                    response.video_metadata is None
+                    or not response.axon
+                    or not response.axon.hotkey
+                ):
+                    continue
 
-        for reward, miner_uid in zip(rewards, reward_uids):
-            bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+                uid = [
+                    uid
+                    for uid, axon in zip(miner_uids, axons)
+                    if axon.hotkey == response.axon.hotkey
+                ][0]
+                working_miner_uids.append(uid)
+                finished_responses.append(response)
 
-        for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
-            bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+            if len(working_miner_uids) == 0:
+                bt.logging.info("No miner responses available")
+
+            # Log the results for monitoring purposes.
+            bt.logging.info(f"Received video responses: {responses}")
+
+            # Adjust the scores based on responses from miners.
+            try:
+                rewards_list = await self.handle_checks_and_rewards_youtube(
+                    input_synapse=input_synapse, responses=finished_responses
+                )
+            except Exception as e:
+                bt.logging.error(f"Error in handle_checks_and_rewards_youtube: {e}")
+                traceback.print_exc()
+                return
+
+            # give reward to all miners who responded and had a non-null reward
+            rewards = []
+            reward_uids = []
+            for r, r_uid in zip(rewards_list, working_miner_uids):
+                if r is not None:
+                    rewards.append(r)
+                    reward_uids.append(r_uid)
+            rewards = torch.FloatTensor(rewards).to(self.device)
+            self.update_scores(rewards, reward_uids)
+
+            # give min reward to miners who didn't respond
+            bad_miner_uids = [uid for uid in miner_uids if uid not in working_miner_uids]
+            penalty_tensor = torch.FloatTensor(
+                [NO_RESPONSE_MINIMUM] * len(bad_miner_uids)
+            ).to(self.device)
+            self.update_scores(penalty_tensor, bad_miner_uids)
+
+            for reward, miner_uid in zip(rewards, reward_uids):
+                bt.logging.info(f"Rewarding miner={miner_uid} with reward={reward}")
+
+            for penalty, miner_uid in zip(penalty_tensor, bad_miner_uids):
+                bt.logging.info(f"Penalizing miner={miner_uid} with penalty={penalty}")
+        else:
+            bt.logging.info(f"Skipping YouTube video tasks (YOUTUBE_REWARDS_PERCENT={self.YOUTUBE_REWARDS_PERCENT})")
+
         """ END YOUTUBE SYNAPSE REQUESTS, PROCESSING, AND SCORING """
 
         """ START FOCUS VIDEOS PROCESSING AND SCORING """
