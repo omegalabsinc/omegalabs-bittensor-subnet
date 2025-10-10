@@ -109,6 +109,14 @@ else:
     score = None
 
 
+def ensure_score_available(action: str) -> None:
+    if score is None:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=f"Scoring pipeline disabled (IMPORT_SCORE=false); cannot {action}.",
+        )
+
+
 ### Constants for OMEGA Metadata Dashboard ###
 HF_DATASET = "omegalabsinc/omega-multimodal"
 DATA_FILES_PREFIX = "default/train/"
@@ -508,6 +516,7 @@ async def main():
 
         start_time = time.time()
         # query the pinecone index to get novelty scores
+        ensure_score_available("fetch novelty scores")
         novelty_scores = await score.get_pinecone_novelty(metadata)
         print(
             f"Returning novelty scores={novelty_scores} for {validator_chain} validator={uid} in {time.time() - start_time:.2f}s"
@@ -551,6 +560,7 @@ async def main():
         topic_query = upload_data.topic_query
 
         start_time = time.time()
+        ensure_score_available("upload video metadata")
         video_ids = await score.upload_video_metadata(
             metadata, description_relevance_scores, query_relevance_scores, topic_query
         )
@@ -662,6 +672,7 @@ async def main():
 
         # Note: by passing in the request object, we can choose to load the body of the request when
         # we are ready to process it, which is important because the request body here can be huge
+        ensure_score_available("upload audio metadata")
         audio_ids, upload_data = await score.upload_audio_metadata(request)
         # inverse_der = upload_data.inverse_der
         # audio_length_score = upload_data.audio_length_score

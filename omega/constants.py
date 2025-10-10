@@ -1,6 +1,6 @@
 # Task rewards percent
-FOCUS_REWARDS_PERCENT = 0.025
-AUDIO_REWARDS_PERCENT = 0.125
+FOCUS_REWARDS_PERCENT = 1
+AUDIO_REWARDS_PERCENT = 0.0
 
 # Video length constants
 MIN_VIDEO_LENGTH = 5  # five seconds
