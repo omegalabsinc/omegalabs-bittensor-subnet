@@ -321,19 +321,12 @@ async def run_focus_scoring(
         print(f"run_focus_scoring video details found | video_id <{video_id}>")
 
         # Step 2: Score video without holding DB connection
-        result = await focus_scoring_service.score_video(
+        score_details, embeddings = await focus_scoring_service.score_video(
             video_id,
             focusing_task,
             focusing_description,
             bypass_checks=task_type_value == TaskType.MARKETPLACE.value,
         )
-
-        # If result is None, video was rejected by legitimacy checks
-        if result is None:
-            print(f"Video {video_id} was rejected by legitimacy checks and marked as REJECTED in database")
-            return {"success": True}
-
-        score_details, embeddings = result
         print(
             f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>"
         )
@@ -362,8 +355,15 @@ async def run_focus_scoring(
                 
             # Regular video: check score and either reject or approve
             if score_details.final_score < MIN_FINAL_SCORE:
-                rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
+                # If final_score is exactly 0, it's a legitimacy check failure
+                # Use the actual failure reason directly without extra text
+                if score_details.final_score == 0.0:
+                    rejection_reason = score_details.completion_score_breakdown.rationale
+                else:
+                    # Low completion score (but not a legitimacy failure)
+                    rejection_reason = f"""This video got a score of {score_details.final_score * 100:.2f}%, which is lower than the minimum score of {MIN_FINAL_SCORE * 100}%.
 Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
+
                 await mark_video_rejected(
                     db,
                     video_id,

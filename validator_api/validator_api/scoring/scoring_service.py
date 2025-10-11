@@ -509,14 +509,14 @@ class FocusScoringService:
         focusing_task: str,
         focusing_description: str,
         bypass_checks: bool = False,
-    ) -> Optional[Tuple[VideoScore, FocusVideoEmbeddings]]:
+    ) -> Tuple[VideoScore, FocusVideoEmbeddings]:
         """
         Generates a comprehensive score for a video submission based on multiple factors.
 
         The scoring process includes:
         1. Checking video duration constraints
         2. Computing task, description, and video uniqueness scores
-        3. Running legitimacy checks (marks as REJECTED in DB if fails)
+        3. Running legitimacy checks (marks as REJECTED in DB if fails, returns score of 0)
         4. Generating a completion score
         5. Applying any boost multipliers
 
@@ -527,8 +527,9 @@ class FocusScoringService:
             bypass_checks (bool): If True, skip duration and legitimacy checks
 
         Returns:
-            Optional[Tuple[VideoScore, FocusVideoEmbeddings]]: The complete scoring details
-            and computed embeddings, or None if video was rejected by legitimacy checks
+            Tuple[VideoScore, FocusVideoEmbeddings]: The complete scoring details
+            and computed embeddings. If video fails legitimacy checks, returns with
+            final_score=0 and rejection reason in completion_score_breakdown.rationale
 
         Raises:
             ValueError: If video duration is outside acceptable range
@@ -590,22 +591,27 @@ class FocusScoringService:
 
                 for passed, failure_reason in check_results:
                     if not passed:
-                        # Mark video as rejected in database and return None
-                        async with get_db_context() as db:
-                            query = select(FocusVideoRecord).filter(
-                                FocusVideoRecord.video_id == video_id
-                            )
-                            result = await db.execute(query)
-                            video_record = result.scalar_one_or_none()
-
-                            if video_record:
-                                video_record.processing_state = "REJECTED"
-                                video_record.rejection_reason = failure_reason
-                                await db.commit()
-                                print(f"Video {video_id} rejected: {failure_reason}")
-
-                        # Return None to indicate rejection without raising exception
-                        return None
+                        # Return VideoScore with 0 final_score to indicate legitimacy check failure
+                        # The actual database update will be handled by app.py
+                        print(f"Video {video_id} failed legitimacy check: {failure_reason}")
+                        return VideoScore(
+                            task_uniqueness_score=task_uniqueness_score,
+                            video_completion_score=0.0,
+                            description_uniqueness_score=video_description_uniqueness_score,
+                            video_uniqueness_score=video_uniqueness_score,
+                            boosted_multiplier=boosted_multiplier,
+                            final_score=0.0,
+                            task_overview=task_overview,
+                            completion_score_breakdown=CompletionScore(
+                                rationale=failure_reason,
+                                completion_score=0.0,
+                            ),
+                            detailed_video_description=video_description,
+                        ), FocusVideoEmbeddings(
+                            task_overview_embedding=task_overview_embedding,
+                            detailed_video_description_embedding=video_description_embedding,
+                            video_embedding=video_embedding,
+                        )
 
         completion_score_breakdown = await _get_completion_score_breakdown(
             task_overview,
