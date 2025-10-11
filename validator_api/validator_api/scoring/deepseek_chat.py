@@ -1,6 +1,6 @@
 from typing import Iterable, Optional, Type, Union
 from pydantic import BaseModel
-from openai.resources.beta.chat.completions import ChatCompletionMessageParam
+from openai.types.chat import ChatCompletionMessageParam
 from openai import AsyncOpenAI
 from validator_api.validator_api.scoring.query_llm import query_deepseek
 import os
@@ -37,10 +37,12 @@ async def query_openai(
     """
     for attempt in range(retries):
         try:
-            response = await openai_client.beta.chat.completions.parse(
-                model="o1-2024-12-17",
+            response = await openai_client.chat.completions.parse(
+                model="gpt-5-2025-08-07",
                 messages=messages,
                 response_format=output_model,
+                verbosity="medium",
+                reasoning_effort="medium"
             )
             if not response.choices[0].message.content:
                 raise Exception("Empty response from API")
@@ -84,10 +86,13 @@ async def query_llm(
         Exception: If both DeepSeek and OpenAI attempts fail after all retries
     """
     try:
-        return await query_deepseek(messages, output_model, retries)
-    except Exception as e:
-        if not openai_client:
-            raise e
+    #     return await query_deepseek(messages, output_model, retries)
+    # except Exception as e:
+    #     if not openai_client:
+    #         raise e
 
-        print(f"DeepSeek failed, falling back to OpenAI: {str(e)}")
+    #     print(f"DeepSeek failed, falling back to OpenAI: {str(e)}")
         return await query_openai(messages, output_model, retries)
+
+    except Exception as e:
+        raise e

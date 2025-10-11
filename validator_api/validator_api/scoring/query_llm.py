@@ -8,7 +8,7 @@ import os
 import asyncio
 from typing import Iterable, Type, Optional, Union
 from pydantic import BaseModel
-from openai.resources.beta.chat.completions import ChatCompletionMessageParam
+from openai.types.chat import ChatCompletionMessageParam
 from openai import AsyncOpenAI
 
 CHUTES_API_TOKEN = os.getenv("CHUTES_API_TOKEN")

@@ -321,12 +321,19 @@ async def run_focus_scoring(
         print(f"run_focus_scoring video details found | video_id <{video_id}>")
 
         # Step 2: Score video without holding DB connection
-        score_details, embeddings = await focus_scoring_service.score_video(
+        result = await focus_scoring_service.score_video(
             video_id,
             focusing_task,
             focusing_description,
             bypass_checks=task_type_value == TaskType.MARKETPLACE.value,
         )
+
+        # If result is None, video was rejected by legitimacy checks
+        if result is None:
+            print(f"Video {video_id} was rejected by legitimacy checks and marked as REJECTED in database")
+            return {"success": True}
+
+        score_details, embeddings = result
         print(
             f"run_focus_scoring finished scoring final score: {score_details.final_score} | video_id <{video_id}>"
         )
