@@ -158,7 +158,7 @@ async def _make_gemini_request(
     Returns:
         An instance of OutputClassSchema containing the parsed model response
     """
-    model_name = "gemini-2.0-flash"
+    model_name = "gemini-2.5-flash"
     # print(f"Video text annotation is using model: {model_name}")
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
@@ -172,7 +172,7 @@ async def _make_gemini_request(
         system_instruction=system_prompt.strip(),
         safety_settings=safety_settings,
         generation_config=GenerationConfig(
-            temperature=0.5,
+            temperature=1,
             response_mime_type="application/json",
             response_schema=OutputClassSchema.model_json_schema(),
         ),
