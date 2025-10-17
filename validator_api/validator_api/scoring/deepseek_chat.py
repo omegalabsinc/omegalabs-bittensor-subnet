@@ -41,8 +41,8 @@ async def query_openai(
                 model="gpt-5-2025-08-07",
                 messages=messages,
                 response_format=output_model,
-                verbosity="medium",
-                reasoning_effort="medium"
+                verbosity="low",
+                reasoning_effort="low"
             )
             if not response.choices[0].message.content:
                 raise Exception("Empty response from API")
