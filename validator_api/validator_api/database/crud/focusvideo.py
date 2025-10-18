@@ -701,16 +701,18 @@ async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
     # Group focus video records by miner hotkey
     videos_by_miner = {}
     for record in purchased_videos_records:
-        if record.miner_hotkey not in videos_by_miner:
-            videos_by_miner[record.miner_hotkey] = []
-        videos_by_miner[record.miner_hotkey].append(record)
+        if record.miner_hotkey is not None:
+            if record.miner_hotkey not in videos_by_miner:
+                videos_by_miner[record.miner_hotkey] = []
+            videos_by_miner[record.miner_hotkey].append(record)
 
     # Group subnet video records by miner hotkey
     subnet_by_miner = {}
     for record in subnet_purchase_records:
-        if record.miner_hotkey not in subnet_by_miner:
-            subnet_by_miner[record.miner_hotkey] = []
-        subnet_by_miner[record.miner_hotkey].append(record)
+        if record.miner_hotkey is not None:
+            if record.miner_hotkey not in subnet_by_miner:
+                subnet_by_miner[record.miner_hotkey] = []
+            subnet_by_miner[record.miner_hotkey].append(record)
 
     # Process stats for each miner
     stats = {}
