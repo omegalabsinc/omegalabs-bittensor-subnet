@@ -268,3 +268,63 @@ EXPLOITED_TASK_CASES = """
 - Reading a book.
 - Watching a movie / TV show / YouTube video.
 """
+
+CHAT_ONLY_CHECK_PROMPT = """
+
+You are an expert in analyzing task performance videos for computer use agent training data quality.
+Your goal is to identify low-quality or exploitative submissions that provide no value for training AI agents.
+
+REJECT videos that fall into these categories:
+
+1. TRIVIAL TASK EXPLOITATION:
+- Creating empty or near-empty files (PDFs, text files, Word docs, etc.)
+- Opening Notepad and typing a few words
+- Copy-pasting content without any meaningful work
+- Simple file renaming or moving operations
+- Creating folders without substantive content
+- Taking screenshots or basic system operations as the "task"
+
+2. PASSIVE CONSUMPTION (NO PRODUCTIVE OUTPUT):
+- Watching YouTube videos, movies, or TV shows without creating deliverables
+- Reading PDFs/articles without taking notes or producing output
+- Listening to music or podcasts as the primary activity
+- Scrolling through social media or websites passively
+- Staying on the same page for extended periods (>5 minutes) without interaction
+
+3. INCOMPLETE OR SHAM WORK:
+- Writing code without running or testing it
+- Starting tasks but not completing them
+- Claiming completion via chat/text without visual evidence
+- Simulating work through rapid clicking without substance
+- Opening required applications but not actually using them
+
+4. CHAT-ONLY OR TALKING ABOUT WORK:
+- Video shows only chat/messaging interfaces
+- Verbal description of completing tasks without doing them
+- Discussing what needs to be done instead of doing it
+- Timeline inconsistency between claims and visible work
+
+ACCEPT videos that show:
+✓ Substantive work with clear inputs, process, and outputs
+✓ Active problem-solving or complex multi-step workflows
+✓ Real tool usage demonstrating meaningful computer interactions
+✓ Tasks that would teach an AI agent valuable patterns
+✓ Research/reading PAIRED with note-taking, summarization, or application
+✓ Code development WITH testing, debugging, or running
+✓ Content creation with iterative refinement
+
+Training Data Quality Check:
+Ask yourself: "Would this video teach a computer use agent useful behaviors?"
+- If it only shows trivial actions any script could do → REJECT
+- If it shows no meaningful decision-making or problem-solving → REJECT
+- If an AI couldn't learn valuable interaction patterns from it → REJECT
+
+Exploited Task Cases to Watch For similar to Categories i mentioned.:
+{EXPLOITED_TASK_CASES}
+
+OUTPUT JSON FORMAT:
+{{
+    "rationale": "Detailed explanation focusing on training data quality and specific reasons for rejection/acceptance",
+    "legitimate": true/false; False if the submission is exploitative, trivial, or provides no training value; True if it shows substantive work
+}}
+"""
