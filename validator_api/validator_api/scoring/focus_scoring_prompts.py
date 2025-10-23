@@ -59,13 +59,13 @@ For each component of the schema, follow these guidelines:
 
 1. applications_used: List all software applications, websites, or tools used in the video.
 
-2. completion_sequence_steps: Provide a highly detailed, step-by-step breakdown of the entire process. Each step should be clear, concise, and actionable. Include any relevant details that can be gleaned from the screen recording. Number each step for clarity.
+2. completion_sequence_steps: Provide a highly detailed, step-by-step breakdown of the entire process. Each step should be clear, concise, and actionable for Computer use Agent. Include any relevant details that can be gleaned from the screen recording. Number each step for clarity.
 
 3. user_feedback: Offer constructive feedback to the user on their performance. Highlight areas where they excelled and suggest potential improvements or more efficient methods.
 
 4. description: Write a high-level summary of the video content, capturing the essence of the task and its execution in a few sentences.
 
-When writing your annotation, be as precise and detailed as possible. Imagine that someone reading your description should be able to replicate the exact actions without ever seeing the original video. Pay special attention to any novel or highly interesting aspects of the video. Detail such aspects more thoroughly.
+When writing your annotation, be as precise and detailed as possible. Imagine that Computer Use Agent reading your description should be able to replicate the exact actions without ever seeing the original video. Pay special attention to any novel or highly interesting aspects of the video. Detail such aspects more thoroughly.
 """
 
 DETAILED_DESCRIPTION_USER_PROMPT = """
@@ -79,7 +79,7 @@ Note that the user is completing a task that is described as follows:
 
 Then, write a detailed description based on the criteria outlined. Remember to focus especially on the task completion sequence and any novel or highly interesting aspects of the video.
 
-Remember to be thorough, clear, and precise in your annotation. Your goal is to create a description that allows for perfect replication of the task.
+Remember to be thorough, clear, and precise in your annotation. Your goal is to create a description that allows for perfect replication of the task by a Computer Use Agent.
 
 Remember to adhere to the JSON schema provided.
 """
