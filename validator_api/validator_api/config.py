@@ -73,7 +73,7 @@ def robust_json_loads(json_str: str) -> List[str]:
     return json.loads(json_str.replace('\\"', '"'))
 
 
-PORT = int(os.environ.get("PORT", 8001))
+PORT = int(os.environ.get("PORT", 8002))
 NETWORK = os.environ["NETWORK"]
 print(f"Running with NETWORK={NETWORK}")
 NETUID = int(os.environ["NETUID"])
