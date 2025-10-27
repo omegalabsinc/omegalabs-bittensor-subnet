@@ -30,4 +30,4 @@ ENV PORT=8002
 
 EXPOSE 8002
 
-CMD ["python", "validator_api/app.py"]
+CMD ["python", "-m", "validator_api.app"]
