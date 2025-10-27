@@ -40,6 +40,9 @@ from validator_api.validator_api.database.models.focus_video_record import (
     FocusVideoInternal,
     FocusVideoRecord,
 )
+from validator_api.validator_api.database.models.real_focused_time import (
+    RealFocusedTime,
+)
 from validator_api.validator_api.database.models.scoring import (
     CompletionScore,
     CompletionScoreWithoutRange,
@@ -122,16 +125,24 @@ async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
 
 async def get_video_duration_seconds(video_id: str) -> int:
     async with get_db_context() as db:
+        # First verify video exists and is not deleted
         video_metadata = await get_video_metadata(db, video_id)
-
         if video_metadata is None:
             raise ValueError(f"Focus video is deleted or doesn't exist: {video_id}")
 
-        video_duration_seconds = video_metadata.video_details.get("duration")
-        if video_duration_seconds is None:
-            print(f"Video duration not found for video: {video_id}")
-            video_duration_seconds = 120
+        # Query real_focused_time table for actual focused duration
+        query = select(RealFocusedTime).filter(RealFocusedTime.video_id == video_id)
+        result = await db.execute(query)
+        real_focused_time = result.scalar_one_or_none()
 
+        if real_focused_time is None or real_focused_time.real_focused_duration is None:
+            print(f"Video duration not found in real_focused_time for video: {video_id}")
+            video_duration_seconds = 120  # Default fallback
+        else:
+            # Convert from milliseconds to seconds
+            video_duration_seconds = int(real_focused_time.real_focused_duration / 1000)
+
+        # print(f" Video Duration ")
         return video_duration_seconds
 
 
@@ -180,7 +191,9 @@ async def _make_gemini_request(
 
     parts = []
     if video_id:
-        parts.append(Part.from_uri(get_gcs_uri(video_id), mime_type="video/webm"))
+        gcs_uri = get_gcs_uri(video_id)
+        print(f"Making Gemini request with GCS URI: {gcs_uri}")
+        parts.append(Part.from_uri(gcs_uri, mime_type="video/webm"))
     parts.append(user_prompt.strip())
 
     response = await model.generate_content_async(parts)
@@ -242,6 +255,8 @@ async def _make_gemini_request_with_retries(
 async def get_detailed_video_description(
     video_id: str, task_overview: str, recompute: bool = False
 ) -> DetailedVideoDescription:
+    print(f"get_detailed_video_description called for video_id: {video_id} (length: {len(video_id)})")
+
     if not recompute:
         async with (
             get_db_context() as db
@@ -260,10 +275,12 @@ async def get_detailed_video_description(
                 video_record.video_details
                 and "detailed_video_description" in video_record.video_details
             ):
+                print(f"Using cached detailed_video_description for video_id: {video_id}")
                 return DetailedVideoDescription.model_validate(
                     video_record.video_details["detailed_video_description"]
                 )
 
+    print(f"Generating new detailed_video_description for video_id: {video_id}")
     description = await _make_gemini_request_with_retries(
         system_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_SYSTEM_PROMPT,
         user_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_USER_PROMPT.format(
@@ -544,6 +561,8 @@ class FocusScoringService:
             boosted_multiplier = 1.0
 
         video_duration_seconds = await get_video_duration_seconds(video_id)
+        video_minutes = video_duration_seconds / 60;
+        print(f"video minutes {video_minutes}")
         if not bypass_checks:
             if video_duration_seconds < TWO_MINUTES:
                 raise VideoTooShortError(

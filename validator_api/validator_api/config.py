@@ -5,22 +5,48 @@ from typing import List
 import base64
 import tempfile
 from omega import constants
-
+import boto3
 load_dotenv(override=True)
 
 
 def get_bool_env(key, default: bool=False):
     return os.getenv(key, str(default)).lower() == "true"
 
+def get_secret(secret_name, region_name):
+    """Retrieve secret from AWS Secrets Manager"""
+    session = boto3.session.Session()
+    client = session.client(
+        service_name='secretsmanager',
+        region_name=region_name,
+    )
+    
+    get_secret_value_response = client.get_secret_value(
+        SecretId=secret_name
+    )
+    
+    secret = get_secret_value_response['SecretString']
+    return secret
 
 def setup_gcp_credentials():
-    """Setup GCP credentials from base64 encoded environment variable"""
-    gcp_creds_base64 = os.getenv('GCP_CREDS_BASE64')
-    if not gcp_creds_base64:
-        raise ValueError("GCP_CREDS_BASE64 environment variable is required")
+    """
+    Setup GCP credentials from AWS Secrets Manager based on environment.
+    Creates a temporary file for Google Cloud libraries to use.
+    """
+    # Determine environment (dev or prod)
+    is_prod = get_bool_env('IS_PROD', False)
+    environment = 'prod' if is_prod else 'dev'
     
-    # Decode base64 credentials
-    gcp_creds_json = base64.b64decode(gcp_creds_base64).decode('utf-8')
+    # Map to correct secret name
+    secret_names = {
+        'dev': 'omega-labs/gcp/dev-service-account',
+        'prod': 'omega-labs/gcp/prod-service-account'
+    }
+    
+    secret_name = secret_names[environment]
+    region = os.getenv('AWS_S3_REGION', 'us-east-2')
+    
+    # Get GCP credentials from Secrets Manager
+    gcp_creds_json = get_secret(secret_name, region_name=region)
     
     # Create temporary file for credentials
     temp_file = tempfile.NamedTemporaryFile(mode='w', suffix='.json', delete=False)

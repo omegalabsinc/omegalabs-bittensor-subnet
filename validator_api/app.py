@@ -801,6 +801,103 @@ async def main():
         )
         return {"success": True}
 
+    @app.post("/api/focus/get_score_direct")
+    async def get_score_direct(
+        api_key: str = Security(get_focus_api_key),
+        video_id: Annotated[str, Body()] = None,
+        focusing_task: Annotated[str, Body()] = None,
+        focusing_description: Annotated[str, Body()] = None,
+    ) -> Dict[str, Any]:
+        """
+        Synchronously score a focus video and return the score details directly.
+        Unlike get_focus_score, this runs scoring in the foreground and returns results.
+        """
+        print(f"get_score_direct starting synchronous scoring | video_id <{video_id}>")
+
+        try:
+            # Step 1: Get video record
+            async with get_db_context() as db:
+                query = select(FocusVideoRecord).filter(
+                    FocusVideoRecord.video_id == video_id,
+                    FocusVideoRecord.deleted_at.is_(None),
+                )
+                result = await db.execute(query)
+                video_record = result.scalar_one_or_none()
+                if video_record is None:
+                    raise HTTPException(404, detail="Focus video not found")
+
+                # Extract task type for bypass_checks logic
+                task_type_value = video_record.task_type
+
+            print(f"get_score_direct video details found | video_id <{video_id}>")
+
+            # Step 2: Score video
+            score_details, embeddings = await focus_scoring_service.score_video(
+                video_id,
+                focusing_task,
+                focusing_description,
+                bypass_checks=(task_type_value == TaskType.MARKETPLACE.value),
+            )
+
+            print(
+                f"get_score_direct finished scoring final score: {score_details.final_score} | video_id <{video_id}>"
+            )
+
+            # Return the score details as a dictionary
+            return {
+                "success": True,
+                "score": {
+                    "task_uniqueness_score": score_details.task_uniqueness_score,
+                    "video_completion_score": score_details.video_completion_score,
+                    "description_uniqueness_score": score_details.description_uniqueness_score,
+                    "video_uniqueness_score": score_details.video_uniqueness_score,
+                    "boosted_multiplier": score_details.boosted_multiplier,
+                    "final_score": score_details.final_score,
+                    "task_overview": score_details.task_overview,
+                    "completion_score_breakdown": {
+                        "rationale": score_details.completion_score_breakdown.rationale,
+                        "completion_score": score_details.completion_score_breakdown.completion_score,
+                    },
+                    "detailed_video_description": {
+                        "applications_used": score_details.detailed_video_description.applications_used,
+                        "completion_sequence_steps": score_details.detailed_video_description.completion_sequence_steps,
+                    },
+                },
+            }
+
+        except VideoTooShortError as e:
+            print(f"Video too short error for {video_id}: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail="Video is too short. Please ensure the video is at least 2 minutes long.",
+            )
+        except VideoTooLongError as e:
+            print(f"Video too long error for {video_id}: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail="Video is too long. Please ensure the video is less than 90 minutes long.",
+            )
+        except VideoUniquenessError as e:
+            print(f"Video uniqueness error for {video_id}: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail="Task recording is not unique. If you believe this is an error, please contact a team member.",
+            )
+        except LegitimacyCheckError as e:
+            print(f"Legitimacy check error for {video_id}: {str(e)}")
+            raise HTTPException(
+                status_code=400,
+                detail="An anomaly was detected in the video. If you believe this is an error, please contact a team member.",
+            )
+        except Exception as e:
+            exception_string = traceback.format_exc()
+            error_string = f"{str(e)}\n{exception_string}"
+            print(f"Error scoring focus video <{video_id}>: {error_string}")
+            raise HTTPException(
+                status_code=500,
+                detail=f"Error scoring video: {str(e)}",
+            )
+
     @app.get("/api/focus/get_list")
     @limiter.limit("5/minute")
     async def _get_available_focus_video_list(request: Request):
