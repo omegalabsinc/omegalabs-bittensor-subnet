@@ -9,7 +9,6 @@
 
 </div>
 
-
 ---
 - [Introduction](#introduction)
 - [Key Features](#key-features)
@@ -321,6 +320,7 @@ We believe in the power of community and collaboration. Join us in building the 
 - Provide feedback and suggestions for improvement
 
 To get started, please see our [contribution guidelines](./CONTRIBUTING.md) and join our vibrant community on [Discord](https://discord.gg/opentensor).
+
 
 ## License
 
