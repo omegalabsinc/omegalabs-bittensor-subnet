@@ -97,9 +97,14 @@ python validator_api/test_search_and_submit.py
 - Core technology enabling multimodal dataset creation
 
 **Scoring Systems**
-- YouTube video scoring: relevance + novelty + detail richness
-- Focus Videos scoring: LLM evaluation of task completion quality
-- Novelty detection via Pinecone similarity search
+- YouTube video scoring: relevance + novelty + detail richness (ImageBind embeddings)
+- Focus Videos scoring: Multi-phase evaluation with 3 Pinecone indexes
+  - Task uniqueness (OpenAI text-embedding-3-large)
+  - Video description uniqueness (Gemini 2.5 Flash + OpenAI embeddings)
+  - Video visual uniqueness (Google MultiModalEmbedding)
+  - Completion scoring (DeepSeek LLM evaluation)
+  - Final score = completion_score × boosted_multiplier
+- Novelty detection via Pinecone similarity search (cosine similarity)
 
 **Focus Videos Marketplace**
 - Users record task completions via Ω Focus app
@@ -114,6 +119,18 @@ python validator_api/test_search_and_submit.py
 - `validator_api/`: RESTful API for Focus Videos marketplace
 - `scripts/`: Utility scripts for development and operations
 - `docs/`: Documentation including setup guides
+
+## Documentation
+
+**Technical Documentation**
+- **[docs/focus_video_scoring_and_embeddings.md](./docs/focus_video_scoring_and_embeddings.md)** - Complete technical analysis of Focus video scoring system
+  - 3-dimensional uniqueness detection (task, description, video)
+  - Embedding generation with OpenAI, Gemini, and Google MultiModal models
+  - Pinecone similarity search implementation
+  - Multi-phase scoring workflow (validation → embeddings → legitimacy checks → completion scoring)
+  - DeepSeek LLM-based task completion evaluation
+  - Comparison with YouTube video scoring system
+- **[docs/scoring.md](./docs/scoring.md)** - Focus Video Scoring System user documentation
 
 ## Configuration
 

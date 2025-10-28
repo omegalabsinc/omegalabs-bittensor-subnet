@@ -68,7 +68,7 @@ from vertexai.preview.generative_models import (
 )
 from vertexai.vision_models import MultiModalEmbeddingModel, Video, VideoSegmentConfig
 
-TWO_MINUTES = 120  # in seconds
+ONE_MINUTE = 60  # in seconds
 NINETY_MINUTES = 5400  # in seconds
 FOCUS_VIDEO_MIN_SCORE = 0.05
 FOCUS_VIDEO_MAX_SCORE = 1.0
@@ -563,13 +563,13 @@ class FocusScoringService:
         video_duration_seconds = await get_video_duration_seconds(video_id)
         video_minutes = video_duration_seconds / 60;
         print(f"video minutes {video_minutes}")
-        if not bypass_checks:
-            if video_duration_seconds < TWO_MINUTES:
+        # if not bypass_checks:
+        if video_duration_seconds < ONE_MINUTE:
                 raise VideoTooShortError(
                     f"Video duration is too short: {video_duration_seconds} seconds"
                 )
 
-            if video_duration_seconds > NINETY_MINUTES:
+        if video_duration_seconds > NINETY_MINUTES:
                 raise VideoTooLongError(
                     f"Video duration is too long: {video_duration_seconds} seconds"
                 )

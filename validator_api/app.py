@@ -386,9 +386,9 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
 
         # Determine appropriate rejection reason based on error type
         if isinstance(e, VideoTooShortError):
-            rejection_reason = "Video is too short. Please ensure the video is at least 10 seconds long."
+            rejection_reason = f"Error {e} Video is too short. Please ensure the video is at least 1 minute long."
         elif isinstance(e, VideoTooLongError):
-            rejection_reason = "Video is too long. Please ensure the video is less than 10 minutes long."
+            rejection_reason = f"Error {e}, Video is too long. Please ensure the video is less than 90 minutes long."
         elif isinstance(e, VideoUniquenessError):
             rejection_reason = "Task recording is not unique. If you believe this is an error, please contact a team member."
         elif isinstance(e, LegitimacyCheckError):
