@@ -1,0 +1,79 @@
+[
+  {
+    "timestamp_seconds": 0.0,
+    "frame_number": 1,
+    "cursor_coordinates": [
+      0.629,
+      0.255
+    ],
+    "action_type": "hovering",
+    "ui_element": "task list item",
+    "screen_context": "OMEGA Focus application"
+  },
+  {
+    "timestamp_seconds": 4.0,
+    "frame_number": 2,
+    "cursor_coordinates": [
+      0.686,
+      0.595
+    ],
+    "action_type": "hovering",
+    "ui_element": "Switching...",
+    "screen_context": "OMEGA Focus application on macOS, showing a confirmation dialog to switch focused task"
+  },
+  {
+    "timestamp_seconds": 8.0,
+    "frame_number": 3,
+    "cursor_coordinates": [
+      0.568,
+      0.419
+    ],
+    "action_type": "hovering",
+    "ui_element": "page",
+    "screen_context": "OMEGA Focus application"
+  },
+  {
+    "timestamp_seconds": 16.0,
+    "frame_number": 5,
+    "cursor_coordinates": [
+      0.563,
+      0.578
+    ],
+    "action_type": "cursor_visible",
+    "ui_element": "video player controls",
+    "screen_context": "application window"
+  },
+  {
+    "timestamp_seconds": 20.0,
+    "frame_number": 6,
+    "cursor_coordinates": [
+      0.581,
+      0.616
+    ],
+    "action_type": "cursor_visible",
+    "ui_element": "page",
+    "screen_context": "Task management application"
+  },
+  {
+    "timestamp_seconds": 24.0,
+    "frame_number": 7,
+    "cursor_coordinates": [
+      0.56,
+      0.59
+    ],
+    "action_type": "hovering",
+    "ui_element": "video player",
+    "screen_context": "Focus.inc web application"
+  },
+  {
+    "timestamp_seconds": 32.0,
+    "frame_number": 9,
+    "cursor_coordinates": [
+      0.595,
+      0.578
+    ],
+    "action_type": "hovering",
+    "ui_element": "page",
+    "screen_context": "Task List in focus.inc"
+  }
+]

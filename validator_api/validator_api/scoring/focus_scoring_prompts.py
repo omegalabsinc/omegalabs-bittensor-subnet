@@ -53,7 +53,7 @@
 DETAILED_DESCRIPTION_SYSTEM_PROMPT = """
 You are tasked with watching a screen recording of a human performing a task and creating a detailed annotation of the process. Your goal is to produce a description so thorough and precise that another human or AI could replicate the user's step-by-step sequence without ever seeing the video.
 
-After watching the video, you will create an annotation following the DetailedVideoDescription schema. This schema includes four main components: applications_used, completion_sequence_steps, user_feedback, and description.
+After watching the video, you will create an annotation following the DetailedVideoDescription schema. This schema includes five main components: applications_used, completion_sequence_steps, completion_steps_breakdown, user_feedback, and description.
 
 For each component of the schema, follow these guidelines:
 
@@ -61,15 +61,79 @@ For each component of the schema, follow these guidelines:
 
 2. completion_sequence_steps: Provide a highly detailed, step-by-step breakdown of the entire process. Each step should be clear, concise, and actionable for Computer use Agent. Include any relevant details that can be gleaned from the screen recording. Number each step for clarity.
 
-3. user_feedback: Offer constructive feedback to the user on their performance. Highlight areas where they excelled and suggest potential improvements or more efficient methods.
+3. completion_steps_breakdown: **CRITICAL - Extract ONLY visible mouse cursor positions and text input coordinates**
 
-4. description: Write a high-level summary of the video content, capturing the essence of the task and its execution in a few sentences.
+   **IMPORTANT FILTERING RULES**:
+   - ONLY include actions where you can CLEARLY SEE the mouse cursor on screen
+   - ONLY extract coordinates for 'click' and 'type' actions
+   - SKIP all 'scroll', 'drag', and 'other' actions (do not include these in the breakdown)
+   - If the mouse cursor is NOT visible, do NOT include that action in the breakdown
+   - Do NOT guess or estimate coordinates when the cursor is hidden
+
+   For each action that meets the criteria above, create a TrajectoryStep that includes:
+   - timestamp_seconds: The exact time in seconds when you SEE the cursor click
+   - action: An ActionStep object with:
+     * type: ONLY 'click' (single click), 'double_click', 'right_click', or 'type'
+     * coordinates: **NORMALIZED [x, y] coordinates** where the VISIBLE CURSOR is located
+       - x: Horizontal position as fraction of screen width (0.0 = left edge, 1.0 = right edge)
+       - y: Vertical position as fraction of screen height (0.0 = top edge, 1.0 = bottom edge)
+       - Example: [0.523, 0.312] means 52.3% from left, 31.2% from top
+       - **WATCH THE CURSOR TIP** - note the exact pixel position of the cursor arrow tip
+       - For typing actions where cursor is in a text field, estimate the text field center
+       - If cursor is NOT visible, set coordinates to null
+     * element: Description of the UI element being clicked (e.g., "Submit button", "Username input field")
+     * text: Any text that was typed (ONLY for type actions)
+     * url: The URL if a webpage is visible
+   - thought: The inferred reasoning behind this action
+   - observation: What is visible on screen at this moment
+
+   **ACCURACY REQUIREMENTS**:
+   - Only extract coordinates when you have HIGH CONFIDENCE in cursor position
+   - Watch for the mouse cursor moving and clicking - track its position precisely
+   - Do NOT default to center screen [0.5, 0.5] unless cursor is actually there
+   - If uncertain about cursor position, OMIT that step from completion_steps_breakdown
+   - Focus on QUALITY over QUANTITY - fewer accurate steps better than many guesses
+
+4. user_feedback: Offer constructive feedback to the user on their performance. Highlight areas where they excelled and suggest potential improvements or more efficient methods.
+
+5. description: Write a high-level summary of the video content, capturing the essence of the task and its execution in a few sentences.
 
 When writing your annotation, be as precise and detailed as possible. Imagine that Computer Use Agent reading your description should be able to replicate the exact actions without ever seeing the original video. Pay special attention to any novel or highly interesting aspects of the video. Detail such aspects more thoroughly.
+
+**CRITICAL FOR TRAINING DATA**: The completion_steps_breakdown with precise coordinates is essential for training computer use agents. Only include steps where the mouse cursor is CLEARLY VISIBLE and you can accurately determine its position. It is better to have 20 highly accurate coordinate extractions than 100 guessed ones.
 """
 
 DETAILED_DESCRIPTION_USER_PROMPT = """
 Watch the provided video carefully, paying close attention to every action taken by the user. Take note of the applications used, the sequence of steps performed, and any notable techniques employed.
+
+**CRITICAL TRAJECTORY EXTRACTION INSTRUCTIONS - READ CAREFULLY**:
+
+**ONLY EXTRACT COORDINATES WHEN YOU CAN SEE THE MOUSE CURSOR**:
+- Look for the mouse cursor (arrow pointer) moving and clicking on screen
+- ONLY record coordinates when the cursor is CLEARLY VISIBLE at the moment of click
+- Watch the cursor TIP position - note exactly where it is when it clicks
+- If the cursor is hidden or not visible, DO NOT include that action in completion_steps_breakdown
+- For typing actions, record the text field location where text appears
+
+**WHAT TO EXTRACT**:
+- ✅ Clicks (single, double, right-click) WHERE CURSOR IS VISIBLE
+- ✅ Text input actions (type) with the text field location
+- ❌ DO NOT extract scroll actions
+- ❌ DO NOT extract drag actions
+- ❌ DO NOT extract actions where cursor is not visible
+
+**HOW TO EXTRACT COORDINATES**:
+- Normalize coordinates [x, y] to 0.0-1.0 range based on screen dimensions
+- x: 0.0 = left edge, 1.0 = right edge
+- y: 0.0 = top edge, 1.0 = bottom edge
+- Example: Cursor at center = [0.5, 0.5], upper-left corner = [0.1, 0.1]
+- DO NOT default to [0.5, 0.5] unless cursor is actually in the center
+- Track the timestamp when you see the cursor click
+
+**QUALITY OVER QUANTITY**:
+- It's better to have 10 highly accurate coordinates than 50 guessed ones
+- If uncertain about cursor position, OMIT that step
+- Focus on moments where the cursor is clearly visible and stationary when clicking
 
 Note that the user is completing a task that is described as follows:
 
@@ -77,7 +141,12 @@ Note that the user is completing a task that is described as follows:
 {task_overview}
 </task_description>
 
-Then, write a detailed description based on the criteria outlined. Remember to focus especially on the task completion sequence and any novel or highly interesting aspects of the video.
+Then, write a detailed description based on the criteria outlined. Remember to focus especially on:
+1. The task completion sequence with precise action coordinates in completion_steps_breakdown
+2. Only include steps where you can CLEARLY SEE the mouse cursor
+3. Any novel or highly interesting aspects of the video
+
+**IMPORTANT**: The completion_steps_breakdown field must contain ONLY steps where the mouse cursor is visible and you can accurately determine coordinates. Empty list is acceptable if cursor is never visible. Quality over quantity!
 
 Remember to be thorough, clear, and precise in your annotation. Your goal is to create a description that allows for perfect replication of the task by a Computer Use Agent.
 

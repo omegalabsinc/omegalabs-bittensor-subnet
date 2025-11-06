@@ -1,0 +1,175 @@
+# Best AI models for extracting mouse coordinates from images
+
+**You're already using the best general-purpose vision model for coordinate extraction.** Gemini 2.5 Flash is the only major commercial vision model with native, reliable bounding box detection built into its API. However, specialized computer vision models can deliver significantly better accuracy for UI-specific tasks, and several proven techniques can dramatically improve your results with any model.
+
+## You made the right choice with Gemini 2.5 Flash
+
+Among commercial vision language models, Gemini 2.5 Flash stands alone with **purpose-built coordinate extraction capabilities** that GPT-4o and Claude explicitly lack. Google's model returns bounding boxes in normalized coordinates [ymin, xmin, ymax, xmax] on a 0-1000 scale, requiring simple descaling to pixel dimensions. Developer reports consistently describe Gemini's coordinate detection as "pretty much spot on all the time," while GPT-4o and Claude struggle with or outright refuse coordinate requests.
+
+OpenAI's GPT-4o lacks any native bounding box API and shows poor accuracy when prompted for coordinates. Roboflow's testing confirmed coordinates are "off" and "not ideal for production use cases." The model frequently refuses coordinate requests citing safety concerns. Claude 3.5 models face documented spatial reasoning limitations—Anthropic's official documentation explicitly warns that "Claude may struggle with tasks requiring precise localization." Both models can provide approximate coordinates but are not recommended for precision tasks.
+
+**Critical finding on Gemini configuration**: Disable thinking mode with `thinking_budget=0` for better object detection results. Enable JSON schema support via `response_mime_type="application/json"` for structured coordinate output. Gemini 2.5 also offers segmentation masks as base64-encoded PNGs with probability maps for advanced use cases.
+
+## Specialized models significantly outperform general vision models
+
+If accuracy is paramount, **specialized UI detection models deliver 100-400% better performance** than general vision models on coordinate extraction tasks. The gap is substantial: best-in-class VLMs achieve ~55-70% accuracy on spatial reasoning tasks compared to 92-95% human performance, while specialized models approach or exceed 80-90% on UI understanding benchmarks.
+
+### Top specialized models for immediate implementation
+
+**Florence-2** (Microsoft, MIT license) offers the best balance of accuracy, flexibility, and deployment ease. The 770M parameter "large" model delivers native bounding box output in `<X1><Y1><X2><Y2>` format with normalized coordinates (0-999 range), runs in ~1 second on T4 GPU, and can deploy to mobile devices. Built-in support for object detection, OCR with region detection, phrase grounding, and region-based segmentation makes it exceptionally versatile. Florence-2 matches the performance of much larger models while remaining small enough for practical deployment.
+
+**ScreenAI** (Google, 5B parameters) represents the current state-of-the-art for UI understanding, achieving superior results on WebSRC, MoTIF, and MultiPage DocVQA benchmarks despite its smaller size. The model directly outputs structured element coordinates and types (button, text, image, pictogram) after training on extensive UI screenshot collections with DETR-based layout annotations. However, full model release remains limited as of November 2025, making Florence-2 more immediately accessible.
+
+**OmniParser** (Microsoft, AGPL/MIT license) specifically targets GUI automation with a two-component architecture: fine-tuned YOLOv8 for interactable region detection paired with BLIP-2/Florence for icon functionality description. This pure vision-based approach works entirely from screenshots without requiring HTML or metadata, making it ideal for UI agent applications and automated testing workflows.
+
+**PaddleOCR** (v5, Apache 2.0 license) excels when coordinate extraction involves text-heavy interfaces or documents. PP-OCRv5 combined with PP-DocLayout_plus provides text detection with bounding boxes, layout detection for 20+ categories, and supports 100+ languages. The model runs locally without API calls, offers fast inference, and outputs coordinates in `[xmin, ymin, xmax, ymax]` format with layout classification.
+
+**Grounding DINO + SAM2 pipeline** provides maximum flexibility for zero-shot detection of arbitrary UI elements. Grounding DINO uses text prompts to detect objects not in training data, outputting bounding boxes ranked by similarity scores. Combine with SAM2 for precise segmentation at 44 fps for real-time applications. This approach works when you need to detect UI elements not covered by training datasets.
+
+### Open-source models for self-hosting
+
+**Qwen2.5-VL-7B** delivers strong open-source performance rivaling commercial models. **LLaVA-1.6** offers lightweight alternatives for basic tasks. **MiniCPM-o 2.6** provides excellent performance on L40S GPU at 0.022s per token. Self-hosted models eliminate per-request costs, remove rate limits, and maintain full data privacy. The breakeven point versus API pricing occurs around 10-30M tokens monthly or 100M+ images monthly for high-volume applications.
+
+## Five techniques that dramatically improve coordinate extraction accuracy
+
+### Grid overlay technique delivers 50-200% improvement with minimal effort
+
+The single most effective technique adds a 9×9 or 10×10 transparent grid overlay to images before processing, providing explicit spatial reference points that compensate for models' weak spatial reasoning. Research on the GridGPT approach shows significant improvements across COCO dataset evaluations, with empirical reports confirming 50%+ accuracy gains over raw coordinate requests.
+
+**Implementation takes 1-2 hours** using Python/Pillow to generate 50-100 pixel grid cells with transparent text identifiers. Models reference grid coordinates then translate to pixel coordinates. The prompt structure guides step-by-step reasoning: identify grid cells containing the target object, determine exact boundaries within those cells, then provide final coordinates with verification.
+
+Works effectively with GPT-4o, Claude, and Gemini models. For Gemini 2.5 Flash users, this technique can push already-good coordinate detection toward production-grade accuracy. Priority implementation for immediate results.
+
+### Structured outputs with strict validation prevent common failure modes
+
+Enforce JSON schema compliance using model-specific features: GPT-4o's Structured Outputs with 100% schema compliance via Pydantic models, Gemini's `response_mime_type="application/json"` with schema definitions, or Claude's forced tool calls with `tool_choice` parameters. Define coordinate schemas specifying format (pixel vs normalized), origin point (top-left), axis directions (X rightward, Y downward), and valid bounds.
+
+**Implement comprehensive validation** checking coordinates fall within image dimensions, bounding boxes don't exceed image boundaries, sizes remain reasonable (not 90%+ of image or sub-5 pixel dimensions), and formats match specifications. Build retry logic with error feedback—when validation fails, append specific errors to prompts and request corrections. This reduces hallucinations and catches systematic errors before they propagate.
+
+Validation implementation requires 2-3 hours and prevents the majority of coordinate extraction failures. Essential for production deployments.
+
+### Chain-of-thought prompting with few-shot examples improves consistency
+
+Force models to reason step-by-step before providing coordinates: describe what appears in the image, identify the general region (top-left, center, etc.), estimate approximate position as percentage of dimensions, provide precise coordinates, then verify the answer makes sense given image dimensions. This multi-stage approach reduces hallucination by making reasoning explicit and enables verification of intermediate steps.
+
+Combine with 2-3 few-shot examples showing correct coordinate extraction format and reasoning process. Examples teach models the expected output structure and demonstrate verification steps. Format examples consistently: sample image, question, step-by-step reasoning, final coordinates in specified format.
+
+**Specify coordinate format explicitly** in every prompt. Normalized coordinates (0.0-1.0 range) provide resolution independence and reduce scaling errors. Percentage coordinates (0-100%) offer intuitive understanding. Pixel coordinates require explicit image dimensions in the prompt to prevent out-of-bounds predictions. Always state origin point, axis directions, and valid ranges.
+
+Implementation requires 3-6 hours to create prompt templates and example library. Delivers 20-60% accuracy improvement with medium implementation difficulty.
+
+### Optimize image preprocessing for 1024-1536px sweet spot
+
+**Target resolution of 1024-1536px on the longest dimension** while maintaining aspect ratio. GPT-4o's automatic double-resizing (max 2048 on long side, scaled to 768px tiles) severely damages coordinate accuracy—pre-resize images before API calls to avoid this. Claude works well with standard resolutions (1280x720, 1920x1080) with best results at medium resolution. Gemini 2.5 recommends 1024-2048px on longest side for optimal coordinate detection.
+
+Use two-pass approaches for complex interfaces: first pass on full image with grid overlay identifies the region containing the target element, second pass on cropped region requests precise coordinates, then adjust coordinates back to original image space. This progressive zoom technique reduces ambiguity in dense UIs.
+
+**Apply visual markers for disambiguation**: add colored bounding boxes around elements of interest, overlay numbers on UI elements, or use highlight/arrow annotations. These programmatically generated markers dramatically reduce ambiguity and improve accuracy, particularly effective for dense UIs with many similar elements.
+
+Enhance contrast for low-visibility elements using CLAHE (Contrast Limited Adaptive Histogram Equalization). Convert images to RGB as models expect RGB input. Apply modest edge enhancement for better boundary detection but avoid heavy preprocessing that might confuse models.
+
+### Fine-tuning delivers 200-300% improvement for high-volume applications
+
+OpenAI's GPT-4o Vision fine-tuning, available since August 2024, enables domain-specific optimization for UI element localization. Automat.ai achieved **272% improvement** (16.6% → 61.67% success rate) on UI automation tasks with fine-tuning. Minimum 200 images recommended for effective fine-tuning, with costs around $50 for 2M tokens (example dataset).
+
+Format training data with image inputs paired with coordinate outputs in consistent JSON structure. Include diverse examples covering edge cases, different image resolutions, various UI styles, and failure modes you've observed. Fine-tuning compensates for base model weaknesses on your specific coordinate extraction domain.
+
+**Consider fine-tuning when** processing over 10M tokens monthly, requiring accuracy improvements beyond prompt engineering, working with domain-specific UI patterns, or needing consistent performance on specialized tasks. Implementation requires 2-3 weeks including dataset collection, formatting, training, and validation.
+
+## Practical cost and latency considerations
+
+### Gemini Flash-Lite offers unbeatable value at $0.01-0.04 per 1,000 images
+
+**Gemini 2.5 Flash-Lite** represents the most cost-effective option at $0.10/M input tokens and $0.40/M output tokens (standard pricing), with 50% batch discounts dropping costs to $0.05/$0.20 per million tokens. For typical coordinate extraction tasks with minimal output, expect $0.01-0.04 per 1,000 images. The model also delivers 45% lower latency than 2.0 Flash, making it ideal for high-volume, cost-sensitive applications.
+
+**Gemini 2.5 Flash** (your current model) costs $0.30/M input, $2.50/M output, translating to roughly $0.03-0.25 per 1,000 images depending on output length. Batch processing with 50% discounts and context caching with 90% savings on repeated prompts dramatically reduce costs for production deployments. Free tier offers 500 requests per day with generous limits for development and testing.
+
+**Critical pricing surprise: GPT-4o mini costs 2x more than GPT-4o for vision tasks** despite being 17x cheaper for text. GPT-4o processes images at 85 tokens (low detail) costing $0.21 per 1,000 images, while GPT-4o mini uses 2,833 tokens per image costing $0.43 per 1,000 images. High-detail mode for GPT-4o increases to ~1,100 tokens at $2.75 per 1,000 images. Avoid GPT-4o mini for vision—counterintuitive but empirically validated.
+
+**Claude 3.5 Haiku** offers competitive pricing at $0.80/M input, $4/M output (reduced from $1/$5 in December 2024), with 50% batch discounts bringing costs to $0.08-0.40 per 1,000 images. Processing speed reaches 21K+ tokens/sec for prompts under 32K tokens. Good balance of speed, cost, and quality for coordinate extraction when combined with proper prompting techniques.
+
+**Claude Sonnet 4.5** at $3/M input, $15/M output ($0.30-1.50 per 1,000 images with batch discounts) delivers excellent structured output quality but represents overkill for straightforward coordinate extraction. Reserve for accuracy-critical applications requiring sophisticated reasoning. Claude Opus 4.1 at premium pricing ($15/$75 per million tokens) is not recommended for coordinate tasks.
+
+### Gemini 2.0 Flash leads latency benchmarks at 250+ tokens per second
+
+**Speed rankings** for production applications: Gemini 2.0 Flash achieves 250+ tokens/sec with 0.25s time-to-first-token, making it the fastest option for real-time coordinate extraction. Claude 3.5 Sonnet follows at 170.4 TPS (1.23s TTFT), then GPT-4o at 131 TPS (0.56s TTFT), GPT-4o mini at 68.5 TPS (0.45s TTFT), and Claude Opus 4.1 at 46.9 TPS (1.77s TTFT).
+
+For applications prioritizing speed, **Gemini 2.0 Flash combines lowest latency with lowest cost** ($0.10/M input, $0.40/M output, identical to Flash-Lite). GPT-4o offers 24% faster average latency than Claude 3.5 Sonnet (7.52s vs 9.31s total) and 2x faster time-to-first-token, making it the second-best choice for latency-sensitive applications despite higher costs.
+
+**Batch processing and caching strategies** reduce costs by 50-90%. All major providers offer batch APIs with 50% discounts for non-real-time workloads. Context caching (Gemini, Claude) provides 90% savings on repeated context—critical for applications processing many images with similar prompts. Enable these features for production deployments processing thousands of images daily.
+
+### When specialized models beat API pricing
+
+Self-hosted models become cost-effective above **10-30M tokens monthly or 100M+ images monthly**. AWS/GCP GPU instances (A10/L40S) cost $1-3 per hour. At high volumes, infrastructure costs stay fixed while API costs scale linearly. Additional benefits include no rate limits, full data privacy, custom fine-tuning capability, and independence from API changes.
+
+Traditional computer vision models (YOLOv8, DETR) deliver faster inference for pure detection tasks: YOLOv8n achieves 365ms latency versus GPT-4o's 5,150ms for detection tasks. However, VLMs provide superior flexibility, understanding of natural language queries, and ability to handle novel object classes without retraining. Hybrid approaches combining specialized detectors with VLMs for understanding often deliver optimal results.
+
+## Critical benchmarks reveal 35-40% accuracy gap
+
+Current vision models lag significantly behind human performance on spatial reasoning and coordinate extraction. Best VLMs (GPT-4o, Gemini 2.5 Pro) achieve ~55-70% accuracy on comprehensive spatial benchmarks like OmniSpatial, compared to 92-95% human accuracy—a **35-40% gap**. LocateBench evaluation confirms GPT-4o leads commercial VLMs but remains "greatly lags behind" human baseline of 95%.
+
+### Visual grounding benchmarks show specialized model superiority
+
+**RefCOCO family** (RefCOCO, RefCOCO+, RefCOCOg) provides the gold standard for visual grounding evaluation, measuring ability to predict bounding boxes from natural language descriptions. Success requires IoU (Intersection over Union) greater than 0.5. Specialized models like **Florence-2-large-ft achieve 80-90%+ accuracy** leading leaderboards, while general VLMs score significantly lower.
+
+Gemini demonstrates best coordinate capabilities among commercial VLMs with native normalized coordinate output (0-1000 scale) that developers report as "spot on all the time." GPT-4o and Claude lack native bounding box APIs and struggle when prompted for coordinates, with extensive developer complaints about "off" coordinates and refusal to provide spatial information.
+
+### UI understanding benchmarks highlight practical limitations
+
+**ScreenQA benchmark** (86K question-answer pairs over 35K Rico mobile screenshots) tests screen content understanding with bounding box annotations. ScreenAI 5B and PaliGemma 3B achieve state-of-the-art results, outperforming general VLMs on UI-specific tasks despite smaller model sizes. **MobileViews dataset** (600K+ screenshot-VH pairs from 20K+ modern Android apps) shows models trained on UI-specific data deliver substantially better performance than those trained on general image datasets.
+
+**LocateBench findings** reveal format sensitivity significantly impacts accuracy—Gemini shows 43.9% performance difference between best and worst prompt formats, while Claude proves least sensitive at 16.8% difference. Multiple-choice coordinate formats work better than direct coordinate output for most models. Models frequently ignore requested coordinate format instructions, requiring strict structured output enforcement.
+
+### Real-world developer evidence confirms limitations
+
+Roboflow, a major computer vision platform, explicitly states GPT-4V "struggled with object localization out of the box" with bounding boxes that are "not ideal for production use cases." Kadoa's web scraping testing found GPT-4V coordinates "actually wrong" with "big offset for X coordinates." OpenAI developer forums contain extensive threads about coordinate recognition accuracy being "relatively poor" requiring manual verification and post-processing.
+
+Conversely, Gemini users report consistent success with native bounding box detection. Simon Willison (prominent tech developer) notes "This is a pretty neat capability! OpenAI's GPT-4o and Anthropic's Claude 3 and Claude 3.5 models can't do this (yet)." Medium developer posts confirm Gemini "met my expectations for object detection" and is "pretty much spot on all the time."
+
+## Recommended implementation strategy
+
+### Phase 1: Immediate improvements (1-2 days implementation)
+
+**Implement grid overlay technique** for 50-200% accuracy boost with minimal effort. Use GridGPT or similar Python/Pillow-based tools to generate transparent grid overlays before sending images to Gemini 2.5 Flash. This single change delivers the highest return on implementation time.
+
+**Add coordinate validation** with bounds checking, size validation, format enforcement, and retry logic with error feedback. Implement comprehensive validation that catches out-of-bounds coordinates, unreasonably large/small bounding boxes, and format inconsistencies. Takes 2-3 hours to implement and prevents the majority of failures.
+
+**Optimize image resolution** by pre-resizing to 1024-1536px maintaining aspect ratio. For your current Gemini 2.5 Flash setup, this ensures optimal coordinate detection without the resizing artifacts that damage GPT-4o accuracy. One hour implementation time.
+
+### Phase 2: Enhanced accuracy (1 week implementation)
+
+**Implement chain-of-thought prompting** with step-by-step reasoning, verification steps, and consistent coordinate format specification. Create template library with few-shot examples covering your specific use cases. Requires 4-6 hours for prompt engineering and template development, delivers 20-60% additional accuracy improvement.
+
+**Enable structured output schemas** using Gemini's JSON mode with precise coordinate schema definitions. Define bounding box formats, coordinate systems, confidence scores, and validation rules. Enforce schema compliance through API configuration. Takes 2-3 hours to implement properly.
+
+**Batch processing and caching** for production cost reduction. Enable Gemini's batch API for 50% discount on non-real-time workloads, implement context caching for 90% savings on repeated prompts. Configure these features takes several hours but delivers immediate 50-90% cost reduction at scale.
+
+### Phase 3: Consider specialized models (2-4 weeks evaluation)
+
+**Evaluate Florence-2** as a specialized alternative for accuracy-critical applications. The 770M parameter model offers superior coordinate detection compared to general VLMs while remaining deployable on modest hardware. Run comparative accuracy tests on your specific use cases with 100-200 sample images.
+
+**Test OmniParser** if your application involves GUI automation, UI testing, or interactive element detection. The specialized architecture specifically targets clickable region identification, potentially delivering substantial accuracy improvements for these workflows.
+
+**Benchmark Grounding DINO + SAM2 pipeline** for maximum flexibility detecting arbitrary UI elements. This zero-shot approach handles novel element types not in training datasets, useful for diverse UI styles or frequently changing interfaces.
+
+**Fine-tuning GPT-4o Vision** becomes cost-effective above 10M tokens monthly. Collect 200-500 diverse examples covering edge cases and failure modes. Format training data consistently with image inputs paired with coordinate outputs. Budget 2-3 weeks for dataset preparation, training, and validation. Expect 200-300% accuracy improvements based on published results.
+
+### For high-volume applications (100M+ images monthly)
+
+Consider **self-hosted specialized models** when processing exceeds 100M images monthly. Florence-2, Qwen2.5-VL-7B, or custom fine-tuned models on L40S/A10 GPU instances eliminate per-request costs, remove rate limits, and provide full data privacy. Breakeven occurs around 10-30M tokens monthly depending on infrastructure choices.
+
+**Hybrid routing strategy** optimizes cost and accuracy: route simple coordinate extraction to Gemini Flash-Lite ($0.01/1K images), medium complexity to Gemini 2.5 Flash ($0.03-0.25/1K images), and accuracy-critical tasks to specialized models or fine-tuned GPT-4o. This tiered approach common in 78% of enterprises using multiple models achieves optimal price-performance balance.
+
+## Key success factors
+
+**Always validate coordinates** before use with bounds checking, size validation, and outlier detection. Implement retry logic with error feedback when validation fails. This single practice prevents most production failures.
+
+**Use normalized coordinates (0-1 range)** for resolution independence and reduced scaling errors. Gemini outputs 0-1000 range requiring simple division by 1000. Normalized coordinates eliminate resolution-specific bugs and simplify handling images of different sizes.
+
+**Explicitly state coordinate system** in every prompt: origin point (top-left), axis directions (X rightward, Y downward), format (normalized vs pixels), and valid ranges. Models frequently confuse coordinate systems without explicit specification.
+
+**Monitor and log failures** to identify systematic patterns. Track which element types, image characteristics, or UI patterns cause failures. Use failure analysis to refine prompts, improve preprocessing, or identify cases requiring specialized models.
+
+**Test on your specific domain** before production deployment. Coordinate extraction accuracy varies dramatically based on UI style, image quality, element types, and task complexity. Validate with 100-200 representative samples covering edge cases and failure modes you anticipate.
+
+Your choice of Gemini 2.5 Flash provides the best foundation among commercial VLMs for coordinate extraction. Implementing the grid overlay technique and structured validation will immediately boost your accuracy 50-200%. For highest accuracy requirements, evaluate Florence-2 or OmniParser as specialized alternatives. Both approaches—enhanced prompting with Gemini or specialized models—can achieve production-grade coordinate extraction with proper implementation.
