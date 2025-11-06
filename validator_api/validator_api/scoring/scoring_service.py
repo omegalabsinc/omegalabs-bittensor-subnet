@@ -123,7 +123,7 @@ async def _get_details_if_boosted(video_id: str) -> Optional[BoostedTask]:
     return None
 
 
-async def get_video_duration_seconds(video_id: str) -> int:
+async def get_video_duration_milliseconds(video_id: str) -> int:
     async with get_db_context() as db:
         # First verify video exists and is not deleted
         video_metadata = await get_video_metadata(db, video_id)
@@ -560,8 +560,9 @@ class FocusScoringService:
         else:
             boosted_multiplier = 1.0
 
-        video_duration_seconds = await get_video_duration_seconds(video_id)
-        video_minutes = video_duration_seconds / 1000;
+        video_duration_milliseconds = await get_video_duration_milliseconds(video_id)
+        video_duration_seconds = video_duration_milliseconds / 1000;
+        video_minutes = video_duration_seconds / 60;
         print(f"video minutes {video_minutes}")
         # if not bypass_checks:
         if video_duration_seconds < ONE_MINUTE:
