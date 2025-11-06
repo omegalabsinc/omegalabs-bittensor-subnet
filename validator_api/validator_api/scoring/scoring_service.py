@@ -140,9 +140,8 @@ async def get_video_duration_milliseconds(video_id: str) -> int:
             video_duration_seconds = 120  # Default fallback
         else:
             # Convert from milliseconds to seconds
-            video_duration_seconds = int(real_focused_time.real_focused_duration / 1000)
+            video_duration_seconds = int(real_focused_time.real_focused_duration)
 
-        # print(f" Video Duration ")
         return video_duration_seconds
 
 
@@ -594,7 +593,7 @@ class FocusScoringService:
             self.get_detailed_video_description_embedding_score(
                 video_id, task_overview
             ),  # uses gemini to get detailed description
-            self.embed_and_get_video_uniqueness_score(video_id, video_duration_seconds),
+            self.embed_and_get_video_uniqueness_score(video_id, int(video_duration_seconds)),
         )
 
         if not bypass_checks:
