@@ -561,7 +561,7 @@ class FocusScoringService:
             boosted_multiplier = 1.0
 
         video_duration_seconds = await get_video_duration_seconds(video_id)
-        video_minutes = video_duration_seconds / 60;
+        video_minutes = video_duration_seconds / 1000;
         print(f"video minutes {video_minutes}")
         # if not bypass_checks:
         if video_duration_seconds < ONE_MINUTE:
