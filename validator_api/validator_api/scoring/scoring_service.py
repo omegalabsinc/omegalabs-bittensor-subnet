@@ -251,6 +251,88 @@ async def _make_gemini_request_with_retries(
     )
 
 
+def _format_trajectories_section(trajectories_data: Optional[dict]) -> str:
+    """
+    Format trajectories data for inclusion in prompts.
+
+    Args:
+        trajectories_data: Dictionary containing trajectories data (Mac or Windows format)
+
+    Returns:
+        Formatted string for insertion into prompts, or empty string if no trajectories
+    """
+    if not trajectories_data:
+        return ""
+
+    # Detect format based on presence of processId (Windows) vs absence (Mac)
+    sample_event = trajectories_data.get("events", [{}])[0] if trajectories_data.get("events") else {}
+    platform = "Windows" if "processId" in sample_event else "Mac"
+
+    event_count = trajectories_data.get("eventCount", len(trajectories_data.get("events", [])))
+
+    # Format a summary of the trajectories data
+    trajectories_summary = f"""
+TRAJECTORIES DATA AVAILABLE:
+Platform: {platform}
+Total Events: {event_count}
+Task ID: {trajectories_data.get("taskId", "N/A")}
+Captured At: {trajectories_data.get("capturedAt", "N/A")}
+
+The trajectories data contains {event_count} interaction events including mouse clicks, application switches, and window focus changes.
+Use this data to verify the sequence of actions, identify applications used, and cross-validate the completion steps.
+
+Sample of trajectories events (showing up to first 5 and last 5 events):
+"""
+
+    events = trajectories_data.get("events", [])
+    if events:
+        # Show first 5 events
+        for i, event in enumerate(events[:5]):
+            trajectories_summary += f"\n  Event {i+1}: {event.get('timestamp')} - {event.get('processName')} ({event.get('windowTitle')}) - Click at ({event.get('x')}, {event.get('y')})"
+
+        if len(events) > 10:
+            trajectories_summary += f"\n  ... ({len(events) - 10} events omitted) ..."
+
+        # Show last 5 events if there are more than 5 total
+        if len(events) > 5:
+            for i, event in enumerate(events[-5:]):
+                event_num = len(events) - 5 + i + 1
+                trajectories_summary += f"\n  Event {event_num}: {event.get('timestamp')} - {event.get('processName')} ({event.get('windowTitle')}) - Click at ({event.get('x')}, {event.get('y')})"
+
+    return f"""
+<trajectories_data>
+{trajectories_summary}
+</trajectories_data>
+"""
+
+
+async def _get_trajectories_from_video_details(video_id: str) -> Optional[dict]:
+    """
+    Retrieve trajectories data from video_details JSONB column.
+
+    Args:
+        video_id: The video ID to fetch trajectories for
+
+    Returns:
+        Trajectories dictionary or None if not available
+    """
+    async with get_db_context() as db:
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.deleted_at.is_(None),
+        )
+        result = await db.execute(query)
+        video_record = result.scalar_one_or_none()
+
+        if video_record is None:
+            return None
+
+        if video_record.video_details:
+            return video_record.video_details.get("trajectories")
+
+    return None
+
+
 async def get_detailed_video_description(
     video_id: str, task_overview: str, recompute: bool = False
 ) -> DetailedVideoDescription:
@@ -280,10 +362,18 @@ async def get_detailed_video_description(
                 )
 
     print(f"Generating new detailed_video_description for video_id: {video_id}")
+
+    # Get trajectories data if available
+    trajectories_data = await _get_trajectories_from_video_details(video_id)
+    trajectories_section = _format_trajectories_section(trajectories_data)
+
+    print(f"Trajectories data {'found' if trajectories_data else 'not found'} for video_id: {video_id}")
+
     description = await _make_gemini_request_with_retries(
         system_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_SYSTEM_PROMPT,
         user_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_USER_PROMPT.format(
-            task_overview=task_overview
+            task_overview=task_overview,
+            trajectories_section=trajectories_section
         ),
         video_id=video_id,
         OutputClassSchema=DetailedVideoDescription,
@@ -304,6 +394,7 @@ async def get_detailed_video_description(
 async def _get_completion_score_breakdown(
     task_overview: str,
     detailed_video_description: Optional[DetailedVideoDescription] = None,
+    video_id: Optional[str] = None,
     system_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT.format(
         EXPLOITED_TASK_CASES=focus_scoring_prompts.EXPLOITED_TASK_CASES
     ),
@@ -314,14 +405,22 @@ async def _get_completion_score_breakdown(
 
     Args:
         task_overview (str): An overview of the task associated with the video.
-        openai_client (AsyncOpenAI): Kept for compatibility but no longer used
         detailed_video_description (Optional[DetailedVideoDescription], optional): A detailed description of the video content.
+        video_id (Optional[str], optional): Video ID to fetch trajectories data.
         system_prompt (str, optional): The system prompt to be used for generating the completion score.
         user_prompt (str, optional): The user prompt to be used for generating the completion score.
 
     Returns:
         CompletionScore: The completion score breakdown for the video.
     """
+    # Get trajectories data if video_id is provided
+    trajectories_data = None
+    if video_id:
+        trajectories_data = await _get_trajectories_from_video_details(video_id)
+        print(f"Trajectories data {'found' if trajectories_data else 'not found'} for completion scoring of video_id: {video_id}")
+
+    trajectories_section = _format_trajectories_section(trajectories_data)
+
     messages = [
         {"role": "system", "content": system_prompt},
         {
@@ -330,6 +429,7 @@ async def _get_completion_score_breakdown(
                 task_overview=task_overview,
                 applications_used=detailed_video_description.applications_used,
                 completion_sequence_steps=detailed_video_description.completion_sequence_steps,
+                trajectories_section=trajectories_section,
             ),
         },
     ]
@@ -635,6 +735,7 @@ class FocusScoringService:
         completion_score_breakdown = await _get_completion_score_breakdown(
             task_overview,
             detailed_video_description=video_description,
+            video_id=video_id,
         )
 
         completion_gemini_score = completion_score_breakdown.completion_score

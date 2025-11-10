@@ -53,10 +53,22 @@ async def get_detailed_video_description(
                 video_record.video_details["detailed_video_description"]
             )
 
+    # Get trajectories data if available
+    from validator_api.validator_api.scoring.scoring_service import (
+        _get_trajectories_from_video_details,
+        _format_trajectories_section,
+    )
+
+    trajectories_data = await _get_trajectories_from_video_details(video_id)
+    trajectories_section = _format_trajectories_section(trajectories_data)
+
+    print(f"Trajectories data {'found' if trajectories_data else 'not found'} for video_id: {video_id}")
+
     description = await _make_gemini_request_with_retries(
         system_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_SYSTEM_PROMPT,
         user_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_USER_PROMPT.format(
-            task_overview=task_overview
+            task_overview=task_overview,
+            trajectories_section=trajectories_section
         ),
         video_id=video_id,
         OutputClassSchema=DetailedVideoDescription,
