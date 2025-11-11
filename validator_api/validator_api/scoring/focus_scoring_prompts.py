@@ -53,50 +53,15 @@
 DETAILED_DESCRIPTION_SYSTEM_PROMPT = """
 You are tasked with watching a screen recording of a human performing a task and creating a detailed annotation of the process. Your goal is to produce a description so thorough and precise that another human or AI could replicate the user's step-by-step sequence without ever seeing the video.
 
-IMPORTANT: In addition to the video, you may also receive **trajectories data** containing detailed user interaction logs captured during the recording session. This data provides precise information about mouse clicks, keyboard events, application switches, and window focus changes.
-
-**Trajectories Data Formats:**
-
-**Mac Format:**
-- events: List of interaction events
-  - x, y: Mouse coordinates
-  - button: Mouse button clicked (e.g., "left", "right")
-  - timestamp: ISO timestamp of the event
-  - processName: Name of the application in focus (e.g., "Electron", "Safari", "Finder")
-  - windowTitle: Title of the window in focus
-  - taskId: Associated task identifier
-
-**Windows Format:**
-- events: List of interaction events
-  - x, y: Mouse coordinates
-  - button: Mouse button clicked (e.g., "left", "right")
-  - timestamp: ISO timestamp of the event
-  - processId: Process ID of the application
-  - processName: Name of the application in focus (e.g., "Code", "chrome", "Discord")
-  - windowTitle: Title of the window in focus
-  - taskId: Associated task identifier
-
-Use the trajectories data to:
-- Precisely identify which applications were used and when
-- Determine the exact sequence of user actions
-- Identify application switches and multitasking patterns
-- Cross-reference visual observations with interaction logs for accuracy
-- Detect precise timing and pacing of actions
-
-After watching the video and analyzing the trajectories (if provided), you will create an annotation following the DetailedVideoDescription schema. This schema includes four main components: applications_used, completion_sequence_steps, user_feedback, and description.
+After watching the video, you will create an annotation following the DetailedVideoDescription schema. This schema includes four main components: applications_used, completion_sequence_steps, user_feedback, and description.
 
 For each component of the schema, follow these guidelines:
 
-1. applications_used: List all software applications, websites, or tools used in the video. If trajectories data is available, use the processName fields to ensure complete and accurate application detection.
+1. applications_used: List all software applications, websites, or tools used in the video.
 
-2. completion_sequence_steps: Provide a highly detailed, step-by-step breakdown of the entire process. Each step should be clear, concise, and actionable for Computer Use Agent. If trajectories data is available, use it to:
-   - Determine precise click locations and targets
-   - Identify application switches and window changes
-   - Map the chronological sequence of actions
-   - Cross-validate visual observations with interaction logs
-   Include timestamps where relevant. Number each step for clarity.
+2. completion_sequence_steps: Provide a highly detailed, step-by-step breakdown of the entire process. Each step should be clear, concise, and actionable for Computer use Agent. Include any relevant details that can be gleaned from the screen recording. Number each step for clarity.
 
-3. user_feedback: Offer constructive feedback to the user on their performance. Highlight areas where they excelled and suggest potential improvements or more efficient methods. If trajectories data reveals inefficient patterns (e.g., excessive clicking, frequent app switching), mention these constructively.
+3. user_feedback: Offer constructive feedback to the user on their performance. Highlight areas where they excelled and suggest potential improvements or more efficient methods.
 
 4. description: Write a high-level summary of the video content, capturing the essence of the task and its execution in a few sentences.
 
@@ -112,11 +77,7 @@ Note that the user is completing a task that is described as follows:
 {task_overview}
 </task_description>
 
-{trajectories_section}
-
 Then, write a detailed description based on the criteria outlined. Remember to focus especially on the task completion sequence and any novel or highly interesting aspects of the video.
-
-When trajectories data is provided, use it to enhance the accuracy and completeness of your step-by-step breakdown. Cross-reference the video content with the interaction logs to create the most precise description possible.
 
 Remember to be thorough, clear, and precise in your annotation. Your goal is to create a description that allows for perfect replication of the task by a Computer Use Agent.
 
@@ -209,21 +170,7 @@ The content of these notifications should not be factored into your evaluation.
 You will be provided with:
 1. A task overview describing the assigned task.
 2. The screen recording video of the user performing the task.
-3. Detailed description of the user's actions in the video (completion_sequence_steps).
-4. (Optional) Trajectories data containing interaction logs from the recording session.
-
-**Trajectories Data** (when available):
-The trajectories data provides precise user interaction logs including:
-- Mouse click events with coordinates (x, y)
-- Application and window switches (processName, windowTitle)
-- Timestamps for all actions
-- Platform-specific details (Mac or Windows format)
-
-Use trajectories data to:
-- Verify the sequence and completeness of steps
-- Detect if the user followed the task requirements precisely
-- Identify any inefficiencies or deviations
-- Cross-validate the completion_sequence_steps accuracy
+3. Detailed description of the user's actions in the video.
 
 Your goal is to evaluate the user's performance and provide a completion score following the CompletionScore schema.
 This schema includes a final score and a rationale.
@@ -247,8 +194,6 @@ This is the detailed description of the user's actions in the video, to aid you 
 {completion_sequence_steps}
 </completion_sequence_steps>
 
-{trajectories_section}
-
 If the user accomplishes the spirit of the task according to the task title, but does not complete it exactly as described according to the task description, you should still award some score (not 0.0).
 
 Use the following rubric to assign the completion_score:
@@ -265,25 +210,8 @@ DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT = """You are an expert in analyzing task
 You will be provided with:
 1. Task overview describing the user's assigned task
 2. Detailed description and annotated transcript of the user's screen recording of their task completion
-3. (Optional) Trajectories data containing interaction logs from the recording session
 
-**Trajectories Data** (when available):
-The trajectories data provides precise user interaction logs including:
-- Mouse click events with coordinates (x, y) and button type
-- Application and window switches (processName, windowTitle)
-- Timestamps for all actions (ISO format)
-- Platform-specific details (Mac or Windows format)
-
-**Using Trajectories Data:**
-When trajectories data is provided, use it to:
-- Verify the annotated transcript's accuracy and completeness
-- Detect precise application usage and switching patterns
-- Identify the chronological flow of actions
-- Cross-validate claimed steps with actual interaction logs
-- Identify inefficiencies or deviations from optimal workflow
-- Detect if the user followed task requirements precisely
-
-Analyze the annotated transcript (and trajectories if provided) to provide helpful, actionable feedback.
+Analyze the annotated transcript to provide helpful, actionable feedback.
 
 Provide meaningful feedback including:
 - Completion score following CompletionScore schema
@@ -292,7 +220,7 @@ Provide meaningful feedback including:
 - Ignore OMEGA Focus notifications in top right
 
 Important:
-Even if the user completes the steps in the description, but if description is in the below list of exploited examples
+Even if the user completes the steps in the description, but if description is in the below list of exploited examples 
 where user just tries to complete the task but does not actually complete it , give penalty score of 0.0 and skip rubrics if this is the case:
 {EXPLOITED_TASK_CASES}
 
@@ -310,7 +238,7 @@ OUTPUT JSON FORMAT:
 }}
 """
 
-DESC_ONLY_TASK_COMPLETION_USER_PROMPT = """Based on the provided annotated transcript (and trajectories data if available), please provide a completion score breakdown.
+DESC_ONLY_TASK_COMPLETION_USER_PROMPT = """Based on the provided annotated transcript, please provide a completion score breakdown.
 Evaluate how well the user completed the assigned task, considering their focus and overall effectiveness.
 Please use the task description to evaluate the user's performance, which may include specific steps needed to complete the task.
 
@@ -328,8 +256,6 @@ This is the detailed description of the user's actions in the video:
 <annotated_transcript>
 {completion_sequence_steps}
 </annotated_transcript>
-
-{trajectories_section}
 
 If the user accomplishes the spirit of the task according to the task title, but does not complete it exactly as described according to the task description, you should still award some score (not 0.0)."""
 
