@@ -394,7 +394,8 @@ Feedback from AI: {score_details.completion_score_breakdown.rationale}"""
         elif isinstance(e, LegitimacyCheckError):
             rejection_reason = "An anomaly was detected in the video. If you believe this is an error, please contact a team member via the OMEGA Focus Discord channel."
         else:
-            rejection_reason = "Error scoring video"
+            # Capture actual error message for debugging (e.g., "no chunks found", "no video found")
+            rejection_reason = f"Rejection reason: {str(e)}"
 
         # Handle error by marking video as rejected
         try:
