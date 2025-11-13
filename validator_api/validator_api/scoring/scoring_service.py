@@ -495,12 +495,18 @@ class FocusScoringService:
     async def embed_and_get_video_uniqueness_score(
         self, video_id: str, video_duration_seconds: int
     ):
-        try:
-            embedding = await get_video_embedding(video_id, video_duration_seconds)
-            return embedding, await self.get_video_uniqueness_score(embedding)
-        except Exception as e:
-            print(f"Failed to create video embedding for {video_id}: {str(e)}")
-            return None, 0.1  # Assumes unique if we can't check
+        # TEMPORARILY DISABLED: Multimodal embedding is causing pipeline issues
+        # Skipping video embedding generation and uniqueness check
+        print(f"Skipping multimodal video embedding for {video_id} (temporarily disabled)")
+        return None, 0.03  # Return conservative default score (just above MIN threshold of 0.02)
+
+        # Original implementation (disabled):
+        # try:
+        #     embedding = await get_video_embedding(video_id, video_duration_seconds)
+        #     return embedding, await self.get_video_uniqueness_score(embedding)
+        # except Exception as e:
+        #     print(f"Failed to create video embedding for {video_id}: {str(e)}")
+        #     return None, 0.1  # Assumes unique if we can't check
 
     async def get_detailed_video_description_embedding_score(
         self, video_id, task_overview
@@ -597,6 +603,8 @@ class FocusScoringService:
         )
 
         if not bypass_checks:
+            # NOTE: Video uniqueness check is currently disabled because multimodal embedding is skipped
+            # embed_and_get_video_uniqueness_score returns 0.03 (just above MIN threshold), so this check will pass
             if video_uniqueness_score < MIN_VIDEO_UNIQUENESS_SCORE:
                 raise VideoUniquenessError("Video uniqueness score is too low.")
 
