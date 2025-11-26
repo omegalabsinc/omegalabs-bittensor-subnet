@@ -9,7 +9,6 @@
 
 </div>
 ---
-
 - [Introduction](#introduction)
 - [Key Features](#key-features)
 - [Miner and Validator Functionality](#miner-and-validator-functionality)
