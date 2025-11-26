@@ -8,7 +8,6 @@
 ## Be, and it becomes ... <!-- omit in toc -->
 
 </div>
-
 ---
 
 - [Introduction](#introduction)
