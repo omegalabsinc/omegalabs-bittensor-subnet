@@ -671,23 +671,52 @@ class MinerPurchaseStats(BaseModel):
 
 
 async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
+    print(f"\n{'='*60}")
+    print(f"[_get_miner_purchase_stats] CACHE REFRESH START")
+    print(f"{'='*60}")
+
+    cutoff_time = datetime.utcnow() - timedelta(hours=24)
+    print(f"[_get_miner_purchase_stats] Querying purchases since: {cutoff_time}")
+    print(f"[_get_miner_purchase_stats] Current time: {datetime.utcnow()}")
+
     async with get_db_context() as db:
-        # Get regular focus video purchases
+        # Get regular focus video purchases - only include verified on-chain miner purchases
+        # Filter by extrinsic_id to exclude admin/client purchases outside Bittensor
         focus_query = select(FocusVideoRecord).filter(
             FocusVideoRecord.processing_state
             == FocusVideoStateInternal.PURCHASED.value,
-            FocusVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24),
+            FocusVideoRecord.updated_at >= cutoff_time,
+            FocusVideoRecord.extrinsic_id.isnot(None),  # Must have on-chain transaction proof
+            FocusVideoRecord.miner_hotkey.isnot(None),  # Must have miner hotkey
         )
         focus_result = await db.execute(focus_query)
         purchased_videos_records = focus_result.scalars().all()
 
-        # Get subnet video purchases
+        print(f"[_get_miner_purchase_stats] Focus videos found (with extrinsic_id): {len(purchased_videos_records)}")
+
+        # Log each focus video found
+        for i, record in enumerate(purchased_videos_records):
+            print(f"  Focus #{i+1}: video_id={record.video_id}, miner_hotkey={record.miner_hotkey}, "
+                  f"earned_tao={record.earned_reward_tao}, state={record.processing_state}, "
+                  f"extrinsic_id={record.extrinsic_id}, updated_at={record.updated_at}")
+
+        # Get subnet video purchases - only include verified on-chain miner purchases
         subnet_query = select(SubnetVideoRecord).filter(
             SubnetVideoRecord.processing_state == "PURCHASED",
-            SubnetVideoRecord.updated_at >= datetime.utcnow() - timedelta(hours=24),
+            SubnetVideoRecord.updated_at >= cutoff_time,
+            SubnetVideoRecord.extrinsic_id.isnot(None),  # Must have on-chain transaction proof
+            SubnetVideoRecord.miner_hotkey.isnot(None),  # Must have miner hotkey
         )
         subnet_result = await db.execute(subnet_query)
         subnet_purchase_records = subnet_result.scalars().all()
+
+        print(f"[_get_miner_purchase_stats] Subnet videos found (with extrinsic_id): {len(subnet_purchase_records)}")
+
+        # Log each subnet video found
+        for i, record in enumerate(subnet_purchase_records):
+            print(f"  Subnet #{i+1}: video_id={record.video_id}, miner_hotkey={record.miner_hotkey}, "
+                  f"earned_tao={record.earned_reward_tao}, state={record.processing_state}, "
+                  f"extrinsic_id={record.extrinsic_id}, updated_at={record.updated_at}")
 
     # Calculate total earned tao from both sources
     focus_earned_tao = sum(
@@ -697,6 +726,8 @@ async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
         record.earned_reward_tao or 0 for record in subnet_purchase_records
     )
     total_earned_tao = focus_earned_tao + subnet_earned_tao
+
+    print(f"[_get_miner_purchase_stats] Total TAO - Focus: {focus_earned_tao}, Subnet: {subnet_earned_tao}, Combined: {total_earned_tao}")
 
     # Group focus video records by miner hotkey
     videos_by_miner = {}
@@ -717,30 +748,38 @@ async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
     # Process stats for each miner
     stats = {}
     all_miners = set(videos_by_miner.keys()) | set(subnet_by_miner.keys())
-    
+
+    print(f"[_get_miner_purchase_stats] Unique miners with purchases: {len(all_miners)}")
+
     for miner_hotkey in all_miners:
         # Calculate TAO from focus videos
         miner_focus_tao = sum(
-            video_record.earned_reward_tao or 0 
+            video_record.earned_reward_tao or 0
             for video_record in videos_by_miner.get(miner_hotkey, [])
         )
-        
+
         # Calculate TAO from subnet videos
         miner_subnet_tao = sum(
-            subnet_record.earned_reward_tao or 0 
+            subnet_record.earned_reward_tao or 0
             for subnet_record in subnet_by_miner.get(miner_hotkey, [])
         )
-        
+
         miner_total_tao = miner_focus_tao + miner_subnet_tao
         tao_percentage = (
             miner_total_tao / total_earned_tao if total_earned_tao > 0 else 0
         )
-        
+
         stats[miner_hotkey] = MinerPurchaseStats(
             total_focus_points=miner_total_tao,
             max_focus_points=total_earned_tao,
             focus_points_percentage=tao_percentage,
         )
+
+        print(f"  Miner {miner_hotkey[:16]}...: focus_tao={miner_focus_tao}, subnet_tao={miner_subnet_tao}, "
+              f"total={miner_total_tao}, percentage={tao_percentage:.4f}")
+
+    print(f"[_get_miner_purchase_stats] Returning stats for {len(stats)} miners")
+    print(f"{'='*60}\n")
 
     return stats
 

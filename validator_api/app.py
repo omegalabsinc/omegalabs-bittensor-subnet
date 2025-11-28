@@ -977,6 +977,13 @@ async def main():
         db: AsyncSession = Depends(get_db),
         background_tasks: BackgroundTasks = BackgroundTasks(),
     ):
+        print(f"\n{'#'*60}")
+        print(f"[VERIFY_PURCHASE] ENDPOINT CALLED")
+        print(f"{'#'*60}")
+        print(f"[VERIFY_PURCHASE] video_id: {video_id}")
+        print(f"[VERIFY_PURCHASE] miner_hotkey: {miner_hotkey}")
+        print(f"[VERIFY_PURCHASE] block_hash: {block_hash}")
+
         async def run_stake(video_id):
             async with aiohttp.ClientSession() as session:
                 async with session.post(
@@ -989,19 +996,41 @@ async def main():
                     print(f"staking Video ID: {video_id}")
                     return res
 
+        print(f"[VERIFY_PURCHASE] Fetching video_owner_coldkey...")
         video_owner_coldkey = await get_video_owner_coldkey(db, video_id)
+        print(f"[VERIFY_PURCHASE] video_owner_coldkey: {video_owner_coldkey}")
+
+        if video_owner_coldkey is None:
+            print(f"[VERIFY_PURCHASE] ERROR: video_owner_coldkey is None - video not found")
+            print(f"{'#'*60}\n")
+            return {
+                "status": "error",
+                "message": f"Video not found: {video_id}",
+            }
+
+        print(f"[VERIFY_PURCHASE] Calling confirm_transfer...")
         result = await confirm_transfer(
             db, video_owner_coldkey, video_id, miner_hotkey, block_hash
         )
+        print(f"[VERIFY_PURCHASE] confirm_transfer returned: {result}")
+
         if result:
+            print(f"[VERIFY_PURCHASE] SUCCESS - Purchase verified and logged to DB")
             # For subnet videos, skip the staking background task
             if not video_id.startswith("subnet_"):
+                print(f"[VERIFY_PURCHASE] Adding staking background task")
                 background_tasks.add_task(run_stake, video_id)
+            else:
+                print(f"[VERIFY_PURCHASE] Subnet video - skipping staking task")
+            print(f"{'#'*60}\n")
             return {
                 "status": "success",
                 "message": "Video purchase verification was successful",
             }
         else:
+            print(f"[VERIFY_PURCHASE] FAILED - Purchase verification failed")
+            print(f"[VERIFY_PURCHASE] Check logs above for [CONFIRM_TRANSFER] details")
+            print(f"{'#'*60}\n")
             return {
                 "status": "error",
                 "message": f"Video purchase verification failed for video_id {video_id} on block_hash {block_hash} by miner_hotkey {miner_hotkey}",
@@ -1011,11 +1040,31 @@ async def main():
     async def miner_purchase_scores_hotkeys(
         miner_hotkeys: str,
     ) -> Dict[str, MinerPurchaseStats]:
-        return focus_video_cache.miner_purchase_stats()
+        print(f"\n[MINER_PURCHASE_SCORES] Endpoint called with hotkeys param: {miner_hotkeys[:50]}...")
+        stats = focus_video_cache.miner_purchase_stats()
+        print(f"[MINER_PURCHASE_SCORES] Returning stats for {len(stats)} miners")
+        if len(stats) == 0:
+            print(f"[MINER_PURCHASE_SCORES] WARNING: No purchase stats found!")
+        else:
+            for hotkey, stat in list(stats.items())[:5]:  # Log first 5 for brevity
+                print(f"  {hotkey[:16]}...: total={stat.total_focus_points}, max={stat.max_focus_points}, pct={stat.focus_points_percentage:.4f}")
+            if len(stats) > 5:
+                print(f"  ... and {len(stats) - 5} more miners")
+        return stats
 
     @app.get("/api/focus/miner_purchase_scores")
     async def miner_purchase_scores() -> Dict[str, MinerPurchaseStats]:
-        return focus_video_cache.miner_purchase_stats()
+        print(f"\n[MINER_PURCHASE_SCORES] Endpoint called (no hotkeys param)")
+        stats = focus_video_cache.miner_purchase_stats()
+        print(f"[MINER_PURCHASE_SCORES] Returning stats for {len(stats)} miners")
+        if len(stats) == 0:
+            print(f"[MINER_PURCHASE_SCORES] WARNING: No purchase stats found!")
+        else:
+            for hotkey, stat in list(stats.items())[:5]:  # Log first 5 for brevity
+                print(f"  {hotkey[:16]}...: total={stat.total_focus_points}, max={stat.max_focus_points}, pct={stat.focus_points_percentage:.4f}")
+            if len(stats) > 5:
+                print(f"  ... and {len(stats) - 5} more miners")
+        return stats
 
     class TaskTypeMap(BaseModel):
         task_type_map: Dict[TaskType, float]
