@@ -1119,10 +1119,10 @@ async def generate_task_feedback(
     video_id: str,
 ) -> bool:
     import aiohttp
-    from validator_api.validator_api.config import FOCUS_API_KEYS, FOCUS_API_URL
+    from validator_api.validator_api.config import FOCUS_API_KEY, FOCUS_API_URL
     url = f"{FOCUS_API_URL}/focus_videos/task_feedback/{video_id}"
     headers = {
-        "X-SN24-API-Key": FOCUS_API_KEYS[0]
+        "X-SN24-API-Key": FOCUS_API_KEY
     }
     
     for attempt in range(3):

@@ -47,7 +47,7 @@ from validator_api.validator_api.config import (
     DB_CONFIG,
     ENABLE_COMMUNE,
     FIXED_ALPHA_TAO_ESTIMATE,
-    FOCUS_API_KEYS,
+    FOCUS_API_KEY,
     FOCUS_API_URL,
     FOCUS_REWARDS_PERCENT,
     IMPORT_SCORE,
@@ -214,7 +214,7 @@ async def get_api_key(api_key_header: str = Security(api_key_header)):
 
 
 async def get_focus_api_key(focus_api_key_header: str = Security(focus_api_key_header)):
-    if focus_api_key_header in FOCUS_API_KEYS:
+    if focus_api_key_header == FOCUS_API_KEY:
         return focus_api_key_header
     else:
         raise HTTPException(status_code=401, detail="Invalid API Key")
@@ -999,7 +999,7 @@ async def main():
                 async with session.post(
                     f"{FOCUS_API_URL}/auth/stake",
                     json={"video_id": video_id},
-                    headers={"FOCUS_API_KEY": FOCUS_API_KEYS[0]},
+                    headers={"FOCUS_API_KEY": FOCUS_API_KEY},
                 ) as response:
                     res = await response.json()
                     print(f"Got res={res} from {FOCUS_API_URL}/auth/stake")
