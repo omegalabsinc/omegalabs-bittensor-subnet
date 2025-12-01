@@ -116,25 +116,31 @@ async def confirm_transfer(
     with_lock: bool = False,
 ):
     subtensor = bt.subtensor(network=config.NETWORK)
-    
+
     # Check if this is a subnet video
+    # Accept both PURCHASE_PENDING and SUBMITTED states (in case background task already reverted)
+    # The miner_hotkey filter ensures only the miner who initiated the purchase can verify it
     if video_id.startswith("subnet_"):
         query = select(SubnetVideoRecord).filter(
             SubnetVideoRecord.video_id == video_id,
-            SubnetVideoRecord.processing_state
-            == FocusVideoStateInternal.PURCHASE_PENDING.value,
+            SubnetVideoRecord.processing_state.in_([
+                FocusVideoStateInternal.PURCHASE_PENDING.value,
+                FocusVideoStateInternal.SUBMITTED.value,
+            ]),
             SubnetVideoRecord.miner_hotkey == miner_hotkey,
             SubnetVideoRecord.deleted_at.is_(None),
         )
     else:
         query = select(FocusVideoRecord).filter(
             FocusVideoRecord.video_id == video_id,
-            FocusVideoRecord.processing_state
-            == FocusVideoStateInternal.PURCHASE_PENDING.value,
+            FocusVideoRecord.processing_state.in_([
+                FocusVideoStateInternal.PURCHASE_PENDING.value,
+                FocusVideoStateInternal.SUBMITTED.value,
+            ]),
             FocusVideoRecord.miner_hotkey == miner_hotkey,
             FocusVideoRecord.deleted_at.is_(None),
         )
-    
+
     if with_lock:
         query = query.with_for_update()
 
@@ -143,9 +149,11 @@ async def confirm_transfer(
 
     if not video:
         print(
-            f"confirm_transfer | video <{video_id}> not found or not in PURCHASE_PENDING state"
+            f"confirm_transfer | video <{video_id}> not found or miner_hotkey doesn't match"
         )
         return False
+
+    print(f"confirm_transfer | found video <{video_id}> in state <{video.processing_state}>")
 
     tao_amount = video.expected_reward_tao
 
@@ -293,18 +301,38 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
         print(
             f"Video <{video_id}> has NOT been marked as PURCHASED. Reverting to SUBMITTED state..."
         )
-        await increment_failed_purchases(db, video.miner_hotkey)
-        video.processing_state = FocusVideoStateInternal.SUBMITTED.value
-        video.updated_at = datetime.utcnow()
-        db.add(video)
-        await db.commit()
-        await db.close()
+
+        # Need a fresh db context since the previous one was closed in the loop
+        async with get_db_context() as db:
+            # Re-fetch the video record
+            if video_id.startswith("subnet_"):
+                query = select(SubnetVideoRecord).filter(
+                    SubnetVideoRecord.video_id == video_id,
+                    SubnetVideoRecord.deleted_at.is_(None),
+                )
+            else:
+                query = select(FocusVideoRecord).filter(
+                    FocusVideoRecord.video_id == video_id,
+                    FocusVideoRecord.deleted_at.is_(None),
+                )
+
+            result = await db.execute(query)
+            video = result.scalar_one_or_none()
+
+            if video and video.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value:
+                await increment_failed_purchases(db, video.miner_hotkey)
+                video.processing_state = FocusVideoStateInternal.SUBMITTED.value
+                video.updated_at = datetime.utcnow()
+                db.add(video)
+                await db.commit()
+                print(f"Video <{video_id}> reverted to SUBMITTED state")
+            else:
+                print(f"Video <{video_id}> is no longer in PURCHASE_PENDING state (current: {video.processing_state if video else 'not found'}), skipping revert")
+
         await release_video_lock(video_id)
         return False
 
     except Exception as e:
         print(f"Error in confirm_video_purchased: {e}")
         await release_video_lock(video_id)
-
-    await release_video_lock(video_id)
-    return False
+        return False

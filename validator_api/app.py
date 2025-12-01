@@ -916,6 +916,16 @@ async def main():
         hotkey: Annotated[str, Depends(get_hotkey)],
         db: AsyncSession = Depends(get_db),
     ):
+        # Verify miner is registered on the subnet (has a coldkey owner)
+        miner_coldkey = subtensor.get_hotkey_owner(hotkey)
+        if miner_coldkey is None:
+            print(f"[PURCHASE] Rejected: hotkey {hotkey} is not registered on subnet (get_hotkey_owner returned None)")
+            raise HTTPException(
+                status_code=status.HTTP_403_FORBIDDEN,
+                detail=f"Hotkey {hotkey} is not registered as a miner on subnet {NETUID}. Only registered miners can purchase focus videos.",
+            )
+        print(f"[PURCHASE] Verified miner registration: hotkey={hotkey}, coldkey={miner_coldkey}")
+
         banned_until = await miner_banned_until(db, hotkey)
         if banned_until:
             raise HTTPException(
