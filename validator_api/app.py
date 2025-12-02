@@ -1018,9 +1018,9 @@ async def main():
                 "message": f"Video not found: {video_id}",
             }
 
-        print(f"[VERIFY_PURCHASE] Calling confirm_transfer...")
+        print(f"[VERIFY_PURCHASE] Calling confirm_transfer with row lock...")
         result = await confirm_transfer(
-            db, video_owner_coldkey, video_id, miner_hotkey, block_hash
+            db, video_owner_coldkey, video_id, miner_hotkey, block_hash, with_lock=True
         )
         print(f"[VERIFY_PURCHASE] confirm_transfer returned: {result}")
 
