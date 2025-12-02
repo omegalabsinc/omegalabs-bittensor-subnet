@@ -1,7 +1,7 @@
 from datetime import datetime, timedelta
 from fastapi import HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import func, and_, or_, exists
+from sqlalchemy import func, and_, or_, exists, text
 from typing import Optional, Dict, List, Any
 import json
 import traceback
@@ -10,6 +10,7 @@ import bittensor
 from sqlalchemy.sql import select
 import random
 import uuid
+import hashlib
 from typing import Set
 
 from validator_api.validator_api.config import (
@@ -50,38 +51,86 @@ MIN_REWARD_ALPHA = 0.5
 PURCHASE_LOCK_TIMEOUT_MINUTES = 5  # Lock expires after 5 minutes
 
 
+def _video_id_to_lock_key(video_id: str) -> int:
+    """
+    Convert video_id string to a 64-bit integer for PostgreSQL advisory lock.
+    Uses hash to ensure consistent mapping across all pods.
+    """
+    # Use MD5 hash and take first 8 bytes as signed 64-bit integer
+    hash_bytes = hashlib.md5(video_id.encode()).digest()[:8]
+    return int.from_bytes(hash_bytes, byteorder='big', signed=True)
+
+
 async def acquire_video_lock(video_id: str, miner_hotkey: str) -> bool:
     """
     Try to acquire a database lock for a video purchase.
+    Uses PostgreSQL advisory lock to synchronize across multiple pods.
     Returns True if lock was acquired, False if already locked.
     """
     async with get_db_context() as db:
         try:
-            # Check if video is available and not locked
+            lock_key = _video_id_to_lock_key(video_id)
+
+            # Try to acquire PostgreSQL advisory lock (non-blocking)
+            # pg_try_advisory_lock returns true if lock acquired, false if already held
+            lock_result = await db.execute(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": lock_key}
+            )
+            lock_acquired = lock_result.scalar()
+
+            if not lock_acquired:
+                print(f"Advisory lock not acquired for video {video_id} (lock_key={lock_key}) - another pod has it")
+                return False
+
+            print(f"Advisory lock acquired for video {video_id} (lock_key={lock_key})")
+
+            # Now check if video is available (with row lock for safety)
             query = select(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
                 FocusVideoRecord.processing_state == FocusVideoStateInternal.SUBMITTED.value,
                 FocusVideoRecord.deleted_at.is_(None),
-            ).with_for_update(skip_locked=True)  # Skip if already locked by another transaction
-            
+            ).with_for_update()
+
             result = await db.execute(query)
             video_record = result.scalar_one_or_none()
-            
+
             if video_record is None:
-                # Video not available or already locked
+                # Video not available - release advisory lock
+                await db.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": lock_key}
+                )
+                print(f"Video {video_id} not available, released advisory lock")
                 return False
-            
+
             # Update the video to PURCHASE_PENDING to lock it
             video_record.processing_state = FocusVideoStateInternal.PURCHASE_PENDING.value
             video_record.miner_hotkey = miner_hotkey
             video_record.updated_at = datetime.utcnow()
-            
+
             db.add(video_record)
             await db.commit()
+
+            # Release advisory lock after commit (state change is now persistent)
+            await db.execute(
+                text("SELECT pg_advisory_unlock(:lock_key)"),
+                {"lock_key": lock_key}
+            )
+            print(f"Video {video_id} locked for miner {miner_hotkey}, advisory lock released")
             return True
-            
+
         except Exception as e:
             print(f"Error acquiring video lock for {video_id}: {e}")
+            # Try to release advisory lock on error
+            try:
+                lock_key = _video_id_to_lock_key(video_id)
+                await db.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": lock_key}
+                )
+            except:
+                pass
             await db.rollback()
             return False
 
@@ -466,31 +515,68 @@ async def get_available_subnet_videos() -> List[Dict[str, Any]]:
 async def mark_subnet_video_purchase_pending(video_id: str, miner_hotkey: str) -> bool:
     """
     Mark a subnet video as PURCHASE_PENDING (equivalent to acquiring lock)
+    Uses PostgreSQL advisory lock to synchronize across multiple pods.
     """
     async with get_db_context() as db:
         try:
+            lock_key = _video_id_to_lock_key(video_id)
+
+            # Try to acquire PostgreSQL advisory lock (non-blocking)
+            lock_result = await db.execute(
+                text("SELECT pg_try_advisory_lock(:lock_key)"),
+                {"lock_key": lock_key}
+            )
+            lock_acquired = lock_result.scalar()
+
+            if not lock_acquired:
+                print(f"Advisory lock not acquired for subnet video {video_id} - another pod has it")
+                return False
+
+            print(f"Advisory lock acquired for subnet video {video_id}")
+
             query = select(SubnetVideoRecord).filter(
                 SubnetVideoRecord.video_id == video_id,
                 SubnetVideoRecord.processing_state == "SUBMITTED",
                 SubnetVideoRecord.deleted_at.is_(None)
-            ).with_for_update(skip_locked=True)
-            
+            ).with_for_update()
+
             result = await db.execute(query)
             subnet_video = result.scalar_one_or_none()
-            
+
             if subnet_video is None:
+                # Release advisory lock
+                await db.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": lock_key}
+                )
+                print(f"Subnet video {video_id} not available, released advisory lock")
                 return False
-            
+
             subnet_video.processing_state = "PURCHASE_PENDING"
             subnet_video.miner_hotkey = miner_hotkey
             subnet_video.updated_at = datetime.utcnow()
-            
+
             db.add(subnet_video)
             await db.commit()
+
+            # Release advisory lock after commit
+            await db.execute(
+                text("SELECT pg_advisory_unlock(:lock_key)"),
+                {"lock_key": lock_key}
+            )
+            print(f"Subnet video {video_id} locked for miner {miner_hotkey}, advisory lock released")
             return True
-            
+
         except Exception as e:
             print(f"Error marking subnet video purchase pending: {e}")
+            try:
+                lock_key = _video_id_to_lock_key(video_id)
+                await db.execute(
+                    text("SELECT pg_advisory_unlock(:lock_key)"),
+                    {"lock_key": lock_key}
+                )
+            except:
+                pass
             await db.rollback()
             return False
 
