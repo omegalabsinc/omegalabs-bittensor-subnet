@@ -783,7 +783,7 @@ async def _get_miner_purchase_stats() -> Dict[str, MinerPurchaseStats]:
 class FocusVideoCache:
     def __init__(self):
         self._available_focus_cache = CachedValue(
-            fetch_func=_get_purchaseable_videos, update_interval=180
+            fetch_func=_get_purchaseable_videos, update_interval=60  # 1 minute
         )
         self._alpha_to_tao_cache = CachedValue(fetch_func=_alpha_to_tao_rate)
         self._already_purchased_cache = CachedValue(
