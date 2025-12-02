@@ -223,8 +223,8 @@ async def confirm_transfer(
     return False
 
 
-DELAY_SECS = 30  # 30s
-RETRIES = 6  # 30s x 10 retries = 180s = 3 mins
+DELAY_SECS = 120 # 2 minutes
+RETRIES = 10  # 120s x 10 retries = 1200s = 20 mins
 
 
 async def confirm_video_purchased(video_id: str, with_lock: bool = False):

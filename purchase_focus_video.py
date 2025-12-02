@@ -335,7 +335,7 @@ async def purchase_video(
 
     print(f"Purchasing video {video_id}...")
     print(
-        f"{RED}You will only have 2 minutes and 30 seconds to complete the transfer of TAO tokens, otherwise the purchase will be reverted.{RESET}"
+        f"{RED}You will only have 6 minutes to complete the transfer of TAO tokens, otherwise the purchase will be reverted.{RESET}"
     )
     purchase_response = requests.post(
         API_BASE + "/api/focus/purchase",
