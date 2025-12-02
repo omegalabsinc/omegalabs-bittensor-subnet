@@ -101,6 +101,7 @@ async def release_video_lock(video_id: str):
             
             if video_record:
                 video_record.processing_state = FocusVideoStateInternal.SUBMITTED.value
+                video_record.miner_hotkey = None  # Clear miner_hotkey when releasing lock
                 video_record.updated_at = datetime.utcnow()
                 db.add(video_record)
                 await db.commit()
