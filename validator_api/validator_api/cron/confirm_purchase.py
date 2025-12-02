@@ -320,12 +320,14 @@ async def confirm_video_purchased(video_id: str, with_lock: bool = False):
             video = result.scalar_one_or_none()
 
             if video and video.processing_state == FocusVideoStateInternal.PURCHASE_PENDING.value:
-                await increment_failed_purchases(db, video.miner_hotkey)
+                failed_miner_hotkey = video.miner_hotkey
+                await increment_failed_purchases(db, failed_miner_hotkey)
                 video.processing_state = FocusVideoStateInternal.SUBMITTED.value
+                video.miner_hotkey = None  # Clear miner_hotkey to prevent old miner from verifying
                 video.updated_at = datetime.utcnow()
                 db.add(video)
                 await db.commit()
-                print(f"Video <{video_id}> reverted to SUBMITTED state")
+                print(f"Video <{video_id}> reverted to SUBMITTED state (cleared miner_hotkey from {failed_miner_hotkey})")
             else:
                 print(f"Video <{video_id}> is no longer in PURCHASE_PENDING state (current: {video.processing_state if video else 'not found'}), skipping revert")
 
