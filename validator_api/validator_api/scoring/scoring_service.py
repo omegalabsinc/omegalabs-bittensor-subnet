@@ -427,15 +427,15 @@ async def query_pinecone(pinecone_index: Pinecone, vector: List[float]) -> float
 class FocusScoringService:
     def __init__(self):
         vertexai.init(project=GOOGLE_PROJECT_ID, location=GOOGLE_LOCATION)
-        self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index(
-            "focus-task-overview-index"
-        )
-        self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index(
-            "focus-video-description-index"
-        )
-        self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index(
-            "focus-completion-video-index"
-        )
+        # self.task_overview_index = Pinecone(api_key=PINECONE_API_KEY).Index(
+        #     "focus-task-overview-index"
+        # )
+        # self.video_description_index = Pinecone(api_key=PINECONE_API_KEY).Index(
+        #     "focus-video-description-index"
+        # )
+        # self.completion_video_index = Pinecone(api_key=PINECONE_API_KEY).Index(
+        #     "focus-completion-video-index"
+        # )
         self.openai_client = AsyncOpenAI(api_key=OPENAI_API_KEY)
         self.legitimacy_checks = [ChatOnlyCheck()]
 
