@@ -71,16 +71,17 @@ async def query_openai(
     """
     for attempt in range(retries):
         try:
-            response = await openai_client.beta.chat.completions.parse(
-                model="o4-mini-2025-04-16",
+            response = await openai_client.chat.completions.parse(
+                model="gpt-5-2025-08-07",
                 messages=messages,
+                verbosity="medium",
                 response_format=output_model,
             )
             if not response.choices[0].message.content:
                 raise Exception("Empty response from API")
 
             parsed_data = json.loads(response.choices[0].message.content)
-
+            print(f"OpenAI response: {parsed_data}")
             if output_model is not None:
                 return output_model.model_validate(parsed_data)
             return parsed_data

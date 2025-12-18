@@ -47,6 +47,7 @@ from validator_api.validator_api.database.models.scoring import (
     CompletionScore,
     CompletionScoreWithoutRange,
     DetailedVideoDescription,
+    StructuredVideoDescription,
     FocusVideoEmbeddings,
     LegitimacyCheckError,
     VideoScore,
@@ -169,7 +170,7 @@ async def _make_gemini_request(
         An instance of OutputClassSchema containing the parsed model response
     """
     model_name = "gemini-2.5-flash"
-    # print(f"Video text annotation is using model: {model_name}")
+    print(f"Video text annotation is using model: {model_name}")
     safety_settings = {
         HarmCategory.HARM_CATEGORY_HATE_SPEECH: HarmBlockThreshold.BLOCK_ONLY_HIGH,
         HarmCategory.HARM_CATEGORY_HARASSMENT: HarmBlockThreshold.BLOCK_ONLY_HIGH,
@@ -193,6 +194,7 @@ async def _make_gemini_request(
         gcs_uri = get_gcs_uri(video_id)
         print(f"Making Gemini request with GCS URI: {gcs_uri}")
         parts.append(Part.from_uri(gcs_uri, mime_type="video/webm"))
+
     parts.append(user_prompt.strip())
 
     response = await model.generate_content_async(parts)
@@ -251,15 +253,292 @@ async def _make_gemini_request_with_retries(
     )
 
 
+def _format_completion_steps(steps: List) -> str:
+    """
+    Format completion_sequence_steps for inclusion in prompts.
+    Handles both old string format and new structured CompletionStep format.
+
+    Args:
+        steps: List of completion steps (either strings or CompletionStep objects)
+
+    Returns:
+        Formatted string representation of steps
+    """
+    import json
+    from validator_api.validator_api.database.models.scoring import CompletionStep
+
+    formatted_steps = []
+    for step in steps:
+        if isinstance(step, str):
+            # Old format - just use the string
+            formatted_steps.append(step)
+        elif isinstance(step, CompletionStep):
+            # New structured format - convert to JSON
+            step_dict = step.model_dump()
+            formatted_steps.append(json.dumps(step_dict, indent=2))
+        elif isinstance(step, dict):
+            # Dict format (from Pydantic serialization)
+            formatted_steps.append(json.dumps(step, indent=2))
+
+    return "\n\n".join(formatted_steps)
+
+
+def _format_trajectories_section(trajectories_data: Optional[dict]) -> str:
+    """
+    Format trajectories data for inclusion in prompts.
+
+    Args:
+        trajectories_data: Dictionary containing trajectories data (Mac or Windows format)
+
+    Returns:
+        Formatted string for insertion into prompts, or empty string if no trajectories
+    """
+    if not trajectories_data:
+        return ""
+
+    # Detect format based on presence of processId (Windows) vs absence (Mac)
+    sample_event = trajectories_data.get("events", [{}])[0] if trajectories_data.get("events") else {}
+    platform = "Windows" if "processId" in sample_event else "Mac"
+
+    event_count = trajectories_data.get("eventCount", len(trajectories_data.get("events", [])))
+
+    # Format the full trajectories data structure for the LLM
+    import json
+
+    events = trajectories_data.get("events", [])
+
+    trajectories_summary = f"""
+TRAJECTORIES DATA AVAILABLE - FULL EVENT DATA BELOW:
+Platform: {platform}
+Total Events: {event_count}
+Task ID: {trajectories_data.get("taskId", "N/A")}
+Captured At: {trajectories_data.get("capturedAt", "N/A")}
+
+IMPORTANT: You MUST extract data from these events and populate your structured steps.
+Each event below contains: x, y, button, timestamp, processName, windowTitle
+
+Complete Trajectories JSON Data:
+{json.dumps(trajectories_data, indent=2)}
+
+EXTRACTION INSTRUCTIONS:
+- There are {event_count} events in the "events" array above
+- Create {event_count} corresponding steps (one for each event)
+- For each event at index i, create step i with:
+  * action.coordinates: [event.x, event.y] - COPY the numbers directly
+  * action.button: event.button - COPY the value directly
+  * metadata.absolute_timestamp: event.timestamp - COPY the ISO string directly
+  * metadata.process_name: event.processName - COPY the application name directly
+  * metadata.window_title: event.windowTitle - COPY the window title directly
+  * timestamp: Calculate seconds elapsed from first event's timestamp
+
+DO NOT set these fields to null when the data is available in the JSON above!
+"""
+
+    return f"""
+<trajectories_data>
+{trajectories_summary}
+</trajectories_data>
+"""
+
+
+async def _integrate_trajectories_with_openai(
+    simple_steps: List[str],
+    trajectories_data: dict,
+    applications_used: List[str],
+    user_feedback: str,
+    description: str
+) -> StructuredVideoDescription:
+    """
+    Use OpenAI to integrate trajectories data with simple step descriptions from Gemini.
+
+    Args:
+        simple_steps: List of simple string descriptions from Gemini video analysis
+        trajectories_data: Raw trajectories JSON with events array
+        applications_used: List of applications from Gemini
+        user_feedback: User feedback from Gemini
+        description: High-level description from Gemini
+
+    Returns:
+        StructuredVideoDescription with completion_sequence_steps populated with trajectories data
+    """
+    print(f"********** Integrating trajectories with OpenAI **********")
+    print(f"********** Step 1: Simplifying {len(trajectories_data.get('events', []))} events **********")
+
+    # Simplify trajectories to only essential fields
+    events = trajectories_data.get('events', [])
+    simplified_events = []
+    for idx, event in enumerate(events):
+        simplified_event = {
+            "event_index": idx,
+            "x": event.get("x"),
+            "y": event.get("y"),
+            "button": event.get("button"),
+            "timestamp": event.get("timestamp"),
+            "processName": event.get("processName"),
+            "windowTitle": event.get("windowTitle")
+        }
+        simplified_events.append(simplified_event)
+
+    print(f"********** Step 2: Simplified {len(simplified_events)} events successfully **********")
+    print(f"********** Step 3: Building prompts with {len(simple_steps)} steps **********")
+
+    system_prompt = """You are a data integration specialist. Your task is to merge video step descriptions with precise interaction data from trajectories logs.
+
+You will receive:
+1. A list of simple string descriptions of what happened in a video (from video analysis)
+2. A JSON object containing precise interaction events (mouse clicks, coordinates, timestamps, etc.)
+
+Your job is to create structured CompletionStep objects that combine BOTH sources:
+- Use the video descriptions to understand WHAT happened and WHY
+- Use the trajectories data to add PRECISE technical details (coordinates, timestamps, window titles)
+
+CRITICAL RULES:
+1. For each event in trajectories, try to match it to a corresponding video description step
+2. Extract coordinates [x, y], button, processName, windowTitle, and timestamp DIRECTLY from trajectories events
+3. DO NOT set these fields to null when trajectories data exists
+4. If a trajectories event doesn't match any video step, still create a step for it using available data
+5. The action.target field should describe what UI element was clicked (infer from video description)
+6. The observation field should describe what happened (from video description)
+
+Output a JSON object following the StructuredVideoDescription schema."""
+
+    print(f"********** Step 4: Creating JSON dumps **********")
+
+    try:
+        simple_steps_json = json.dumps(simple_steps, indent=2)
+        print(f"********** Step 5: simple_steps JSON created ({len(simple_steps_json)} chars) **********")
+    except Exception as e:
+        print(f"********** ERROR dumping simple_steps: {e} **********")
+        raise
+
+    try:
+        trajectories_json = json.dumps({"total_events": len(simplified_events), "events": simplified_events}, indent=2)
+        print(f"********** Step 6: trajectories JSON created ({len(trajectories_json)} chars) **********")
+    except Exception as e:
+        print(f"********** ERROR dumping trajectories: {e} **********")
+        raise
+
+    user_prompt = f"""Here are the video step descriptions from Gemini:
+
+{simple_steps_json}
+
+Here are the trajectories events:
+
+{trajectories_json}
+
+Additional context:
+- applications_used: {json.dumps(applications_used)}
+- user_feedback: {user_feedback}
+- description: {description}
+
+Now create a StructuredVideoDescription with structured CompletionStep objects that integrate both sources.
+For each trajectories event, create a step that includes:
+- action.coordinates from event.x, event.y
+- action.button from event.button
+- metadata.process_name from event.processName
+- metadata.window_title from event.windowTitle
+- metadata.absolute_timestamp from event.timestamp
+- action.target from matching video description (describe UI element)
+- observation from matching video description (what happened)
+
+Return the complete JSON object."""
+
+    print(f"********** Step 7: User prompt created ({len(user_prompt)} chars) **********")
+    print(f"********** Step 8: Importing query_openai **********")
+
+    from validator_api.validator_api.scoring.query_llm import query_openai
+
+    print(f"********** Step 9: Creating messages list **********")
+    messages = [
+        {"role": "system", "content": system_prompt},
+        {"role": "user", "content": user_prompt}
+    ]
+
+    print(f"********** Step 10: Calling query_openai with {len(simplified_events)} events and {len(simple_steps)} steps **********")
+    try:
+        result = await query_openai(
+            messages=messages,
+            output_model=StructuredVideoDescription,
+            retries=3
+        )
+        print(f"********** OpenAI integration successful: {len(result.completion_sequence_steps)} structured steps **********")
+        return result
+    except Exception as e:
+        import traceback
+        print(f"********** OpenAI integration failed: {e} **********")
+        print(f"********** Full traceback: **********")
+        traceback.print_exc()
+        # Fallback: create basic structured steps from simple strings
+        fallback_steps = []
+        for idx, step_str in enumerate(simple_steps):
+            fallback_steps.append({
+                "step": idx,
+                "timestamp": 0.0,
+                "action": {
+                    "type": "click",
+                    "target": step_str
+                },
+                "observation": step_str,
+                "metadata": {
+                    "window_title": None,
+                    "process_name": None,
+                    "absolute_timestamp": None
+                }
+            })
+        return StructuredVideoDescription(
+            applications_used=applications_used,
+            completion_sequence_steps=fallback_steps,
+            user_feedback=user_feedback,
+            description=description
+        )
+
+
+async def _get_trajectories_from_video_details(video_id: str) -> Optional[dict]:
+    """
+    Retrieve trajectories data from trajectories JSONB column.
+
+    Args:
+        video_id: The video ID to fetch trajectories for
+
+    Returns:
+        Trajectories dictionary or None if not available
+    """
+    print(f"********** Getting trajectories for video_id: {video_id} **********")
+
+    async with get_db_context() as db:
+        query = select(FocusVideoRecord).filter(
+            FocusVideoRecord.video_id == video_id,
+            FocusVideoRecord.deleted_at.is_(None),
+        )
+        result = await db.execute(query)
+        video_record = result.scalar_one_or_none()
+
+        if video_record is None:
+            print(f"********** Video record not found for {video_id} **********")
+            return None
+
+        trajectories_data = video_record.trajectories
+
+        if trajectories_data:
+            event_count = len(trajectories_data.get("events", []))
+            print(f"********** Found trajectories with {event_count} events for {video_id} **********")
+            print(f"********** Trajectories keys: {list(trajectories_data.keys())} **********")
+            print(f"********** First event sample: {trajectories_data.get('events', [])[0] if trajectories_data.get('events') else 'No events'} **********")
+        else:
+            print(f"********** No trajectories data found for {video_id} **********")
+
+        return trajectories_data
+
+
 async def get_detailed_video_description(
     video_id: str, task_overview: str, recompute: bool = False
 ) -> DetailedVideoDescription:
     print(f"get_detailed_video_description called for video_id: {video_id} (length: {len(video_id)})")
 
+    # Check for cached data
+    cached_description = None
     if not recompute:
-        async with (
-            get_db_context() as db
-        ):  # get already computed description from db if it exists
+        async with get_db_context() as db:
             query = select(FocusVideoRecord).filter(
                 FocusVideoRecord.video_id == video_id,
                 FocusVideoRecord.deleted_at.is_(None),
@@ -274,12 +553,58 @@ async def get_detailed_video_description(
                 video_record.video_details
                 and "detailed_video_description" in video_record.video_details
             ):
-                print(f"Using cached detailed_video_description for video_id: {video_id}")
-                return DetailedVideoDescription.model_validate(
+                cached_description = DetailedVideoDescription.model_validate(
                     video_record.video_details["detailed_video_description"]
                 )
+                print(f"Found cached detailed_video_description for video_id: {video_id}")
+
+    # If we have cached data, return it directly
+    if cached_description:
+        print(f"Using cached description for video_id: {video_id}")
+        return cached_description
+
+    # COMMENTED OUT: OpenAI trajectories integration (kept for future use)
+    # Uncomment this section to enable OpenAI integration of trajectories data with video descriptions
+    # if cached_description:
+    #     trajectories_data = await _get_trajectories_from_video_details(video_id)
+    #
+    #     if trajectories_data:
+    #         event_count = len(trajectories_data.get('events', []))
+    #         print(f"********** Cached data found but trajectories exist ({event_count} events) - integrating with OpenAI **********")
+    #
+    #         try:
+    #             structured_description = await _integrate_trajectories_with_openai(
+    #                 simple_steps=cached_description.completion_sequence_steps,
+    #                 trajectories_data=trajectories_data,
+    #                 applications_used=cached_description.applications_used,
+    #                 user_feedback=cached_description.user_feedback,
+    #                 description=cached_description.description
+    #             )
+    #             print(f"********** OpenAI returned {len(structured_description.completion_sequence_steps)} structured steps **********")
+    #
+    #             # TLDR11 - Save structured steps to test.json
+    #             try:
+    #                 test_output = [step.model_dump() for step in structured_description.completion_sequence_steps]
+    #                 with open("test.json", "w") as f:
+    #                     json.dump(test_output, f, indent=2)
+    #                 print(f"********** TLDR11: Saved {len(structured_description.completion_sequence_steps)} STRUCTURED steps to test.json **********")
+    #             except Exception as e:
+    #                 print(f"********** TLDR11: Error saving to test.json: {e} **********")
+    #             # TLDR11 - End of test code
+    #
+    #         except Exception as e:
+    #             import traceback
+    #             print(f"********** Failed to integrate with OpenAI: {e} **********")
+    #             print(f"********** Outer exception traceback: **********")
+    #             traceback.print_exc()
+    #     else:
+    #         print(f"Using cached description without trajectories for video_id: {video_id}")
+    #
+    #     return cached_description
 
     print(f"Generating new detailed_video_description for video_id: {video_id}")
+
+    # Step 1: Get simple video description from Gemini
     description = await _make_gemini_request_with_retries(
         system_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_SYSTEM_PROMPT,
         user_prompt=focus_scoring_prompts.DETAILED_DESCRIPTION_USER_PROMPT.format(
@@ -288,6 +613,50 @@ async def get_detailed_video_description(
         video_id=video_id,
         OutputClassSchema=DetailedVideoDescription,
     )
+    print(f"********** Gemini returned {len(description.completion_sequence_steps)} simple steps **********")
+
+    # COMMENTED OUT: OpenAI trajectories integration for new descriptions (kept for future use)
+    # Uncomment this section to enable OpenAI integration when generating new video descriptions
+    # # Step 2: Get trajectories data and integrate with OpenAI
+    # trajectories_data = await _get_trajectories_from_video_details(video_id)
+    #
+    # structured_description = None
+    # if trajectories_data:
+    #     event_count = len(trajectories_data.get('events', []))
+    #     print(f"********** Trajectories data FOUND for video_id: {video_id} with {event_count} events **********")
+    #     print(f"********** Calling OpenAI to integrate trajectories with Gemini steps **********")
+    #
+    #     try:
+    #         structured_description = await _integrate_trajectories_with_openai(
+    #             simple_steps=description.completion_sequence_steps,
+    #             trajectories_data=trajectories_data,
+    #             applications_used=description.applications_used,
+    #             user_feedback=description.user_feedback,
+    #             description=description.description
+    #         )
+    #         print(f"********** OpenAI returned {len(structured_description.completion_sequence_steps)} structured steps **********")
+    #     except Exception as e:
+    #         print(f"********** Failed to integrate with OpenAI: {e} **********")
+    #         structured_description = None
+    # else:
+    #     print(f"********** Trajectories data NOT FOUND for video_id: {video_id} **********")
+    #
+    # # TLDR11 - Save completion steps to test.json for testing (remove when testing complete)
+    # try:
+    #     if structured_description:
+    #         # Save structured steps from OpenAI
+    #         test_output = [step.model_dump() for step in structured_description.completion_sequence_steps]
+    #         with open("test.json", "w") as f:
+    #             json.dump(test_output, f, indent=2)
+    #         print(f"********** TLDR11: Saved {len(structured_description.completion_sequence_steps)} STRUCTURED steps to test.json **********")
+    #     else:
+    #         # Save simple steps from Gemini
+    #         with open("test.json", "w") as f:
+    #             json.dump(description.completion_sequence_steps, f, indent=2)
+    #         print(f"********** TLDR11: Saved {len(description.completion_sequence_steps)} SIMPLE steps to test.json **********")
+    # except Exception as e:
+    #     print(f"********** TLDR11: Error saving to test.json: {e} **********")
+    # # TLDR11 - End of test code
 
     return description
 
@@ -304,6 +673,7 @@ async def get_detailed_video_description(
 async def _get_completion_score_breakdown(
     task_overview: str,
     detailed_video_description: Optional[DetailedVideoDescription] = None,
+    video_id: Optional[str] = None,
     system_prompt: str = focus_scoring_prompts.DESC_ONLY_TASK_COMPLETION_SYSTEM_PROMPT.format(
         EXPLOITED_TASK_CASES=focus_scoring_prompts.EXPLOITED_TASK_CASES
     ),
@@ -314,14 +684,23 @@ async def _get_completion_score_breakdown(
 
     Args:
         task_overview (str): An overview of the task associated with the video.
-        openai_client (AsyncOpenAI): Kept for compatibility but no longer used
         detailed_video_description (Optional[DetailedVideoDescription], optional): A detailed description of the video content.
+        video_id (Optional[str], optional): Video ID to fetch trajectories data.
         system_prompt (str, optional): The system prompt to be used for generating the completion score.
         user_prompt (str, optional): The user prompt to be used for generating the completion score.
 
     Returns:
         CompletionScore: The completion score breakdown for the video.
     """
+    # Get trajectories data if video_id is provided
+    trajectories_data = None
+    if video_id:
+        trajectories_data = await _get_trajectories_from_video_details(video_id)
+        print(f"Trajectories data {'found' if trajectories_data else 'not found'} for completion scoring of video_id: {video_id}")
+
+    trajectories_section = _format_trajectories_section(trajectories_data)
+    formatted_steps = _format_completion_steps(detailed_video_description.completion_sequence_steps)
+
     messages = [
         {"role": "system", "content": system_prompt},
         {
@@ -329,7 +708,8 @@ async def _get_completion_score_breakdown(
             "content": user_prompt.format(
                 task_overview=task_overview,
                 applications_used=detailed_video_description.applications_used,
-                completion_sequence_steps=detailed_video_description.completion_sequence_steps,
+                completion_sequence_steps=formatted_steps,
+                trajectories_section=trajectories_section,
             ),
         },
     ]
@@ -643,6 +1023,7 @@ class FocusScoringService:
         completion_score_breakdown = await _get_completion_score_breakdown(
             task_overview,
             detailed_video_description=video_description,
+            video_id=video_id,
         )
 
         completion_gemini_score = completion_score_breakdown.completion_score
